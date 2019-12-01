@@ -65,6 +65,7 @@ class FCOSRandomAssignHead(nn.Module):
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
+        self.random_step = 0
 
         self._init_layers()
 
@@ -328,9 +329,12 @@ class FCOSRandomAssignHead(nn.Module):
         NOTE: emperical test on random assignment, 
         assign the learning targets to different levels.
         '''
-        # generate rand index 
-        regress_random_indices = torch.randperm(concat_regress_ranges.shape[0])
-        concat_regress_ranges = concat_regress_ranges[regress_random_indices]
+        # generate rand index
+        # print("random step:{}".format(self.random_step)) 
+        if self.random_step < 2000:
+            self.random_step += 1
+            regress_random_indices = torch.randperm(concat_regress_ranges.shape[0])
+            concat_regress_ranges = concat_regress_ranges[regress_random_indices]
 
         concat_points = torch.cat(points, dim=0)
         # get labels and bbox_targets of each image
