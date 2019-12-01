@@ -10,8 +10,10 @@ from .retina_head import RetinaHead
 from .rpn_head import RPNHead
 from .ssd_head import SSDHead
 from .fcos_random_assign_head import FCOSRandomAssignHead
+from .fcos_gradient_assign_head import FCOSGradientAssignHead
+
 __all__ = [
     'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption', 'RPNHead',
     'GARPNHead', 'RetinaHead', 'GARetinaHead', 'SSDHead', 'FCOSHead',
-    'RepPointsHead', 'FoveaHead', 'FreeAnchorRetinaHead', 'FCOSRandomAssignHead'
+    'RepPointsHead', 'FoveaHead', 'FreeAnchorRetinaHead', 'FCOSRandomAssignHead', 'FCOSGradientAssignHead'
 ]
