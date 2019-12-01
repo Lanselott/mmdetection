@@ -11,7 +11,7 @@ INF = 1e8
 
 
 @HEADS.register_module
-class FCOSHead(nn.Module):
+class FCOSRandomAssignHead(nn.Module):
     """
     Fully Convolutional One-Stage Object Detection head from [1]_.
 
@@ -50,7 +50,7 @@ class FCOSHead(nn.Module):
                      loss_weight=1.0),
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
-        super(FCOSHead, self).__init__()
+        super(FCOSRandomAssignHead, self).__init__()
 
         self.num_classes = num_classes
         self.cls_out_channels = num_classes - 1
@@ -324,6 +324,14 @@ class FCOSHead(nn.Module):
         ]
         # concat all levels points and regress ranges
         concat_regress_ranges = torch.cat(expanded_regress_ranges, dim=0)
+        '''
+        NOTE: emperical test on random assignment, 
+        assign the learning targets to different levels.
+        '''
+        # generate rand index 
+        regress_random_indices = torch.randperm(concat_regress_ranges.shape[0])
+        concat_regress_ranges = concat_regress_ranges[regress_random_indices]
+
         concat_points = torch.cat(points, dim=0)
         # get labels and bbox_targets of each image
         labels_list, bbox_targets_list = multi_apply(
@@ -332,7 +340,7 @@ class FCOSHead(nn.Module):
             gt_labels_list,
             points=concat_points,
             regress_ranges=concat_regress_ranges)
-
+        
         # split to per img, per level
         num_points = [center.size(0) for center in points]
         labels_list = [labels.split(num_points, 0) for labels in labels_list]
@@ -370,7 +378,6 @@ class FCOSHead(nn.Module):
         xs, ys = points[:, 0], points[:, 1]
         xs = xs[:, None].expand(num_points, num_gts)
         ys = ys[:, None].expand(num_points, num_gts)
-
         left = xs - gt_bboxes[..., 0]
         right = gt_bboxes[..., 2] - xs
         top = ys - gt_bboxes[..., 1]

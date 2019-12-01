@@ -9,7 +9,7 @@ from mmdet.core import (AnchorGenerator, anchor_target, delta2bbox, force_fp32,
                         multi_apply, multiclass_nms)
 from ..builder import build_loss
 from ..registry import HEADS
-
+from IPython import embed
 
 @HEADS.register_module
 class AnchorHead(nn.Module):
@@ -135,7 +135,7 @@ class AnchorHead(nn.Module):
                     device=device)
                 multi_level_flags.append(flags)
             valid_flag_list.append(multi_level_flags)
-
+        embed()
         return anchor_list, valid_flag_list
 
     def loss_single(self, cls_score, bbox_pred, labels, label_weights,
