@@ -4,14 +4,14 @@ set -x
 
 PARTITION=gpu_24h
 JOB_NAME=random_assign
-CONFIG=./configs/fcos/fcos_r50_caffe_fpn_gn_1x_4gpu_random_assign.py
-WORK_DIR=./work/dirs/fcos_random_assign
+CONFIG=./configs/fcos/fcos_r50_caffe_fpn_gn_1x_4gpu_gradient_assign.py
+WORK_DIR=./work/dirs/fcos_gradient_assign
 GPUS=${5:-4}
 GPUS_PER_NODE=${GPUS_PER_NODE:-4}
 CPUS_PER_TASK=${CPUS_PER_TASK:-5}
 SRUN_ARGS=${SRUN_ARGS:-""}
 PY_ARGS=${PY_ARGS:-"--validate"}
-CHECKPOINT_FILE=./work/dirs/fcos_random_assign/latest.pth
+# CHECKPOINT_FILE=./work/dirs/fcos_gradient_assign/latest.pth
 
 srun -p ${PARTITION} \
     --job-name=${JOB_NAME} \

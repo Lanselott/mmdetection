@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from mmcv.cnn import normal_init
 
-from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms
+from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms, bbox_overlaps
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import ConvModule, Scale, bias_init_with_prob
@@ -35,8 +35,12 @@ class FCOSGradientAssignHead(nn.Module):
                  feat_channels=256,
                  stacked_convs=4,
                  strides=(4, 8, 16, 32, 64),
-                 regress_ranges=((-1, 64), (64, 128), (128, 256), (256, 512),
-                                 (512, INF)),
+                 regress_ranges=[((-1, 64), (64, 128), (128, 256), (256, 512),
+                                 (512, INF)), 
+                                 ((64, 128), (-1, 64), (128, 256), (256, 512),
+                                 (512, INF))],
+                #  regress_ranges=[((64, 128), (-1, 64), (128, 256), (256, 512),
+                #                  (512, INF))],
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -143,66 +147,81 @@ class FCOSGradientAssignHead(nn.Module):
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         all_level_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                            bbox_preds[0].device)
-        labels, bbox_targets = self.fcos_target(all_level_points, gt_bboxes,
-                                                gt_labels, self.regress_ranges)
-        num_imgs = cls_scores[0].size(0)
-        # flatten cls_scores, bbox_preds and centerness
-        flatten_cls_scores = [
-            cls_score.permute(0, 2, 3, 1).reshape(-1, self.cls_out_channels)
-            for cls_score in cls_scores
-        ]
-        flatten_bbox_preds = [
-            bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
-            for bbox_pred in bbox_preds
-        ]
-        flatten_centerness = [
-            centerness.permute(0, 2, 3, 1).reshape(-1)
-            for centerness in centernesses
-        ]
-        flatten_cls_scores = torch.cat(flatten_cls_scores)
-        flatten_bbox_preds = torch.cat(flatten_bbox_preds)
-        flatten_centerness = torch.cat(flatten_centerness)
-        flatten_labels = torch.cat(labels)
-        flatten_bbox_targets = torch.cat(bbox_targets)
-        # repeat points to align with bbox_preds
-        flatten_points = torch.cat(
-            [points.repeat(num_imgs, 1) for points in all_level_points])
 
-        pos_inds = flatten_labels.nonzero().reshape(-1)
-        num_pos = len(pos_inds)
-        loss_cls = self.loss_cls(
-            flatten_cls_scores, flatten_labels,
-            avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
+        '''
+        regress_ranges=[((-1, 64), (64, 128), (128, 256), (256, 512),
+                                 (512, INF)), 
+                                 ((64, 128), (-1, 64), (128, 256), (256, 512),
+                                 (512, INF))],
 
-        pos_bbox_preds = flatten_bbox_preds[pos_inds]
-        pos_centerness = flatten_centerness[pos_inds]
+        NOTE: test assign  larger objects on P6 and P7 according to the gradient
+        '''     
+        loss_bbox_list = []
+        loss_cls_list = []
+        loss_centerness_list = []
 
-        if num_pos > 0:
-            pos_bbox_targets = flatten_bbox_targets[pos_inds]
-            pos_centerness_targets = self.centerness_target(pos_bbox_targets)
-            pos_points = flatten_points[pos_inds]
-            pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
-            pos_decoded_target_preds = distance2bbox(pos_points,
-                                                     pos_bbox_targets)
-            # centerness weighted iou loss
-            loss_bbox = self.loss_bbox(
-                pos_decoded_bbox_preds,
-                pos_decoded_target_preds,
-                weight=pos_centerness_targets,
-                avg_factor=pos_centerness_targets.sum())
-            loss_centerness = self.loss_centerness(pos_centerness,
-                                                   pos_centerness_targets)
-        else:
-            loss_bbox = pos_bbox_preds.sum()
-            loss_centerness = pos_centerness.sum()
+        for regress_range in self.regress_ranges:
+            labels, bbox_targets = self.fcos_target(all_level_points, gt_bboxes,
+                                                    gt_labels, regress_range)
+            num_imgs = cls_scores[0].size(0)
+            # flatten cls_scores, bbox_preds and centerness
+            flatten_cls_scores = [
+                cls_score.permute(0, 2, 3, 1).reshape(-1, self.cls_out_channels)
+                for cls_score in cls_scores
+            ]
+            flatten_bbox_preds = [
+                bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
+                for bbox_pred in bbox_preds
+            ]
+            flatten_centerness = [
+                centerness.permute(0, 2, 3, 1).reshape(-1)
+                for centerness in centernesses
+            ]
+            flatten_cls_scores = torch.cat(flatten_cls_scores)
+            flatten_bbox_preds = torch.cat(flatten_bbox_preds)
+            flatten_centerness = torch.cat(flatten_centerness)
+            flatten_labels = torch.cat(labels)
+            flatten_bbox_targets = torch.cat(bbox_targets)
+            # repeat points to align with bbox_preds
+            flatten_points = torch.cat(
+                [points.repeat(num_imgs, 1) for points in all_level_points])
 
-        pos_decoded_bbox_preds.register_hook(lambda grad: print(grad))            
-        loss_bbox.backward(retain_graph=True)
-        embed()
+            pos_inds = flatten_labels.nonzero().reshape(-1)
+            num_pos = len(pos_inds)
+            loss_cls = self.loss_cls(
+                flatten_cls_scores, flatten_labels,
+                avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
+            loss_cls_list.append(loss_cls)
+            pos_bbox_preds = flatten_bbox_preds[pos_inds]
+            pos_centerness = flatten_centerness[pos_inds]
+            
+            if num_pos > 0:
+                pos_bbox_targets = flatten_bbox_targets[pos_inds]
+                pos_centerness_targets = self.centerness_target(pos_bbox_targets)
+                pos_points = flatten_points[pos_inds]
+                pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
+                pos_decoded_target_preds = distance2bbox(pos_points,
+                                                        pos_bbox_targets)
+                # centerness weighted iou loss
+                loss_bbox = self.loss_bbox(
+                    pos_decoded_bbox_preds,
+                    pos_decoded_target_preds,
+                    weight=pos_centerness_targets,
+                    avg_factor=pos_centerness_targets.sum())
+                loss_centerness = self.loss_centerness(pos_centerness,
+                                                    pos_centerness_targets)
+                # append centerness/box losses
+                loss_bbox_list.append(loss_bbox)
+                loss_centerness_list.append(loss_centerness)                
+            else:
+                loss_bbox = pos_bbox_preds.sum()
+                loss_centerness = pos_centerness.sum()
+
+        # embed()
         return dict(
-            loss_cls=loss_cls,
-            loss_bbox=loss_bbox,
-            loss_centerness=loss_centerness)
+            loss_cls=min(loss_cls_list),
+            loss_bbox=min(loss_bbox_list),
+            loss_centerness=min(loss_centerness_list))
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,
@@ -334,7 +353,6 @@ class FCOSGradientAssignHead(nn.Module):
             gt_labels_list,
             points=concat_points,
             regress_ranges=concat_regress_ranges)
-
         # split to per img, per level
         num_points = [center.size(0) for center in points]
         labels_list = [labels.split(num_points, 0) for labels in labels_list]
@@ -352,6 +370,7 @@ class FCOSGradientAssignHead(nn.Module):
             concat_lvl_bbox_targets.append(
                 torch.cat(
                     [bbox_targets[i] for bbox_targets in bbox_targets_list]))
+
         return concat_lvl_labels, concat_lvl_bbox_targets
 
     def fcos_target_single(self, gt_bboxes, gt_labels, points, regress_ranges):
@@ -378,7 +397,7 @@ class FCOSGradientAssignHead(nn.Module):
         top = ys - gt_bboxes[..., 1]
         bottom = gt_bboxes[..., 3] - ys
         bbox_targets = torch.stack((left, top, right, bottom), -1)
-
+        
         # condition1: inside a gt bbox
         inside_gt_bbox_mask = bbox_targets.min(-1)[0] > 0
 
