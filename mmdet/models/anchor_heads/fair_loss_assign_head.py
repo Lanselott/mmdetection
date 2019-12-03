@@ -64,7 +64,7 @@ class FairLossAssignHead(nn.Module):
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
-
+        self.training_iter = 0
         self._init_layers()
 
     def _init_layers(self):
@@ -223,35 +223,53 @@ class FairLossAssignHead(nn.Module):
                 loss_bbox = pos_bbox_preds.sum()
                 loss_centerness = pos_centerness.sum()
 
-        pos_bbox_preds_selected = torch.max(pos_ious_list[0], pos_ious_list[1])
-        pos_bbox_preds_selected = torch.max(pos_bbox_preds_selected, pos_ious_list[2])
-        
-        # get predctions corresponding to new assigned targets
-        p3_inds = (pos_bbox_preds_selected == pos_ious_list[0]).nonzero()
-        p4_inds = (pos_bbox_preds_selected == pos_ious_list[1]).nonzero()
-        p5_inds = (pos_bbox_preds_selected == pos_ious_list[2]).nonzero()
+        if self.training_iter <= 1000:
+            pos_decoded_bbox_preds  = torch.cat([pos_bbox_preds_list[0], pos_bbox_preds_list[1], pos_bbox_preds_list[2]])
+            pos_centerness = torch.cat([pos_centerness_list[0], pos_centerness_list[1], pos_centerness_list[2]])
+            pos_decoded_target_preds = pos_decoded_target_preds.repeat(3,1)
+            pos_centerness_targets = torch.cat([pos_centerness_targets_list[0], pos_centerness_targets_list[1], pos_centerness_targets_list[2]])
+            flatten_labels = flatten_labels_list[0] + flatten_labels_list[1] + flatten_labels_list[2]
 
-        pos_decoded_bbox_preds = torch.cat([pos_bbox_preds_list[0][p3_inds], pos_bbox_preds_list[1][p4_inds], pos_bbox_preds_list[2][p5_inds]]).reshape(-1, 4)
-        pos_centerness = torch.cat([pos_centerness_list[0][p3_inds], pos_centerness_list[1][p4_inds], pos_centerness_list[2][p5_inds]]).reshape(-1)
-        
-        new_flatten_labels = torch.zeros_like(flatten_labels)
-        new_flatten_labels[pos_inds_list[0][p3_inds]] = flatten_labels_list[0][pos_inds_list[0][p3_inds]]
-        new_flatten_labels[pos_inds_list[1][p4_inds]] = flatten_labels_list[1][pos_inds_list[1][p4_inds]]
-        new_flatten_labels[pos_inds_list[2][p5_inds]] = flatten_labels_list[2][pos_inds_list[2][p5_inds]]
+            loss_bbox = self.loss_bbox(
+                    pos_decoded_bbox_preds,
+                    pos_decoded_target_preds,
+                    weight=pos_centerness_targets,
+                    avg_factor=pos_centerness_targets.sum())
+            loss_centerness = self.loss_centerness(pos_centerness,
+                                                pos_centerness_targets)
+            loss_cls = self.loss_cls(
+                    flatten_cls_scores, flatten_labels,
+                    avg_factor=num_pos * 3 + num_imgs)  # avoid num_pos is 0
+        else:
+            pos_bbox_preds_selected = torch.max(pos_ious_list[0], pos_ious_list[1])
+            pos_bbox_preds_selected = torch.max(pos_bbox_preds_selected, pos_ious_list[2])
+            
+            # get predctions corresponding to new assigned targets
+            p3_inds = (pos_bbox_preds_selected == pos_ious_list[0]).nonzero()
+            p4_inds = (pos_bbox_preds_selected == pos_ious_list[1]).nonzero()
+            p5_inds = (pos_bbox_preds_selected == pos_ious_list[2]).nonzero()
 
-        if pos_decoded_bbox_preds.shape[0] != pos_decoded_target_preds.shape[0]:
-            embed()
-        
-        loss_bbox = self.loss_bbox(
-                pos_decoded_bbox_preds, 
-                pos_decoded_target_preds,
-                weight=pos_centerness_targets,
-                avg_factor=pos_centerness_targets.sum()) 
-        loss_centerness = self.loss_centerness(pos_centerness,
-                                pos_centerness_targets)
-        loss_cls = self.loss_cls(
-                flatten_cls_scores, new_flatten_labels,
-                avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
+            pos_decoded_bbox_preds = torch.cat([pos_bbox_preds_list[0][p3_inds], pos_bbox_preds_list[1][p4_inds], pos_bbox_preds_list[2][p5_inds]]).reshape(-1, 4)
+            pos_centerness = torch.cat([pos_centerness_list[0][p3_inds], pos_centerness_list[1][p4_inds], pos_centerness_list[2][p5_inds]]).reshape(-1)
+            
+            new_flatten_labels = torch.zeros_like(flatten_labels)
+            new_flatten_labels[pos_inds_list[0][p3_inds]] = flatten_labels_list[0][pos_inds_list[0][p3_inds]]
+            new_flatten_labels[pos_inds_list[1][p4_inds]] = flatten_labels_list[1][pos_inds_list[1][p4_inds]]
+            new_flatten_labels[pos_inds_list[2][p5_inds]] = flatten_labels_list[2][pos_inds_list[2][p5_inds]]
+
+            if pos_decoded_bbox_preds.shape[0] != pos_decoded_target_preds.shape[0]:
+                embed()
+            
+            loss_bbox = self.loss_bbox(
+                    pos_decoded_bbox_preds, 
+                    pos_decoded_target_preds,
+                    weight=pos_centerness_targets,
+                    avg_factor=pos_centerness_targets.sum()) 
+            loss_centerness = self.loss_centerness(pos_centerness,
+                                    pos_centerness_targets)
+            loss_cls = self.loss_cls(
+                    flatten_cls_scores, new_flatten_labels,
+                    avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
 
         return dict(
             loss_cls=loss_cls,
