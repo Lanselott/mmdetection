@@ -241,7 +241,6 @@ class FairLossAssignHead(nn.Module):
             loss_cls = self.loss_cls(
                     flatten_cls_scores, flatten_labels,
                     avg_factor=num_pos * 3 + num_imgs)  # avoid num_pos is 0
-            print(self.fair_train_iter)
             
             self.fair_train_iter -= 1
         else:
