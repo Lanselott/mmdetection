@@ -36,6 +36,7 @@ class FairLossAssignHead(nn.Module):
                  stacked_convs=4,
                  strides=(4, 8, 16, 32, 64),
                  regress_ranges=[((-1, INF), (-1, INF), (-1, INF))],
+                 fair_train_iter=1000,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -64,7 +65,7 @@ class FairLossAssignHead(nn.Module):
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
-        self.training_iter = 0
+        self.fair_train_iter = fair_train_iter
         self._init_layers()
 
     def _init_layers(self):
@@ -223,7 +224,7 @@ class FairLossAssignHead(nn.Module):
                 loss_bbox = pos_bbox_preds.sum()
                 loss_centerness = pos_centerness.sum()
 
-        if self.training_iter <= 1000:
+        if self.fair_train_iter <= 1000:
             pos_decoded_bbox_preds  = torch.cat([pos_bbox_preds_list[0], pos_bbox_preds_list[1], pos_bbox_preds_list[2]])
             pos_centerness = torch.cat([pos_centerness_list[0], pos_centerness_list[1], pos_centerness_list[2]])
             pos_decoded_target_preds = pos_decoded_target_preds.repeat(3,1)
