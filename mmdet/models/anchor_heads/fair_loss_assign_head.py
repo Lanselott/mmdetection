@@ -154,6 +154,7 @@ class FairLossAssignHead(nn.Module):
         pos_ious_list = []
         pos_bbox_preds_list = []
         pos_centerness_list = []
+        pos_centerness_targets_list = []
         pos_inds_list = []
         flatten_labels_list = []
         for regress_range in self.regress_ranges:
@@ -198,6 +199,7 @@ class FairLossAssignHead(nn.Module):
             if num_pos > 0:
                 pos_bbox_targets = flatten_bbox_targets[pos_inds]
                 pos_centerness_targets = self.centerness_target(pos_bbox_targets)
+                pos_centerness_targets_list.append(pos_centerness_targets)
                 pos_points = flatten_points[pos_inds]
                 pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
                 pos_decoded_target_preds = distance2bbox(pos_points,
@@ -237,6 +239,9 @@ class FairLossAssignHead(nn.Module):
         new_flatten_labels[pos_inds_list[1][p4_inds]] = flatten_labels_list[1][pos_inds_list[1][p4_inds]]
         new_flatten_labels[pos_inds_list[2][p5_inds]] = flatten_labels_list[2][pos_inds_list[2][p5_inds]]
 
+        if pos_decoded_bbox_preds.shape[0] != pos_decoded_target_preds.shape[0]:
+            embed()
+        
         loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds, 
                 pos_decoded_target_preds,
