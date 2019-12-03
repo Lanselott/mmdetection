@@ -12,13 +12,13 @@ model = dict(
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe'),
     neck=dict(
-        type='FPN',
+        type='FPNFair',
         in_channels=[256, 512, 1024, 2048],
         out_channels=256,
         start_level=1,
-        add_extra_convs=True,
+        add_extra_convs=False,
         extra_convs_on_inputs=False,  # use P5
-        num_outs=5,
+        num_outs=3,
         relu_before_extra_convs=True),
     bbox_head=dict(
         type='FCOSGradientAssignHead',
@@ -26,10 +26,9 @@ model = dict(
         in_channels=256,
         stacked_convs=4,
         feat_channels=256,
-        strides=[8, 16, 32, 64, 128],
-        regress_ranges=[((-1, 64), (64, 128), (128, 256), (256, 512), (512,                    INF)), 
-                        ((-1, 64), (64, 128), (128, 256), (512, INF), (256, 512)),
-                        ],
+        strides=[8, 8, 8],
+        regress_ranges=[((-1, 256), (256, 512),
+                                 (512, INF))],
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,

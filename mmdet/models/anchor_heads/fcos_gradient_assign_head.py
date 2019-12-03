@@ -35,9 +35,9 @@ class FCOSGradientAssignHead(nn.Module):
                  feat_channels=256,
                  stacked_convs=4,
                  strides=(4, 8, 16, 32, 64),
-                 regress_ranges=[((-1, 64), (64, 128), (128, 256), (256, 512),
+                 regress_ranges=[((-1, 128), (128, 512),
                                  (512, INF)), 
-                                 ((64, 128), (-1, 64), (128, 256), (256, 512),
+                                 ((128, 512), (-1, 128),
                                  (512, INF))],
                 #  regress_ranges=[((64, 128), (-1, 64), (128, 256), (256, 512),
                 #                  (512, INF))],
@@ -147,7 +147,6 @@ class FCOSGradientAssignHead(nn.Module):
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         all_level_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                            bbox_preds[0].device)
-
         '''
         regress_ranges=[((-1, 64), (64, 128), (128, 256), (256, 512),
                                  (512, INF)), 
