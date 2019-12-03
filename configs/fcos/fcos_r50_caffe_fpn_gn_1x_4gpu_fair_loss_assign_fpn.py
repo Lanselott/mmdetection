@@ -41,6 +41,7 @@ model = dict(
                         ((-1, -1), (-1, -1),
                                   (-1, INF)),
                         ],
+        fair_train_iter = 3000,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
