@@ -244,9 +244,8 @@ class FairLossAssignHead(nn.Module):
                 avg_factor=pos_centerness_targets.sum()) 
         loss_centerness = self.loss_centerness(pos_centerness,
                                 pos_centerness_targets)
-
         loss_cls = self.loss_cls(
-                flatten_cls_scores, flatten_labels,
+                flatten_cls_scores, new_flatten_labels,
                 avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
 
         return dict(
