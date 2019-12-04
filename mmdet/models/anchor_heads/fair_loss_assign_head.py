@@ -219,30 +219,34 @@ class FairLossAssignHead(nn.Module):
 
                 pos_bbox_preds_list.append(pos_decoded_bbox_preds)
                 pos_centerness_list.append(pos_centerness)
-                pos_ious_list.append(bbox_overlaps(pos_decoded_bbox_preds, pos_decoded_target_preds, is_aligned=True))  
+                pos_ious_list.append(bbox_overlaps(pos_decoded_bbox_preds, pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6))  
             else:
                 loss_bbox = pos_bbox_preds.sum()
                 loss_centerness = pos_centerness.sum()
 
         if self.fair_train_iter > 0:
+
             pos_decoded_bbox_preds  = torch.cat([pos_bbox_preds_list[0], pos_bbox_preds_list[1], pos_bbox_preds_list[2]])
             pos_centerness = torch.cat([pos_centerness_list[0], pos_centerness_list[1], pos_centerness_list[2]])
             pos_decoded_target_preds = pos_decoded_target_preds.repeat(3,1)
             pos_centerness_targets = torch.cat([pos_centerness_targets_list[0], pos_centerness_targets_list[1], pos_centerness_targets_list[2]])
             flatten_labels = flatten_labels_list[0] + flatten_labels_list[1] + flatten_labels_list[2]
+            pos_centerness_pred_targets = torch.cat([pos_ious_list[0], pos_ious_list[1], pos_ious_list[2]]).sigmoid()
 
             loss_bbox = self.loss_bbox(
                     pos_decoded_bbox_preds,
                     pos_decoded_target_preds,
-                    weight=pos_centerness_targets,
-                    avg_factor=pos_centerness_targets.sum())
+                    weight=pos_centerness_pred_targets,
+                    avg_factor=pos_centerness_pred_targets.sum())
+
             loss_centerness = self.loss_centerness(pos_centerness,
-                                                pos_centerness_targets)
+                                                pos_centerness_pred_targets)
             loss_cls = self.loss_cls(
                     flatten_cls_scores, flatten_labels,
                     avg_factor=num_pos * 3 + num_imgs)  # avoid num_pos is 0
             
-            self.fair_train_iter -= 1
+            # self.fair_train_iter -= 1
+        '''
         else:
             pos_bbox_preds_selected = torch.max(pos_ious_list[0], pos_ious_list[1])
             pos_bbox_preds_selected = torch.max(pos_bbox_preds_selected, pos_ious_list[2])
@@ -273,7 +277,7 @@ class FairLossAssignHead(nn.Module):
             loss_cls = self.loss_cls(
                     flatten_cls_scores, new_flatten_labels,
                     avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
-
+        '''
         return dict(
             loss_cls=loss_cls,
             loss_bbox=loss_bbox,
