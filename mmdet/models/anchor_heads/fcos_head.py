@@ -316,6 +316,7 @@ class FCOSHead(nn.Module):
 
     def fcos_target(self, points, gt_bboxes_list, gt_labels_list):
         assert len(points) == len(self.regress_ranges)
+        embed()
         num_levels = len(points)
         # expand regress ranges to align with points
         expanded_regress_ranges = [
