@@ -71,6 +71,9 @@ class FCOSDeeperFeedbackHead(nn.Module):
     def _init_layers(self):
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
+
+        self.cls_reg_feedback_convs = nn.ModuleList()
+
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
             self.cls_convs.append(
@@ -100,11 +103,26 @@ class FCOSDeeperFeedbackHead(nn.Module):
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
+        self.cls_reg_feedback_convs.append(
+            ConvModule(
+                chn,
+                self.feat_channels,
+                3,
+                stride=1,
+                padding=1,
+                conv_cfg=self.conv_cfg,
+                norm_cfg=self.norm_cfg,
+                bias=self.norm_cfg is None))
+        
+
     def init_weights(self):
         for m in self.cls_convs:
             normal_init(m.conv, std=0.01)
         for m in self.reg_convs:
             normal_init(m.conv, std=0.01)
+        for m in self.cls_reg_feedback_convs:
+            normal_init(m.conv, std=0.01)            
+
         bias_cls = bias_init_with_prob(0.01)
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
@@ -117,10 +135,9 @@ class FCOSDeeperFeedbackHead(nn.Module):
         cls_feat = x
         reg_feat = x
 
+        # detach the block
         for cls_layer in self.cls_convs:
             cls_feat = cls_layer(cls_feat)
-        cls_score = self.fcos_cls(cls_feat)
-        centerness = self.fcos_centerness(cls_feat)
 
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
@@ -128,9 +145,20 @@ class FCOSDeeperFeedbackHead(nn.Module):
         '''
         cls/regression feedback to all feature pyramids
         '''
-        reg_feat.detach()
-        cls
-        embed()
+        for feedback_layer in self.cls_reg_feedback_convs:
+            pyramid_weight = feedback_layer(cls_feat.detach() + reg_feat.detach()).sigmoid()
+
+        # weighted pyramids
+        cls_feat = x * pyramid_weight
+        reg_feat = x * pyramid_weight
+
+        for cls_layer in self.cls_convs:
+            cls_feat = cls_layer(cls_feat)
+        cls_score = self.fcos_cls(cls_feat)
+        centerness = self.fcos_centerness(cls_feat)
+
+        for reg_layer in self.reg_convs:
+            reg_feat = reg_layer(reg_feat)
 
         # scale the bbox_pred of different level
         # float to avoid overflow when enabling FP16
