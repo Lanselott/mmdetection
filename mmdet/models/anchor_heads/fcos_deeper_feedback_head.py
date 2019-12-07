@@ -255,7 +255,7 @@ class FCOSDeeperFeedbackHead(nn.Module):
             pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
             pos_decoded_target_preds = distance2bbox(pos_points,
                                                      pos_bbox_targets)
-            pos_centerness_targets = bbox_overlaps(pos_decoded_bbox_preds, pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
+            pos_centerness_targets = bbox_overlaps(pos_decoded_bbox_preds.detach(), pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
 
             # centerness weighted iou loss
             loss_bbox = self.loss_bbox(
