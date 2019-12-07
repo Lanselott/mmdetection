@@ -2,10 +2,12 @@ import torch
 import torch.nn as nn
 from mmcv.cnn import normal_init
 
-from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms
+from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms, bbox_overlaps
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import ConvModule, Scale, bias_init_with_prob
+from mmdet.ops import DeformConv, MaskedConv2d
+
 from IPython import embed
 INF = 1e8
 
@@ -103,6 +105,31 @@ class FCOSDeeperFeedbackHead(nn.Module):
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
+        '''
+        feedback blocks
+        '''
+        kernel_size = 3
+        deformable_groups = 4
+        offset_channels = kernel_size * kernel_size * 2
+
+        self.cls_feedback_offset = nn.Conv2d(
+            self.feat_channels, deformable_groups * offset_channels, 3, padding=1, bias=False)
+        self.reg_feedback_offset = nn.Conv2d(
+            self.feat_channels, deformable_groups * offset_channels, 3, padding=1, bias=False)
+
+        self.cls_feedback_deformconv = DeformConv(
+            self.in_channels,
+            self.feat_channels,
+            kernel_size=kernel_size,
+            padding=(kernel_size - 1) // 2,
+            deformable_groups=deformable_groups)
+        self.reg_feedback_deformconv = DeformConv(
+            self.in_channels,
+            self.feat_channels,
+            kernel_size=kernel_size,
+            padding=(kernel_size - 1) // 2,
+            deformable_groups=deformable_groups)
+
         self.cls_reg_feedback_convs.append(
             ConvModule(
                 chn,
@@ -113,7 +140,6 @@ class FCOSDeeperFeedbackHead(nn.Module):
                 conv_cfg=self.conv_cfg,
                 norm_cfg=self.norm_cfg,
                 bias=self.norm_cfg is None))
-        
 
     def init_weights(self):
         for m in self.cls_convs:
@@ -135,19 +161,28 @@ class FCOSDeeperFeedbackHead(nn.Module):
         cls_feat = x
         reg_feat = x
 
+        cls_feat_residual = x
+        reg_feat_residual = x
         # detach the block
         for cls_layer in self.cls_convs:
             cls_feat = cls_layer(cls_feat)
+            cls_feat_residual = cls_feat_residual + cls_feat
 
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
-        
+            reg_feat_residual = reg_feat_residual + reg_feat
+
+        cls_offset = self.cls_feedback_offset(cls_feat_residual.detach())
+        reg_offset = self.reg_feedback_offset(reg_feat_residual.detach())
+
+        cls_feat_residual = self.cls_feedback_deformconv(cls_feat_residual, cls_offset)
+        reg_feat_residual = self.reg_feedback_deformconv(reg_feat_residual, reg_offset)
         '''
         cls/regression feedback to all feature pyramids
         '''
         for feedback_layer in self.cls_reg_feedback_convs:
-            pyramid_weight = feedback_layer(cls_feat.detach() + reg_feat.detach()).sigmoid()
-
+            pyramid_weight = feedback_layer(cls_feat_residual.detach() + reg_feat_residual.detach()).sigmoid()
+        
         # weighted pyramids
         cls_feat = x * pyramid_weight
         reg_feat = x * pyramid_weight
@@ -216,11 +251,12 @@ class FCOSDeeperFeedbackHead(nn.Module):
 
         if num_pos > 0:
             pos_bbox_targets = flatten_bbox_targets[pos_inds]
-            pos_centerness_targets = self.centerness_target(pos_bbox_targets)
             pos_points = flatten_points[pos_inds]
             pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
             pos_decoded_target_preds = distance2bbox(pos_points,
                                                      pos_bbox_targets)
+            pos_centerness_targets = bbox_overlaps(pos_decoded_bbox_preds, pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
+
             # centerness weighted iou loss
             loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds,

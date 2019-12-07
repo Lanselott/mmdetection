@@ -406,7 +406,7 @@ class FCOSConventionAssignHead(nn.Module):
                 max_regress_distance <= regress_ranges[..., 1])
         '''
         inside_regress_range = (level.float() == regress_levels[..., 0])
-        
+        embed()
         # if there are still more than one objects for a location,
         # we choose the one with minimal area
         areas[inside_gt_bbox_mask == 0] = INF
