@@ -15,11 +15,14 @@ from .fair_loss_assign_head import FairLossAssignHead
 from .fcos_convention_assign_head import FCOSConventionAssignHead
 from .fcos_deeper_feedback_head import FCOSDeeperFeedbackHead
 from .fcos_deeper_feedback_head_v2 import FCOSDeeperFeedbackHeadV2
+from .fcos_deeper_feedback_head_v3 import FCOSDeeperFeedbackHeadV3
 from .fcos_merged_head import FCOSMergedHead
+from .fcos_deeper_feedback_head_v1s import FCOSDeeperFeedbackHeadV1S
 
 __all__ = [
     'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption', 'RPNHead',
     'GARPNHead', 'RetinaHead', 'GARetinaHead', 'SSDHead', 'FCOSHead',
     'RepPointsHead', 'FoveaHead', 'FreeAnchorRetinaHead', 'FCOSRandomAssignHead', 
-    'FCOSGradientAssignHead', 'FairLossAssignHead', 'FCOSConventionAssignHead', 'FCOSDeeperFeedbackHead', 'FCOSMergedHead', 'FCOSDeeperFeedbackHeadV2'
+    'FCOSGradientAssignHead', 'FairLossAssignHead', 'FCOSConventionAssignHead', 'FCOSDeeperFeedbackHead', 'FCOSMergedHead', 'FCOSDeeperFeedbackHeadV2',
+    'FCOSDeeperFeedbackHeadV3', 'FCOSDeeperFeedbackHeadV1S'
 ]
