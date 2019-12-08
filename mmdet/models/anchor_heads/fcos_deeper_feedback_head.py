@@ -103,6 +103,7 @@ class FCOSDeeperFeedbackHead(nn.Module):
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
 
+        self.relu = nn.ReLU(inplace=True)
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
         '''
@@ -190,14 +191,15 @@ class FCOSDeeperFeedbackHead(nn.Module):
         for cls_layer in self.cls_convs:
             cls_feat = cls_layer(cls_feat)
         cls_score = self.fcos_cls(cls_feat)
-        centerness = self.fcos_centerness(cls_feat)
+        centerness = self.fcos_centerness(reg_feat)
 
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
 
         # scale the bbox_pred of different level
         # float to avoid overflow when enabling FP16
-        bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
+        bbox_pred = self.relu(scale(self.fcos_reg(reg_feat)).float())
+
         return cls_score, bbox_pred, centerness
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
@@ -214,7 +216,7 @@ class FCOSDeeperFeedbackHead(nn.Module):
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         all_level_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                            bbox_preds[0].device)
-        labels, bbox_targets = self.fcos_target(all_level_points, gt_bboxes,
+        labels, bbox_targets, bbox_strided_targets, bbox_strides = self.fcos_target(all_level_points, gt_bboxes,
                                                 gt_labels)
 
         num_imgs = cls_scores[0].size(0)
@@ -236,6 +238,7 @@ class FCOSDeeperFeedbackHead(nn.Module):
         flatten_centerness = torch.cat(flatten_centerness)
         flatten_labels = torch.cat(labels)
         flatten_bbox_targets = torch.cat(bbox_targets)
+        flatten_bbox_strides = torch.cat(bbox_strides)
         # repeat points to align with bbox_preds
         flatten_points = torch.cat(
             [points.repeat(num_imgs, 1) for points in all_level_points])
@@ -248,11 +251,14 @@ class FCOSDeeperFeedbackHead(nn.Module):
 
         pos_bbox_preds = flatten_bbox_preds[pos_inds]
         pos_centerness = flatten_centerness[pos_inds]
+        pos_bbox_strides = flatten_bbox_strides[pos_inds]
+
 
         if num_pos > 0:
             pos_bbox_targets = flatten_bbox_targets[pos_inds]
             pos_points = flatten_points[pos_inds]
-            pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
+            # pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
+            pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds * pos_bbox_strides)
             pos_decoded_target_preds = distance2bbox(pos_points,
                                                      pos_bbox_targets)
             pos_centerness_targets = bbox_overlaps(pos_decoded_bbox_preds.detach(), pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
@@ -416,13 +422,25 @@ class FCOSDeeperFeedbackHead(nn.Module):
         # concat per level image
         concat_lvl_labels = []
         concat_lvl_bbox_targets = []
+        concat_lvl_bbox_strided_targets = []
+        concat_lvl_strides = []
         for i in range(num_levels):
+            stride = torch.ones(1, device=bbox_targets_list[0][0].device)
+            stride[0] = self.strides[i]
+
             concat_lvl_labels.append(
                 torch.cat([labels[i] for labels in labels_list]))
             concat_lvl_bbox_targets.append(
                 torch.cat(
                     [bbox_targets[i] for bbox_targets in bbox_targets_list]))
-        return concat_lvl_labels, concat_lvl_bbox_targets
+            concat_lvl_bbox_strided_targets.append(
+                torch.cat(
+                    [bbox_targets[i] / self.strides[i] for bbox_targets in bbox_targets_list]))
+            concat_lvl_strides.append(
+                torch.cat(
+                    [stride.expand_as(bbox_targets[i]) for bbox_targets in bbox_targets_list]))
+
+        return concat_lvl_labels, concat_lvl_bbox_targets, concat_lvl_bbox_strided_targets, concat_lvl_strides
 
     def fcos_target_single(self, gt_bboxes, gt_labels, points, regress_ranges):
         num_points = points.size(0)
