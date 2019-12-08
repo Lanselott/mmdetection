@@ -176,13 +176,13 @@ class FCOSDeeperFeedbackHeadV1S(nn.Module):
         cls_offset = self.cls_feedback_offset(cls_feat_residual.detach())
         reg_offset = self.reg_feedback_offset(reg_feat_residual.detach())
 
-        cls_feat_residual = self.cls_feedback_deformconv(cls_feat_residual, cls_offset)
-        reg_feat_residual = self.reg_feedback_deformconv(reg_feat_residual, reg_offset)
+        cls_feat_residual = self.cls_feedback_deformconv(cls_feat_residual.detach(), cls_offset)
+        reg_feat_residual = self.reg_feedback_deformconv(reg_feat_residual.detach(), reg_offset)
         '''
         cls/regression feedback to all feature pyramids
         '''
         for feedback_layer in self.cls_reg_feedback_convs:
-            pyramid_weight = feedback_layer(cls_feat_residual.detach() + reg_feat_residual.detach()).sigmoid()
+            pyramid_weight = feedback_layer(cls_feat_residual + reg_feat_residual).sigmoid()
         
         # weighted pyramids
         cls_feat = x * pyramid_weight
