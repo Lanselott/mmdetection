@@ -327,14 +327,16 @@ class FCOSDeeperFeedbackHeadV1S(nn.Module):
         mlvl_bboxes = []
         mlvl_scores = []
         mlvl_centerness = []
-        for cls_score, bbox_pred, centerness, points in zip(
-                cls_scores, bbox_preds, centernesses, mlvl_points):
+        for cls_score, bbox_pred, centerness, points, stride in zip(
+                cls_scores, bbox_preds, centernesses, mlvl_points, self.strides):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
             centerness = centerness.permute(1, 2, 0).reshape(-1).sigmoid()
 
             bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
+            bbox_pred = bbox_pred * stride
+            
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
                 max_scores, _ = (scores * centerness[:, None]).max(dim=1)
