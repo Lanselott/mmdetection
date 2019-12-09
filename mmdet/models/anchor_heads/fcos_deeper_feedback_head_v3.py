@@ -142,6 +142,7 @@ class FCOSDeeperFeedbackHeadV3(nn.Module):
                 conv_cfg=self.conv_cfg,
                 norm_cfg=self.norm_cfg,
                 bias=self.norm_cfg is None))
+        self.cross_levels_fc = nn.Linear(5 * self.feat_channels, 5 * self.feat_channels)
 
     def init_weights(self):
         for m in self.cls_convs:
@@ -157,8 +158,28 @@ class FCOSDeeperFeedbackHeadV3(nn.Module):
         normal_init(self.fcos_centerness, std=0.01)
 
     def forward(self, feats):
-        cls_feat_residual, reg_feat_residual =  multi_apply(self.forward_single, feats, self.scales)
-        return multi_apply(self.foward_feedback, cls_feat_residual, reg_feat_residual, feats, self.scales)
+        cls_feat_residuals, reg_feat_residuals =  multi_apply(self.forward_single, feats, self.scales)
+        
+        nchw = cls_feat_residuals[0].shape
+        upsampled_cls_feat_residuals = []
+        upsampled_reg_feat_residuals = []
+        
+        # upsample to max pyramid size
+        for cls_feat_residual, reg_feat_residual in zip(cls_feat_residuals, reg_feat_residuals):
+            upsampled_cls_feat_residuals.append(F.interpolate(cls_feat_residual, size=nchw[2:], mode='bilinear'))
+            upsampled_reg_feat_residuals.append(F.interpolate(reg_feat_residual, size=nchw[2:], mode='bilinear'))
+        
+        concat_cls_feat_residual = self.cross_levels_fc(torch.cat(upsampled_cls_feat_residuals, 1).permute(0, 2, 3, 1).contiguous().reshape(nchw[0], -1, 5 * self.feat_channels)).reshape(nchw[0], nchw[2], nchw[3], -1).permute(0, 3, 1, 2).contiguous()
+        concat_reg_feat_residual = self.cross_levels_fc(torch.cat(upsampled_reg_feat_residuals, 1).permute(0, 2, 3, 1).contiguous().reshape(nchw[0], -1, 5 * self.feat_channels)).reshape(nchw[0], nchw[2], nchw[3], -1).permute(0, 3, 1, 2).contiguous()
+        
+        downsampled_cls_feat_residuals = []
+        downsampled_reg_feat_residuals = []
+        # downsample to origin pyramid level
+        for i in range(5):
+            downsampled_cls_feat_residuals.append(F.interpolate(concat_cls_feat_residual[:, i * self.feat_channels:(i+1) * self.feat_channels], size=cls_feat_residuals[i].shape[2:]))
+            downsampled_reg_feat_residuals.append(F.interpolate(concat_reg_feat_residual[:, i * self.feat_channels:(i+1) * self.feat_channels], size=reg_feat_residuals[i].shape[2:]))
+        
+        return multi_apply(self.foward_feedback, tuple(downsampled_cls_feat_residuals), tuple(downsampled_reg_feat_residuals), feats, self.scales)
 
     def forward_single(self, x, scale):
         cls_feat = x
@@ -178,8 +199,8 @@ class FCOSDeeperFeedbackHeadV3(nn.Module):
         cls_offset = self.cls_feedback_offset(cls_feat_residual.detach())
         reg_offset = self.reg_feedback_offset(reg_feat_residual.detach())
 
-        cls_feat_residual = self.cls_feedback_deformconv(cls_feat_residual, cls_offset)
-        reg_feat_residual = self.reg_feedback_deformconv(reg_feat_residual, reg_offset)
+        cls_feat_residual = self.cls_feedback_deformconv(cls_feat_residual.detach(), cls_offset)
+        reg_feat_residual = self.reg_feedback_deformconv(reg_feat_residual.detach(), reg_offset)
 
         return cls_feat_residual, reg_feat_residual
     
@@ -188,8 +209,8 @@ class FCOSDeeperFeedbackHeadV3(nn.Module):
         cls/regression feedback to all feature pyramids
         '''
         for feedback_layer in self.cls_reg_feedback_convs:
-            pyramid_weight = feedback_layer(cls_feat_residual.detach() + reg_feat_residual.detach()).sigmoid()
-        embed()
+            pyramid_weight = feedback_layer(cls_feat_residual + reg_feat_residual).sigmoid()
+
         # weighted pyramids
         cls_feat = x * pyramid_weight
         reg_feat = x * pyramid_weight
@@ -206,7 +227,8 @@ class FCOSDeeperFeedbackHeadV3(nn.Module):
         # float to avoid overflow when enabling FP16
         bbox_pred = self.relu(scale(self.fcos_reg(reg_feat)).float())
 
-
+        return cls_score, bbox_pred, centerness
+        
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def loss(self,
              cls_scores,
