@@ -109,7 +109,7 @@ class FCOSDeeperFeedbackHeadV2(nn.Module):
         '''
         feedback blocks
         '''
-        kernel_size = 5
+        kernel_size = 3
         deformable_groups = 4
         offset_channels = kernel_size * kernel_size * 2
 
