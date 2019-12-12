@@ -19,6 +19,7 @@ from .fcos_deeper_feedback_head_v3 import FCOSDeeperFeedbackHeadV3
 from .fcos_deeper_feedback_head_v3s import FCOSDeeperFeedbackHeadV3S
 from .fcos_merged_head import FCOSMergedHead
 from .fcos_deeper_feedback_head_v1s import FCOSDeeperFeedbackHeadV1S
+from .mixup_fcos_head import MixupFCOSHead
 
 __all__ = [
     'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption', 'RPNHead',
@@ -26,5 +27,5 @@ __all__ = [
     'RepPointsHead', 'FoveaHead', 'FreeAnchorRetinaHead', 'FCOSRandomAssignHead', 
     'FCOSGradientAssignHead', 'FairLossAssignHead', 'FCOSConventionAssignHead', 'FCOSDeeperFeedbackHead', 
     'FCOSMergedHead', 'FCOSDeeperFeedbackHeadV2', 'FCOSDeeperFeedbackHeadV3', 'FCOSDeeperFeedbackHeadV1S', 
-    'FCOSDeeperFeedbackHeadV3S'
+    'FCOSDeeperFeedbackHeadV3S', 'MixupFCOSHead'
 ]
