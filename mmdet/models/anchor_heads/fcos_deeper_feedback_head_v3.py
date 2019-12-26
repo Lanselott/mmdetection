@@ -275,7 +275,6 @@ class FCOSDeeperFeedbackHeadV3(nn.Module):
         loss_cls = self.loss_cls(
             flatten_cls_scores, flatten_labels,
             avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
-
         pos_bbox_preds = flatten_bbox_preds[pos_inds]
         pos_centerness = flatten_centerness[pos_inds]
         pos_bbox_strides = flatten_bbox_strides[pos_inds]

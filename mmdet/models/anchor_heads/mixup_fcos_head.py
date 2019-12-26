@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from mmcv.cnn import normal_init
 
-from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms
+from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms, bbox_overlaps
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import ConvModule, Scale, bias_init_with_prob
@@ -143,7 +143,7 @@ class MixupFCOSHead(nn.Module):
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         all_level_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                            bbox_preds[0].device)
-        min_labels, max_labels, bbox_targets = self.fcos_target(all_level_points, gt_bboxes,
+        min_labels, max_labels, min_bbox_targets, max_bbox_targets = self.fcos_target(all_level_points, gt_bboxes,
                                                 gt_labels)
 
         num_imgs = cls_scores[0].size(0)
@@ -165,7 +165,9 @@ class MixupFCOSHead(nn.Module):
         flatten_centerness = torch.cat(flatten_centerness)
         flatten_min_labels = torch.cat(min_labels)
         flatten_max_labels = torch.cat(max_labels)
-        flatten_bbox_targets = torch.cat(bbox_targets)
+        flatten_min_bbox_targets = torch.cat(min_bbox_targets)
+        flatten_max_bbox_targets = torch.cat(max_bbox_targets)
+
         # repeat points to align with bbox_preds
         flatten_points = torch.cat(
             [points.repeat(num_imgs, 1) for points in all_level_points])
@@ -173,6 +175,46 @@ class MixupFCOSHead(nn.Module):
         pos_inds = flatten_min_labels.nonzero().reshape(-1)
 
         num_pos = len(pos_inds)
+
+        pos_bbox_preds = flatten_bbox_preds[pos_inds]
+        pos_centerness = flatten_centerness[pos_inds]
+
+        if num_pos > 0:
+            pos_min_bbox_targets = flatten_min_bbox_targets[pos_inds]
+            pos_max_bbox_targets = flatten_max_bbox_targets[pos_inds]
+
+            # pos_min_centerness_targets = self.centerness_target(pos_min_bbox_targets)
+            # pos_max_centerness_targets = self.centerness_target(pos_max_bbox_targets)
+
+            pos_points = flatten_points[pos_inds]
+            pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
+            pos_min_decoded_target_preds = distance2bbox(pos_points,
+                                                     pos_min_bbox_targets)
+            pos_max_decoded_target_preds = distance2bbox(pos_points,
+                                                     pos_max_bbox_targets)                                                     
+            pos_max_centerness_targets = bbox_overlaps(pos_decoded_bbox_preds.detach(), pos_max_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
+            pos_min_centerness_targets = bbox_overlaps(pos_decoded_bbox_preds.detach(), pos_min_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
+            # centerness weighted iou loss
+            loss_min_bbox = self.loss_bbox(
+                pos_decoded_bbox_preds,
+                pos_min_decoded_target_preds,
+                weight=pos_min_centerness_targets,
+                avg_factor=pos_min_centerness_targets.sum())
+            loss_max_box = self.loss_bbox(
+                pos_decoded_bbox_preds,
+                pos_max_decoded_target_preds,
+                weight=pos_max_centerness_targets,
+                avg_factor=pos_max_centerness_targets.sum())
+            loss_bbox = (loss_max_box + loss_min_bbox) / 2
+            loss_max_centerness = self.loss_centerness(pos_centerness,
+                                                   pos_max_centerness_targets)
+            loss_min_centerness = self.loss_centerness(pos_centerness,
+                                                   pos_min_centerness_targets)
+            loss_centerness = (loss_max_centerness + loss_min_centerness) / 2
+        else:
+            loss_bbox = pos_bbox_preds.sum()
+            loss_centerness = pos_centerness.sum()
+        # cls loss
         loss_cls_min = self.loss_cls(
             flatten_cls_scores, flatten_min_labels,
             avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
@@ -182,29 +224,6 @@ class MixupFCOSHead(nn.Module):
             avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
 
         loss_cls = 1 / 2.0 * (loss_cls_max + loss_cls_min)
-
-        pos_bbox_preds = flatten_bbox_preds[pos_inds]
-        pos_centerness = flatten_centerness[pos_inds]
-
-        if num_pos > 0:
-            pos_bbox_targets = flatten_bbox_targets[pos_inds]
-            pos_centerness_targets = self.centerness_target(pos_bbox_targets)
-            pos_points = flatten_points[pos_inds]
-            pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
-            pos_decoded_target_preds = distance2bbox(pos_points,
-                                                     pos_bbox_targets)
-            # centerness weighted iou loss
-            loss_bbox = self.loss_bbox(
-                pos_decoded_bbox_preds,
-                pos_decoded_target_preds,
-                weight=pos_centerness_targets,
-                avg_factor=pos_centerness_targets.sum())
-            loss_centerness = self.loss_centerness(pos_centerness,
-                                                   pos_centerness_targets)
-        else:
-            loss_bbox = pos_bbox_preds.sum()
-            loss_centerness = pos_centerness.sum()
-
         return dict(
             loss_cls=loss_cls,
             loss_bbox=loss_bbox,
@@ -334,7 +353,7 @@ class MixupFCOSHead(nn.Module):
         concat_regress_ranges = torch.cat(expanded_regress_ranges, dim=0)
         concat_points = torch.cat(points, dim=0)
         # get labels and bbox_targets of each image
-        min_labels_list, max_labels_list, bbox_targets_list = multi_apply(
+        min_labels_list, max_labels_list, min_bbox_targets_list, max_bbox_targets_list = multi_apply(
             self.fcos_target_single,
             gt_bboxes_list,
             gt_labels_list,
@@ -345,24 +364,32 @@ class MixupFCOSHead(nn.Module):
         num_points = [center.size(0) for center in points]
         min_labels_list = [labels.split(num_points, 0) for labels in min_labels_list]
         max_labels_list = [labels.split(num_points, 0) for labels in max_labels_list]
-        bbox_targets_list = [
+        min_bbox_targets_list = [
             bbox_targets.split(num_points, 0)
-            for bbox_targets in bbox_targets_list
+            for bbox_targets in min_bbox_targets_list
+        ]
+        max_bbox_targets_list = [
+            bbox_targets.split(num_points, 0)
+            for bbox_targets in max_bbox_targets_list
         ]
 
         # concat per level image
         concat_min_lvl_labels = []
         concat_max_lvl_labels = []
-        concat_lvl_bbox_targets = []
+        concat_lvl_min_bbox_targets = []
+        concat_lvl_max_bbox_targets = []
         for i in range(num_levels):
             concat_min_lvl_labels.append(
                 torch.cat([labels[i] for labels in min_labels_list]))
             concat_max_lvl_labels.append(
                 torch.cat([labels[i] for labels in max_labels_list]))
-            concat_lvl_bbox_targets.append(
+            concat_lvl_min_bbox_targets.append(
                 torch.cat(
-                    [bbox_targets[i] for bbox_targets in bbox_targets_list]))
-        return concat_min_lvl_labels, concat_max_lvl_labels, concat_lvl_bbox_targets
+                    [bbox_targets[i] for bbox_targets in min_bbox_targets_list]))
+            concat_lvl_max_bbox_targets.append(
+                torch.cat(
+                    [bbox_targets[i] for bbox_targets in max_bbox_targets_list]))
+        return concat_min_lvl_labels, concat_max_lvl_labels, concat_lvl_min_bbox_targets, concat_lvl_max_bbox_targets
 
     def fcos_target_single(self, gt_bboxes, gt_labels, points, regress_ranges):
         num_points = points.size(0)
@@ -405,7 +432,6 @@ class MixupFCOSHead(nn.Module):
 
         min_area, min_area_inds = areas.min(dim=1)
         max_area, max_area_inds = areas.max(dim=1)
-
         conflict_targets_inds = (min_area != max_area).nonzero()
 
         min_labels = gt_labels[min_area_inds]
@@ -414,9 +440,10 @@ class MixupFCOSHead(nn.Module):
         max_labels = gt_labels[max_area_inds]
         max_labels[min_area == INF] = 0 
 
-        bbox_targets = bbox_targets[range(num_points), min_area_inds]
+        min_bbox_targets = bbox_targets[range(num_points), min_area_inds]
+        max_bbox_targets = bbox_targets[range(num_points), max_area_inds]
 
-        return min_labels, max_labels, bbox_targets
+        return min_labels, max_labels, min_bbox_targets, max_bbox_targets
 
     def centerness_target(self, pos_bbox_targets):
         # only calculate pos centerness targets, otherwise there may be nan
