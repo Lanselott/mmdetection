@@ -11,7 +11,7 @@ INF = 1e8
 
 
 @HEADS.register_module
-class FCOSHead(nn.Module):
+class BoxCodingHead(nn.Module):
     """
     Fully Convolutional One-Stage Object Detection head from [1]_.
 
@@ -43,6 +43,12 @@ class FCOSHead(nn.Module):
                      gamma=2.0,
                      alpha=0.25,
                      loss_weight=1.0),
+                 loss_bit_bbox=dict(
+                     type='FocalLoss',
+                     use_sigmoid=True,
+                     gamma=2.0,
+                     alpha=0.25,
+                     loss_weight=1.0),
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
                  loss_centerness=dict(
                      type='CrossEntropyLoss',
@@ -50,7 +56,7 @@ class FCOSHead(nn.Module):
                      loss_weight=1.0),
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
-        super(FCOSHead, self).__init__()
+        super(BoxCodingHead, self).__init__()
 
         self.num_classes = num_classes
         self.cls_out_channels = num_classes - 1
@@ -60,17 +66,20 @@ class FCOSHead(nn.Module):
         self.strides = strides
         self.regress_ranges = regress_ranges
         self.loss_cls = build_loss(loss_cls)
+        self.loss_bit_bbox = build_loss(loss_bit_bbox)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
 
+        self.bit_nums = 8
         self._init_layers()
 
     def _init_layers(self):
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
+        self.bit_reg = nn.ModuleList()
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
             self.cls_convs.append(
@@ -97,6 +106,19 @@ class FCOSHead(nn.Module):
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
+        '''
+        bit coding: 
+            thousand_box_bit = (pos_bbox_targets  % 10000) // 1000
+            hundred_box_bit = (pos_bbox_targets % 1000) // 100
+            decade_box_bit = (pos_bbox_targets % 100) // 10
+            unit_box_bit = (pos_bbox_targets % 10) // 1
+            tenth_box_bit = (pos_bbox_targets % 1) // 0.1
+            percentile_box_bit = (pos_bbox_targets % 0.1) // 0.01
+            thousandth_box_bit = (pos_bbox_targets  % 0.01) // 0.001
+            milth_box_bit = (pos_bbox_targets  % 0.001) // 0.001
+        '''
+        for i in range(self.bit_nums):
+            self.bit_reg.append(nn.Conv2d(self.feat_channels, 10 * 4, 3, padding=1)) # 10 bits * (l, t, r, b)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
@@ -105,6 +127,9 @@ class FCOSHead(nn.Module):
             normal_init(m.conv, std=0.01)
         for m in self.reg_convs:
             normal_init(m.conv, std=0.01)
+        for m in self.bit_reg:
+            normal_init(m, std=0.01)
+
         bias_cls = bias_init_with_prob(0.01)
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
@@ -114,6 +139,8 @@ class FCOSHead(nn.Module):
         return multi_apply(self.forward_single, feats, self.scales)
 
     def forward_single(self, x, scale):
+        bit_box_prediction = []
+
         cls_feat = x
         reg_feat = x
 
@@ -127,13 +154,21 @@ class FCOSHead(nn.Module):
         # scale the bbox_pred of different level
         # float to avoid overflow when enabling FP16
         bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
-        return cls_score, bbox_pred, centerness
+
+        '''
+        bit coding:
+        '''
+        for bit_reg_layer in self.bit_reg:
+            bit_box_prediction.append(bit_reg_layer(reg_feat))
+
+        return cls_score, bbox_pred, centerness, bit_box_prediction
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def loss(self,
              cls_scores,
              bbox_preds,
              centernesses,
+             bit_box_predictions,
              gt_bboxes,
              gt_labels,
              img_metas,
@@ -177,6 +212,18 @@ class FCOSHead(nn.Module):
 
         pos_bbox_preds = flatten_bbox_preds[pos_inds]
         pos_centerness = flatten_centerness[pos_inds]
+        pos_bbox_bit_preds = [[], [], [], [], [], [], [], []]
+        levels = len(bit_box_predictions)
+        
+        for i in range(levels):
+            bit_box_preds = bit_box_predictions[i]
+            for j in range(self.bit_nums): # per level 
+                bit_box_pred = bit_box_preds[j]
+                pos_bbox_bit_preds[j].append(
+                    torch.cat([bit_box_pred.permute(0, 2, 3, 1).reshape(-1, 40)])
+                )
+        for k in range(self.bit_nums):
+            pos_bbox_bit_preds[k] = torch.cat(pos_bbox_bit_preds[k])[pos_inds]
 
         if num_pos > 0:
             pos_bbox_targets = flatten_bbox_targets[pos_inds]
@@ -185,21 +232,45 @@ class FCOSHead(nn.Module):
             pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
             pos_decoded_target_preds = distance2bbox(pos_points,
                                                      pos_bbox_targets)
-            # centerness weighted iou loss
-            loss_bbox = self.loss_bbox(
-                pos_decoded_bbox_preds,
-                pos_decoded_target_preds,
-                weight=pos_centerness_targets,
-                avg_factor=pos_centerness_targets.sum())
+            '''
+            NOTE: test on box coding
+            Box Coding:
+            '''
+            pos_bbox_bit_targets_list = []
+            bit_loc = 10000
+            for l in range(self.bit_nums):
+                pos_bbox_bit_targets_list.append((pos_bbox_targets  % bit_loc) // (bit_loc / 10.0))
+                bit_loc = bit_loc / 10
+            # thousand_box_bit = (pos_bbox_targets  % 10000) // 1000
+            # hundred_box_bit = (pos_bbox_targets % 1000) // 100
+            # decade_box_bit = (pos_bbox_targets % 100) // 10
+            # unit_box_bit = (pos_bbox_targets % 10) // 1
+            # tenth_box_bit = (pos_bbox_targets % 1) // 0.1
+            # percentile_box_bit = (pos_bbox_targets % 0.1) // 0.01
+            # thousandth_box_bit = (pos_bbox_targets  % 0.01) // 0.001
+            # milth_box_bit = (pos_bbox_targets  % 0.001) // 0.001
+            loss_bit_bbox = 0
+            for pos_bbox_bit_pred, pos_bbox_bit_targets in zip(pos_bbox_bit_preds, pos_bbox_bit_targets_list):
+                loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
+                                                    pos_bbox_bit_targets.long().reshape(-1), 
+                                                    avg_factor=num_pos + num_imgs)
+            loss_bit_bbox = loss_bit_bbox / self.bit_nums
+            # # centerness weighted iou loss
+            # loss_bbox = self.loss_bbox(
+            #     pos_decoded_bbox_preds,
+            #     pos_decoded_target_preds,
+            #     weight=pos_centerness_targets,
+            #     avg_factor=pos_centerness_targets.sum())
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
         else:
-            loss_bbox = pos_bbox_preds.sum()
+            # loss_bbox = pos_bbox_preds.sum()
+            loss_bit_bbox = pos_bbox_bit_pred[0].sum()
             loss_centerness = pos_centerness.sum()
-
         return dict(
             loss_cls=loss_cls,
-            loss_bbox=loss_bbox,
+            # loss_bbox=loss_bbox,
+            loss_bit_bbox=loss_bit_bbox,
             loss_centerness=loss_centerness)
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
