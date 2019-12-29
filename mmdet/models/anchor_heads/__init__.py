@@ -21,11 +21,13 @@ from .fcos_merged_head import FCOSMergedHead
 from .fcos_deeper_feedback_head_v1s import FCOSDeeperFeedbackHeadV1S
 from .mixup_fcos_head import MixupFCOSHead
 from .box_coding_head import BoxCodingHead
+from .box_coding_headV2 import BoxCodingHeadV2
 __all__ = [
     'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption', 'RPNHead',
     'GARPNHead', 'RetinaHead', 'GARetinaHead', 'SSDHead', 'FCOSHead',
     'RepPointsHead', 'FoveaHead', 'FreeAnchorRetinaHead', 'FCOSRandomAssignHead', 
     'FCOSGradientAssignHead', 'FairLossAssignHead', 'FCOSConventionAssignHead', 'FCOSDeeperFeedbackHead', 
     'FCOSMergedHead', 'FCOSDeeperFeedbackHeadV2', 'FCOSDeeperFeedbackHeadV3', 'FCOSDeeperFeedbackHeadV1S', 
-    'FCOSDeeperFeedbackHeadV3S', 'MixupFCOSHead', 'BoxCodingHead'
+    'FCOSDeeperFeedbackHeadV3S', 'MixupFCOSHead', 'BoxCodingHead', 
+    'BoxCodingHeadV2'
 ]

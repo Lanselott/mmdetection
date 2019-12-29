@@ -11,7 +11,7 @@ INF = 1e8
 
 
 @HEADS.register_module
-class BoxCodingHead(nn.Module):
+class BoxCodingHeadV2(nn.Module):
     """
     Fully Convolutional One-Stage Object Detection head from [1]_.
 
@@ -56,7 +56,7 @@ class BoxCodingHead(nn.Module):
                      loss_weight=1.0),
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
-        super(BoxCodingHead, self).__init__()
+        super(BoxCodingHeadV2, self).__init__()
 
         self.num_classes = num_classes
         self.cls_out_channels = num_classes - 1
@@ -79,6 +79,7 @@ class BoxCodingHead(nn.Module):
     def _init_layers(self):
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
+        self.bit_reg_convs = nn.ModuleList()
         self.bit_reg = nn.ModuleList()
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
@@ -110,6 +111,16 @@ class BoxCodingHead(nn.Module):
         bit coding: 
         '''
         for i in range(self.bit_nums):
+            self.bit_reg_convs.append(
+                ConvModule(
+                    chn,
+                    self.feat_channels,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=self.norm_cfg is None))
             self.bit_reg.append(nn.Conv2d(self.feat_channels, 10 * 4, 3, padding=1)) # 10 bits * (l, t, r, b)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
@@ -118,6 +129,8 @@ class BoxCodingHead(nn.Module):
         for m in self.cls_convs:
             normal_init(m.conv, std=0.01)
         for m in self.reg_convs:
+            normal_init(m.conv, std=0.01)
+        for m in self.bit_reg_convs:
             normal_init(m.conv, std=0.01)
         for m in self.bit_reg:
             normal_init(m, std=0.01)
@@ -150,8 +163,8 @@ class BoxCodingHead(nn.Module):
         '''
         bit coding:
         '''
-        for bit_reg_layer in self.bit_reg:
-            bit_box_prediction.append(bit_reg_layer(reg_feat))
+        for bit_reg_conv, bit_reg_layer in zip(self.bit_reg_convs, self.bit_reg):
+            bit_box_prediction.append(bit_reg_layer(bit_reg_conv(reg_feat)))
 
         return cls_score, bbox_pred, centerness, bit_box_prediction
 
@@ -250,7 +263,6 @@ class BoxCodingHead(nn.Module):
                                                     pos_bbox_bit_targets.long().reshape(-1), 
                                                     avg_factor=num_pos + num_imgs)
             loss_bit_bbox = loss_bit_bbox / self.bit_nums
-            embed()
             # # centerness weighted iou loss
             # loss_bbox = self.loss_bbox(
             #     pos_decoded_bbox_preds,
