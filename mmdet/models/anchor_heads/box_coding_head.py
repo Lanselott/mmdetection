@@ -108,14 +108,6 @@ class BoxCodingHead(nn.Module):
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
         '''
         bit coding: 
-            thousand_box_bit = (pos_bbox_targets  % 10000) // 1000
-            hundred_box_bit = (pos_bbox_targets % 1000) // 100
-            decade_box_bit = (pos_bbox_targets % 100) // 10
-            unit_box_bit = (pos_bbox_targets % 10) // 1
-            tenth_box_bit = (pos_bbox_targets % 1) // 0.1
-            percentile_box_bit = (pos_bbox_targets % 0.1) // 0.01
-            thousandth_box_bit = (pos_bbox_targets  % 0.01) // 0.001
-            milth_box_bit = (pos_bbox_targets  % 0.001) // 0.001
         '''
         for i in range(self.bit_nums):
             self.bit_reg.append(nn.Conv2d(self.feat_channels, 10 * 4, 3, padding=1)) # 10 bits * (l, t, r, b)
@@ -239,7 +231,7 @@ class BoxCodingHead(nn.Module):
             pos_bbox_bit_targets_list = []
             bit_loc = 10000
             for l in range(self.bit_nums):
-                pos_bbox_bit_targets_list.append((pos_bbox_targets  % bit_loc) // (bit_loc / 10.0))
+                pos_bbox_bit_targets_list.append((pos_decoded_target_preds  % bit_loc) // (bit_loc / 10.0))
                 bit_loc = bit_loc / 10
             # thousand_box_bit = (pos_bbox_targets  % 10000) // 1000
             # hundred_box_bit = (pos_bbox_targets % 1000) // 100
@@ -278,6 +270,7 @@ class BoxCodingHead(nn.Module):
                    cls_scores,
                    bbox_preds,
                    centernesses,
+                   bit_box_predictions,
                    img_metas,
                    cfg,
                    rescale=None):
@@ -288,6 +281,7 @@ class BoxCodingHead(nn.Module):
         mlvl_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                       bbox_preds[0].device)
         result_list = []
+
         for img_id in range(len(img_metas)):
             cls_score_list = [
                 cls_scores[i][img_id].detach() for i in range(num_levels)
@@ -298,19 +292,35 @@ class BoxCodingHead(nn.Module):
             centerness_pred_list = [
                 centernesses[i][img_id].detach() for i in range(num_levels)
             ]
+            bit_bbox_pred_list = []
+            for i in range(num_levels):
+                bit_bbox_pred_list.append(
+                    [bit_box_predictions[i][b][img_id].detach() for b in range(self.bit_nums)]
+                )
+            
             img_shape = img_metas[img_id]['img_shape']
             scale_factor = img_metas[img_id]['scale_factor']
             det_bboxes = self.get_bboxes_single(cls_score_list, bbox_pred_list,
                                                 centerness_pred_list,
+                                                bit_bbox_pred_list,
                                                 mlvl_points, img_shape,
                                                 scale_factor, cfg, rescale)
             result_list.append(det_bboxes)
+    
+        # for i in range(levels):
+        #     bit_box_preds = bit_box_predictions[i]
+        #     for j in range(self.bit_nums): # per level 
+        #         bit_box_pred = bit_box_preds[j]
+        #         pos_bbox_bit_preds[j].append(
+        #             torch.cat([bit_box_pred.permute(0, 2, 3, 1).reshape(-1, 40)])
+        #         )
         return result_list
 
     def get_bboxes_single(self,
                           cls_scores,
                           bbox_preds,
                           centernesses,
+                          bit_box_preds,
                           mlvl_points,
                           img_shape,
                           scale_factor,
@@ -318,37 +328,57 @@ class BoxCodingHead(nn.Module):
                           rescale=False):
         assert len(cls_scores) == len(bbox_preds) == len(mlvl_points)
         mlvl_bboxes = []
+        mlvl_bit_bboxes = [] 
         mlvl_scores = []
         mlvl_centerness = []
-        for cls_score, bbox_pred, centerness, points in zip(
-                cls_scores, bbox_preds, centernesses, mlvl_points):
+
+        for cls_score, bbox_pred, bit_bbox_pred, centerness, points in zip(
+                cls_scores, bbox_preds, bit_box_preds, centernesses, mlvl_points):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
             centerness = centerness.permute(1, 2, 0).reshape(-1).sigmoid()
 
             bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
+            '''
+            Handle bit, merge to boxes
+            '''
+            _, w, h = bit_bbox_pred[0].shape
+            bit_boxes_pred = torch.zeros([4, w ,h], device=bit_bbox_pred[0].device)
+            for bit_pred in bit_bbox_pred:
+                bit_boxes_pred = bit_boxes_pred * 10 + bit_pred.reshape(4, 10, w ,h).max(1)[1].float()
+                # Left bit to right
+
+            bit_boxes_pred = bit_boxes_pred / 10000
+            bit_boxes_pred = bit_boxes_pred.permute(1, 2, 0).reshape(-1, 4)
+
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
                 max_scores, _ = (scores * centerness[:, None]).max(dim=1)
                 _, topk_inds = max_scores.topk(nms_pre)
                 points = points[topk_inds, :]
                 bbox_pred = bbox_pred[topk_inds, :]
+                bit_boxes_pred = bit_boxes_pred[topk_inds, :]
                 scores = scores[topk_inds, :]
                 centerness = centerness[topk_inds]
             bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
+            bit_bboxes = distance2bbox(points, bit_boxes_pred, max_shape=img_shape)
             mlvl_bboxes.append(bboxes)
+            mlvl_bit_bboxes.append(bit_bboxes)
             mlvl_scores.append(scores)
             mlvl_centerness.append(centerness)
         mlvl_bboxes = torch.cat(mlvl_bboxes)
+        mlvl_bit_bboxes = torch.cat(mlvl_bit_bboxes)
         if rescale:
             mlvl_bboxes /= mlvl_bboxes.new_tensor(scale_factor)
+            mlvl_bit_bboxes /= mlvl_bit_bboxes.new_tensor(scale_factor)
         mlvl_scores = torch.cat(mlvl_scores)
         padding = mlvl_scores.new_zeros(mlvl_scores.shape[0], 1)
         mlvl_scores = torch.cat([padding, mlvl_scores], dim=1)
         mlvl_centerness = torch.cat(mlvl_centerness)
         det_bboxes, det_labels = multiclass_nms(
-            mlvl_bboxes,
+            # mlvl_bboxes,
+            mlvl_bit_bboxes,
             mlvl_scores,
             cfg.score_thr,
             cfg.nms,
