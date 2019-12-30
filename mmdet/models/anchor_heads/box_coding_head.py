@@ -73,7 +73,7 @@ class BoxCodingHead(nn.Module):
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
 
-        self.bit_nums = 7
+        self.bit_nums = 6
         self._init_layers()
 
     def _init_layers(self):
@@ -205,7 +205,7 @@ class BoxCodingHead(nn.Module):
 
         pos_bbox_preds = flatten_bbox_preds[pos_inds]
         pos_centerness = flatten_centerness[pos_inds]
-        pos_scales = flatten_scales[pos_inds]
+        pos_scales = flatten_scales[pos_inds].float().cuda()
         pos_bbox_bit_preds = [[], [], [], [], [], [], [], []]
         levels = len(bit_box_predictions)
         
@@ -231,10 +231,13 @@ class BoxCodingHead(nn.Module):
             Box Coding:
             '''
             # Normalized and rerange coordinates
-            pos_decoded_target_preds /= pos_scales.reshape(-1, 1).cuda()
+            pos_decoded_target_preds[:, (0, 2)] /= pos_scales[:, 1].reshape(-1, 1)
+            pos_decoded_target_preds[:, (1, 3)] /= pos_scales[:, 0].reshape(-1, 1)
+
             # print("max value:", pos_decoded_target_preds.max(0)[0])
             pos_bbox_bit_targets_list = []
-            bit_loc = 1000
+            bit_loc = 10**(self.bit_nums - 1)
+            pos_decoded_target_preds *= bit_loc # Avoid float division error            
             for l in range(self.bit_nums):
                 # if l == 7:
                 #     pos_bbox_bit_targets_list.append((pos_decoded_target_preds  % bit_loc + 0.00001) // (bit_loc / 10.0))
@@ -433,7 +436,7 @@ class BoxCodingHead(nn.Module):
         concat_regress_ranges = torch.cat(expanded_regress_ranges, dim=0)
         concat_points = torch.cat(points, dim=0)
         # get labels and bbox_targets of each image
-        img_scale_list = [meta['scale_factor'] for meta in img_metas]
+        img_scale_list = [meta['img_shape'][:2] for meta in img_metas]
         labels_list, bbox_targets_list, scales_list = multi_apply(
             self.fcos_target_single,
             gt_bboxes_list,
@@ -510,8 +513,7 @@ class BoxCodingHead(nn.Module):
         labels = gt_labels[min_area_inds]
         labels[min_area == INF] = 0
         bbox_targets = bbox_targets[range(num_points), min_area_inds]
-
-        scales = torch.tensor(img_scale).expand(bbox_targets.shape[0])
+        scales = torch.tensor(img_scale).expand(bbox_targets.shape[0], 2)
         return labels, bbox_targets, scales
 
     def centerness_target(self, pos_bbox_targets):
