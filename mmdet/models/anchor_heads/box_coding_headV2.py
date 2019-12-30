@@ -73,7 +73,7 @@ class BoxCodingHeadV2(nn.Module):
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
 
-        self.bit_nums = 8
+        self.bit_nums = 7
         self._init_layers()
 
     def _init_layers(self):
@@ -183,8 +183,8 @@ class BoxCodingHeadV2(nn.Module):
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         all_level_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                            bbox_preds[0].device)
-        labels, bbox_targets = self.fcos_target(all_level_points, gt_bboxes,
-                                                gt_labels)
+        labels, bbox_targets, scales = self.fcos_target(all_level_points, gt_bboxes,
+                                                gt_labels, img_metas)
 
         num_imgs = cls_scores[0].size(0)
         # flatten cls_scores, bbox_preds and centerness
@@ -205,6 +205,8 @@ class BoxCodingHeadV2(nn.Module):
         flatten_centerness = torch.cat(flatten_centerness)
         flatten_labels = torch.cat(labels)
         flatten_bbox_targets = torch.cat(bbox_targets)
+        flatten_scales = torch.cat(scales)
+
         # repeat points to align with bbox_preds
         flatten_points = torch.cat(
             [points.repeat(num_imgs, 1) for points in all_level_points])
@@ -217,6 +219,7 @@ class BoxCodingHeadV2(nn.Module):
 
         pos_bbox_preds = flatten_bbox_preds[pos_inds]
         pos_centerness = flatten_centerness[pos_inds]
+        pos_scales = flatten_scales[pos_inds]
         pos_bbox_bit_preds = [[], [], [], [], [], [], [], []]
         levels = len(bit_box_predictions)
         
@@ -241,22 +244,18 @@ class BoxCodingHeadV2(nn.Module):
             NOTE: test on box coding
             Box Coding:
             '''
+            # Normalized and rerange coordinates
+            pos_decoded_target_preds /= pos_scales.reshape(-1, 1).cuda()
+            # print("max value:", pos_decoded_target_preds.max(0)[0])
             pos_bbox_bit_targets_list = []
-            bit_loc = 10000
+            bit_loc = 1000
             for l in range(self.bit_nums):
                 # if l == 7:
                 #     pos_bbox_bit_targets_list.append((pos_decoded_target_preds  % bit_loc + 0.00001) // (bit_loc / 10.0))
                 # else:
                 pos_bbox_bit_targets_list.append((pos_decoded_target_preds % bit_loc) // (bit_loc / 10.0))
                 bit_loc = bit_loc / 10
-            # thousand_box_bit = (pos_bbox_targets  % 10000) // 1000
-            # hundred_box_bit = (pos_bbox_targets % 1000) // 100
-            # decade_box_bit = (pos_bbox_targets % 100) // 10
-            # unit_box_bit = (pos_bbox_targets % 10) // 1
-            # tenth_box_bit = (pos_bbox_targets % 1) // 0.1
-            # percentile_box_bit = (pos_bbox_targets % 0.1) // 0.01
-            # thousandth_box_bit = (pos_bbox_targets  % 0.01) // 0.001
-            # milth_box_bit = (pos_bbox_targets  % 0.001) // 0.001
+            embed()
             loss_bit_bbox = 0
             for pos_bbox_bit_pred, pos_bbox_bit_targets in zip(pos_bbox_bit_preds, pos_bbox_bit_targets_list):
                 loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
@@ -431,7 +430,7 @@ class BoxCodingHeadV2(nn.Module):
             (x.reshape(-1), y.reshape(-1)), dim=-1) + stride // 2
         return points
 
-    def fcos_target(self, points, gt_bboxes_list, gt_labels_list):
+    def fcos_target(self, points, gt_bboxes_list, gt_labels_list, img_metas):
         assert len(points) == len(self.regress_ranges)
         num_levels = len(points)
         # expand regress ranges to align with points
@@ -443,13 +442,14 @@ class BoxCodingHeadV2(nn.Module):
         concat_regress_ranges = torch.cat(expanded_regress_ranges, dim=0)
         concat_points = torch.cat(points, dim=0)
         # get labels and bbox_targets of each image
-        labels_list, bbox_targets_list = multi_apply(
+        img_scale_list = [meta['scale_factor'] for meta in img_metas]
+        labels_list, bbox_targets_list, scales_list = multi_apply(
             self.fcos_target_single,
             gt_bboxes_list,
             gt_labels_list,
+            img_scale_list,
             points=concat_points,
             regress_ranges=concat_regress_ranges)
-
         # split to per img, per level
         num_points = [center.size(0) for center in points]
         labels_list = [labels.split(num_points, 0) for labels in labels_list]
@@ -457,19 +457,27 @@ class BoxCodingHeadV2(nn.Module):
             bbox_targets.split(num_points, 0)
             for bbox_targets in bbox_targets_list
         ]
+        scales_list = [
+            scales.split(num_points, 0)
+            for scales in scales_list
+        ]
 
         # concat per level image
         concat_lvl_labels = []
         concat_lvl_bbox_targets = []
+        concat_lvl_scales = []
         for i in range(num_levels):
             concat_lvl_labels.append(
                 torch.cat([labels[i] for labels in labels_list]))
             concat_lvl_bbox_targets.append(
                 torch.cat(
                     [bbox_targets[i] for bbox_targets in bbox_targets_list]))
-        return concat_lvl_labels, concat_lvl_bbox_targets
+            concat_lvl_scales.append(
+                torch.cat([scales[i] for scales in scales_list]))
 
-    def fcos_target_single(self, gt_bboxes, gt_labels, points, regress_ranges):
+        return concat_lvl_labels, concat_lvl_bbox_targets, concat_lvl_scales
+
+    def fcos_target_single(self, gt_bboxes, gt_labels, img_scale, points, regress_ranges):
         num_points = points.size(0)
         num_gts = gt_labels.size(0)
         if num_gts == 0:
@@ -512,7 +520,8 @@ class BoxCodingHeadV2(nn.Module):
         labels[min_area == INF] = 0
         bbox_targets = bbox_targets[range(num_points), min_area_inds]
 
-        return labels, bbox_targets
+        scales = torch.tensor(img_scale).expand(bbox_targets.shape[0])
+        return labels, bbox_targets, scales
 
     def centerness_target(self, pos_bbox_targets):
         # only calculate pos centerness targets, otherwise there may be nan
