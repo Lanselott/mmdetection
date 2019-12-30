@@ -255,7 +255,7 @@ class BoxCodingHeadV2(nn.Module):
                 # else:
                 pos_bbox_bit_targets_list.append((pos_decoded_target_preds % bit_loc) // (bit_loc / 10.0))
                 bit_loc = bit_loc / 10
-            embed()
+
             loss_bit_bbox = 0
             for pos_bbox_bit_pred, pos_bbox_bit_targets in zip(pos_bbox_bit_preds, pos_bbox_bit_targets_list):
                 loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
