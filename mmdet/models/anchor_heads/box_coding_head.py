@@ -73,7 +73,7 @@ class BoxCodingHead(nn.Module):
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
 
-        self.bit_nums = 6
+        self.bit_nums = 8 #6
         self._init_layers()
 
     def _init_layers(self):
