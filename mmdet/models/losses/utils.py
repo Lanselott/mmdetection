@@ -8,7 +8,7 @@ def reduce_loss(loss, reduction):
 
     Args:
         loss (Tensor): Elementwise loss tensor.
-        reduction (str): Options are "none", "mean" and "sum".
+        reduction (str): Options are "none", "mean" anpd "sum".
 
     Return:
         Tensor: Reduced loss tensor.
