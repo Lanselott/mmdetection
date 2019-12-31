@@ -238,7 +238,7 @@ class BoxCodingHead(nn.Module):
             pos_bbox_bit_targets_list = []
             bit_loc = 10**(self.bit_nums - 1)
             pos_decoded_target_preds *= bit_loc # Avoid float division error            
-            for l in range(self.bit_nums):
+            for _ in range(self.bit_nums):
                 # if l == 7:
                 #     pos_bbox_bit_targets_list.append((pos_decoded_target_preds  % bit_loc + 0.00001) // (bit_loc / 10.0))
                 # else:
