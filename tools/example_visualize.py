@@ -5,7 +5,7 @@ from IPython import embed
 # config_file = './configs/srretinanet_r50_fpn_4gpu.py'
 # checkpoint_file = './work/dirs/srretinanet_r50_fpn_1x_4gpu/latest.pth'
 config_file = './configs/fcos/box_coding_r50_caffe_fpn_gn_1x_single_test.py'
-checkpoint_file = './work/dirs/box_coding/box_coding_update_epoch_12.pth'
+checkpoint_file = './work/dirs/box_coding_normalize/box_coding_normalized_epoch_12.pth'
 
 # build the model from a config file and a checkpoint file
 
@@ -22,5 +22,5 @@ for img in imgs:
     result = inference_detector(model, img)
     # or save the visualization results to image files
     # embed()
-    show_result(img, result, model.CLASSES, score_thr=0.3, show=False, out_file='result_{}.jpg'.format(i))
+    show_result(img, result, model.CLASSES, score_thr=0.6, show=False, out_file='result_{}.jpg'.format(i))
     i += 1

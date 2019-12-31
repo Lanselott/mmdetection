@@ -73,7 +73,7 @@ class BoxCodingHead(nn.Module):
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
 
-        self.bit_nums = 8 #6
+        self.bit_nums = 6
         self._init_layers()
 
     def _init_layers(self):
@@ -247,10 +247,13 @@ class BoxCodingHead(nn.Module):
 
             loss_bit_bbox = 0
             for pos_bbox_bit_pred, pos_bbox_bit_targets in zip(pos_bbox_bit_preds, pos_bbox_bit_targets_list):
+                # loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
+                #                                     pos_bbox_bit_targets.long().reshape(-1), 
+                #                                     avg_factor=num_pos + num_imgs)
                 loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
-                                                    pos_bbox_bit_targets.long().reshape(-1), 
-                                                    avg_factor=num_pos + num_imgs)
-            loss_bit_bbox = loss_bit_bbox / self.bit_nums
+                                                    pos_bbox_bit_targets.long().reshape(-1))
+            
+            # loss_bit_bbox = loss_bit_bbox / self.bit_nums
             # # centerness weighted iou loss
             # loss_bbox = self.loss_bbox(
             #     pos_decoded_bbox_preds,
@@ -297,6 +300,7 @@ class BoxCodingHead(nn.Module):
                 centernesses[i][img_id].detach() for i in range(num_levels)
             ]
             bit_bbox_pred_list = []
+
             for i in range(num_levels):
                 bit_bbox_pred_list.append(
                     [bit_box_predictions[i][b][img_id].detach() for b in range(self.bit_nums)]
@@ -341,7 +345,6 @@ class BoxCodingHead(nn.Module):
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
             centerness = centerness.permute(1, 2, 0).reshape(-1).sigmoid()
-
             bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
             '''
             Handle bit, merge to boxes
@@ -350,14 +353,13 @@ class BoxCodingHead(nn.Module):
             bit_boxes_pred = torch.zeros([4, w ,h], device=bit_bbox_pred[0].device)
             for i in range(len(bit_bbox_pred)):
                 bit_pred = bit_bbox_pred[i]
-                if i == 0:
-                    pass 
-                else: 
-                    bit_boxes_pred = bit_boxes_pred * 10 + bit_pred.reshape(4, 10, w ,h).max(1)[1].float()
-                # Left bit to right
-        
-            bit_boxes_pred = bit_boxes_pred / 10000
+                bit_boxes_pred = bit_boxes_pred * 10 + bit_pred.reshape(4, 10, w ,h).max(1)[1].float()
+                        
+            bit_boxes_pred = bit_boxes_pred / (10**self.bit_nums)
             bit_boxes_pred = bit_boxes_pred.permute(1, 2, 0).reshape(-1, 4)
+            # NOTE: Single batch only
+            bit_boxes_pred[:, (0, 2)] *= img_shape[1]
+            bit_boxes_pred[:, (1, 3)] *= img_shape[0]
 
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
@@ -371,7 +373,6 @@ class BoxCodingHead(nn.Module):
             bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
             # bit_bboxes = distance2bbox(points, bit_boxes_pred, max_shape=img_shape)
             bit_bboxes = bit_boxes_pred
-
             mlvl_bboxes.append(bboxes)
             mlvl_bit_bboxes.append(bit_bboxes)
             mlvl_scores.append(scores)
