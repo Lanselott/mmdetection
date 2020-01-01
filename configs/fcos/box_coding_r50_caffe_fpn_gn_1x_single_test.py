@@ -36,7 +36,7 @@ model = dict(
             type='FocalLoss',
             use_sigmoid=True,
             gamma=0.0, # CE Loss, if gamma = 0
-            alpha=0.25,
+            alpha=1.0,
             loss_weight=1.0),
         loss_bbox=dict(type='IoULoss', loss_weight=1.0),
         loss_centerness=dict(

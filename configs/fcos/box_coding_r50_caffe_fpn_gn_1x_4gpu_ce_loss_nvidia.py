@@ -35,7 +35,7 @@ model = dict(
         loss_bit_bbox=dict(
             type='FocalLoss',
             use_sigmoid=True,
-            gamma=0.0,
+            gamma=0.0, # 0 equal as ce loss
             alpha=1.0,
             loss_weight=1.0),
         loss_bbox=dict(type='IoULoss', loss_weight=1.0),

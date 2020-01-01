@@ -236,7 +236,7 @@ class BoxCodingHead(nn.Module):
 
             # print("max value:", pos_decoded_target_preds.max(0)[0])
             pos_bbox_bit_targets_list = []
-            bit_loc = 10**(self.bit_nums - 1)
+            bit_loc = 10**self.bit_nums
             pos_decoded_target_preds *= bit_loc # Avoid float division error            
             for _ in range(self.bit_nums):
                 # if l == 7:
@@ -244,14 +244,14 @@ class BoxCodingHead(nn.Module):
                 # else:
                 pos_bbox_bit_targets_list.append((pos_decoded_target_preds % bit_loc) // (bit_loc / 10.0))
                 bit_loc = bit_loc / 10
-
             loss_bit_bbox = 0
+
             for pos_bbox_bit_pred, pos_bbox_bit_targets in zip(pos_bbox_bit_preds, pos_bbox_bit_targets_list):
-                # loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
-                #                                     pos_bbox_bit_targets.long().reshape(-1), 
-                #                                     avg_factor=num_pos + num_imgs)
                 loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
-                                                    pos_bbox_bit_targets.long().reshape(-1))
+                                                    pos_bbox_bit_targets.long().reshape(-1), 
+                                                    avg_factor=num_pos + num_imgs)
+                # loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
+                #                                     pos_bbox_bit_targets.long().reshape(-1))
             
             # loss_bit_bbox = loss_bit_bbox / self.bit_nums
             # # centerness weighted iou loss
