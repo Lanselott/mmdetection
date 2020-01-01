@@ -35,12 +35,13 @@ model = dict(
         loss_bit_bbox=dict(
             type='FocalLoss',
             use_sigmoid=True,
-            gamma=1.0,
+            gamma=0.0,
             alpha=1.0,
             loss_weight=1.0),
         loss_bbox=dict(type='IoULoss', loss_weight=1.0),
         loss_centerness=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
+            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        bit_nums=7))
 # training and testing settings
 train_cfg = dict(
     assigner=dict(
