@@ -11,7 +11,7 @@ INF = 1e8
 
 
 @HEADS.register_module
-class BoxCodingHead(nn.Module):
+class BoxCodingIoUHead(nn.Module):
     """
     Fully Convolutional One-Stage Object Detection head from [1]_.
 
@@ -57,7 +57,7 @@ class BoxCodingHead(nn.Module):
                  bit_nums=8,
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
-        super(BoxCodingHead, self).__init__()
+        super(BoxCodingIoUHead, self).__init__()
 
         self.num_classes = num_classes
         self.cls_out_channels = num_classes - 1
@@ -227,49 +227,66 @@ class BoxCodingHead(nn.Module):
             pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
             pos_decoded_target_preds = distance2bbox(pos_points,
                                                      pos_bbox_targets)
-            '''
-            NOTE: test on box coding
-            Box Coding:
-            '''
-            # Normalized and rerange coordinates
-            pos_decoded_target_preds[:, (0, 2)] /= pos_scales[:, 1].reshape(-1, 1)
-            pos_decoded_target_preds[:, (1, 3)] /= pos_scales[:, 0].reshape(-1, 1)
-
+            
             # print("max value:", pos_decoded_target_preds.max(0)[0])
-            pos_bbox_bit_targets_list = []
-            bit_loc = 10**self.bit_nums
-            pos_decoded_target_preds *= bit_loc # Avoid float division error            
-            for _ in range(self.bit_nums):
-                # if l == 7:
-                #     pos_bbox_bit_targets_list.append((pos_decoded_target_preds  % bit_loc + 0.00001) // (bit_loc / 10.0))
-                # else:
-                pos_bbox_bit_targets_list.append((pos_decoded_target_preds % bit_loc) // (bit_loc / 10.0))
-                bit_loc = bit_loc / 10
-            loss_bit_bbox = 0
+            soft_arg_multiplier = torch.arange(10, dtype=pos_decoded_bbox_preds.dtype, device=pos_decoded_bbox_preds.device)
+            bit_loc = 10**self.bit_nums               
+            beta = 2
+            pos_bbox_bit_coded_preds = 0
 
-            for pos_bbox_bit_pred, pos_bbox_bit_targets in zip(pos_bbox_bit_preds, pos_bbox_bit_targets_list):
-                loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
-                                                    pos_bbox_bit_targets.long().reshape(-1), 
-                                                    avg_factor=num_pos + num_imgs)
-                # loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
-                #                                     pos_bbox_bit_targets.long().reshape(-1))
-            # loss_bit_bbox = loss_bit_bbox / self.bit_nums
+            for i in range(self.bit_nums):
+                # Apply soft argmax for differentiable
+                pos_bbox_bit_pred = (pos_bbox_bit_preds[i].reshape(-1, 10) * beta).exp()
+                pos_bbox_bit_pred_soft_argmax = (pos_bbox_bit_pred / pos_bbox_bit_pred.sum(1).reshape(-1, 1) * soft_arg_multiplier).sum(1) 
+                # print("pos_bbox_bit_pred.sum(1):", (pos_bbox_bit_pred.sum(1) == 0).nonzero().sum())
+                pos_bbox_bit_coded_preds = pos_bbox_bit_coded_preds * 10 + pos_bbox_bit_pred_soft_argmax
+            
+            pos_bbox_bit_coded_preds = pos_bbox_bit_coded_preds.reshape(-1 ,4) / bit_loc
+            pos_bbox_bit_coded_preds[:, (0, 2)] *= pos_scales[:, 1].reshape(-1, 1)
+            pos_bbox_bit_coded_preds[:, (1, 3)] *= pos_scales[:, 0].reshape(-1, 1)
+            pos_bbox_bit_decoded_preds = distance2bbox(pos_points, pos_bbox_bit_coded_preds)
+
             # # centerness weighted iou loss
-            # loss_bbox = self.loss_bbox(
-            #     pos_decoded_bbox_preds,
-            #     pos_decoded_target_preds,
-            #     weight=pos_centerness_targets,
-            #     avg_factor=pos_centerness_targets.sum())
+            loss_bbox = self.loss_bbox(
+                pos_bbox_bit_decoded_preds,
+                pos_decoded_target_preds,
+                weight=pos_centerness_targets,
+                avg_factor=pos_centerness_targets.sum())
+            # print("loss bbox:", loss_bbox)
+            '''
+            NOTE: Test on box coding
+            Box Coding:
+            normalized predictions range:[0, 1]
+            IoU_Loss(norm_pred * img_scale, gt)
+            '''
+            # # Normalized and rerange coordinates
+            # pos_decoded_target_preds_detached = pos_decoded_target_preds.clone()
+            # pos_decoded_target_preds_detached[:, (0, 2)] /= pos_scales[:, 1].reshape(-1, 1)
+            # pos_decoded_target_preds_detached[:, (1, 3)] /= pos_scales[:, 0].reshape(-1, 1)
+
+            # pos_bbox_bit_targets_list = []
+            # bit_loc = 10**self.bit_nums
+            # pos_decoded_target_preds_detached *= bit_loc # Avoid float division error 
+
+            # for _ in range(self.bit_nums):
+            #     pos_bbox_bit_targets_list.append((pos_decoded_target_preds_detached % bit_loc) // (bit_loc / 10.0))
+            #     bit_loc = bit_loc / 10
+
+            # loss_bit_bbox = 0
+            # for pos_bbox_bit_pred, pos_bbox_bit_targets in zip(pos_bbox_bit_preds, pos_bbox_bit_targets_list):
+            #     loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
+            #                                         pos_bbox_bit_targets.long().reshape(-1), 
+            #                                         avg_factor=num_pos + num_imgs)
             loss_centerness = self.loss_centerness(pos_centerness,
-                                                   pos_centerness_targets)
+                                                   pos_centerness_targets) 
         else:
-            # loss_bbox = pos_bbox_preds.sum()
-            loss_bit_bbox = pos_bbox_bit_pred[0].sum()
+            loss_bbox = pos_bbox_bit_decoded_preds.sum()
+            # loss_bit_bbox = pos_bbox_bit_pred[0].sum()
             loss_centerness = pos_centerness.sum()
         return dict(
             loss_cls=loss_cls,
-            # loss_bbox=loss_bbox,
-            loss_bit_bbox=loss_bit_bbox,
+            loss_bbox=loss_bbox,
+            # loss_bit_bbox=loss_bit_bbox,
             loss_centerness=loss_centerness)
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))

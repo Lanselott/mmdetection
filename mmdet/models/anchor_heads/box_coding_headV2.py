@@ -55,6 +55,7 @@ class BoxCodingHeadV2(nn.Module):
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
                      loss_weight=1.0),
+                 bit_nums=8,
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
         super(BoxCodingHeadV2, self).__init__()
@@ -74,7 +75,7 @@ class BoxCodingHeadV2(nn.Module):
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
 
-        self.bit_nums = 6
+        self.bit_nums = bit_nums        
         self._init_layers()
 
     def _init_layers(self):
@@ -250,9 +251,9 @@ class BoxCodingHeadV2(nn.Module):
             
             # print("max value:", pos_decoded_target_preds.max(0)[0])
             pos_bbox_bit_targets_list = []
-            bit_loc = 10**(self.bit_nums - 1)
+            bit_loc = 10**self.bit_nums
             pos_decoded_target_preds *= bit_loc # Avoid float division error
-            for l in range(self.bit_nums):
+            for _ in range(self.bit_nums):
                 # if l == 7:
                 #     pos_bbox_bit_targets_list.append((pos_decoded_target_preds  % bit_loc + 0.00001) // (bit_loc / 10.0))
                 # else:
@@ -264,7 +265,7 @@ class BoxCodingHeadV2(nn.Module):
                 loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
                                                     pos_bbox_bit_targets.long().reshape(-1), 
                                                     avg_factor=num_pos + num_imgs)
-            loss_bit_bbox = loss_bit_bbox / self.bit_nums
+            # loss_bit_bbox = loss_bit_bbox / self.bit_nums
             # # centerness weighted iou loss
             # loss_bbox = self.loss_bbox(
             #     pos_decoded_bbox_preds,
@@ -367,9 +368,12 @@ class BoxCodingHeadV2(nn.Module):
                 bit_boxes_pred = bit_boxes_pred * 10 + bit_pred.reshape(4, 10, w ,h).max(1)[1].float()
                 # Left bit to right
 
-            bit_boxes_pred = bit_boxes_pred / 10000
+            bit_boxes_pred = bit_boxes_pred / (10**self.bit_nums)
             bit_boxes_pred = bit_boxes_pred.permute(1, 2, 0).reshape(-1, 4)
-
+            # NOTE: Single batch only
+            bit_boxes_pred[:, (0, 2)] *= img_shape[1]
+            bit_boxes_pred[:, (1, 3)] *= img_shape[0]
+            
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
                 max_scores, _ = (scores * centerness[:, None]).max(dim=1)
@@ -380,7 +384,8 @@ class BoxCodingHeadV2(nn.Module):
                 scores = scores[topk_inds, :]
                 centerness = centerness[topk_inds]
             bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
-            bit_bboxes = distance2bbox(points, bit_boxes_pred, max_shape=img_shape)
+            # bit_bboxes = distance2bbox(points, bit_boxes_pred, max_shape=img_shape)
+            bit_bboxes = bit_boxes_pred            
             mlvl_bboxes.append(bboxes)
             mlvl_bit_bboxes.append(bit_bboxes)
             mlvl_scores.append(scores)

@@ -20,7 +20,7 @@ model = dict(
         num_outs=5,
         relu_before_extra_convs=True),
     bbox_head=dict(
-        type='BoxCodingHeadV2',
+        type='BoxCodingIoUHead',
         num_classes=81,
         in_channels=256,
         stacked_convs=4,
@@ -35,7 +35,7 @@ model = dict(
         loss_bit_bbox=dict(
             type='FocalLoss',
             use_sigmoid=True,
-            gamma=2.0,
+            gamma=2.0, #0.0, # CE Loss, if gamma = 0
             alpha=0.25,
             loss_weight=1.0),
         loss_bbox=dict(type='IoULoss', loss_weight=1.0),
