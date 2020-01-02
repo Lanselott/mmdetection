@@ -231,7 +231,7 @@ class BoxCodingIoUHead(nn.Module):
             # print("max value:", pos_decoded_target_preds.max(0)[0])
             soft_arg_multiplier = torch.arange(10, dtype=pos_decoded_bbox_preds.dtype, device=pos_decoded_bbox_preds.device)
             bit_loc = 10**self.bit_nums               
-            beta = 2
+            beta = 1
             pos_bbox_bit_coded_preds = 0
 
             for i in range(self.bit_nums):
