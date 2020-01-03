@@ -238,10 +238,34 @@ class BoxCodingIoUHead(nn.Module):
                 # Apply soft argmax for differentiable
                 pos_bbox_bit_pred = (pos_bbox_bit_preds[i].reshape(-1, 10) * beta).exp()
                 pos_bbox_bit_pred_soft_argmax = (pos_bbox_bit_pred / pos_bbox_bit_pred.sum(1).reshape(-1, 1) * soft_arg_multiplier).sum(1) 
-                # print("pos_bbox_bit_pred.sum(1):", (pos_bbox_bit_pred.sum(1) == 0).nonzero().sum())
                 pos_bbox_bit_coded_preds = pos_bbox_bit_coded_preds * 10 + pos_bbox_bit_pred_soft_argmax
-            
+
+            # Normalize
             pos_bbox_bit_coded_preds = pos_bbox_bit_coded_preds.reshape(-1 ,4) / bit_loc
+            '''
+            NOTE: Test on box coding
+            Box Coding:
+            Prediction:
+            Groundtruth:
+            '''
+            #  Normalized and rerange coordinates
+            pos_decoded_target_detached = pos_bbox_targets
+            pos_decoded_target_detached[:, (0, 2)] /= pos_scales[:, 1].reshape(-1, 1)
+            pos_decoded_target_detached[:, (1, 3)] /= pos_scales[:, 0].reshape(-1, 1)
+            pos_bbox_bit_targets_list = []
+            bit_loc = 10**self.bit_nums
+            pos_decoded_target_detached *= bit_loc # Avoid float division error 
+
+            for _ in range(self.bit_nums):
+                pos_bbox_bit_targets_list.append((pos_decoded_target_detached % bit_loc) // (bit_loc / 10.0))
+                bit_loc = bit_loc / 10
+
+            loss_bit_bbox = 0
+            for pos_bbox_bit_pred, pos_bbox_bit_targets in zip(pos_bbox_bit_preds, pos_bbox_bit_targets_list):
+                loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
+                                                    pos_bbox_bit_targets.long().reshape(-1), 
+                                                    avg_factor=num_pos + num_imgs)
+            
             pos_bbox_bit_coded_preds[:, (0, 2)] *= pos_scales[:, 1].reshape(-1, 1)
             pos_bbox_bit_coded_preds[:, (1, 3)] *= pos_scales[:, 0].reshape(-1, 1)
             pos_bbox_bit_decoded_preds = distance2bbox(pos_points, pos_bbox_bit_coded_preds)
@@ -252,41 +276,16 @@ class BoxCodingIoUHead(nn.Module):
                 pos_decoded_target_preds,
                 weight=pos_centerness_targets,
                 avg_factor=pos_centerness_targets.sum())
-            # print("loss bbox:", loss_bbox)
-            '''
-            NOTE: Test on box coding
-            Box Coding:
-            normalized predictions range:[0, 1]
-            IoU_Loss(norm_pred * img_scale, gt)
-            '''
-            # # Normalized and rerange coordinates
-            # pos_decoded_target_preds_detached = pos_decoded_target_preds.clone()
-            # pos_decoded_target_preds_detached[:, (0, 2)] /= pos_scales[:, 1].reshape(-1, 1)
-            # pos_decoded_target_preds_detached[:, (1, 3)] /= pos_scales[:, 0].reshape(-1, 1)
-
-            # pos_bbox_bit_targets_list = []
-            # bit_loc = 10**self.bit_nums
-            # pos_decoded_target_preds_detached *= bit_loc # Avoid float division error 
-
-            # for _ in range(self.bit_nums):
-            #     pos_bbox_bit_targets_list.append((pos_decoded_target_preds_detached % bit_loc) // (bit_loc / 10.0))
-            #     bit_loc = bit_loc / 10
-
-            # loss_bit_bbox = 0
-            # for pos_bbox_bit_pred, pos_bbox_bit_targets in zip(pos_bbox_bit_preds, pos_bbox_bit_targets_list):
-            #     loss_bit_bbox += self.loss_bit_bbox(pos_bbox_bit_pred.reshape(-1, 10), 
-            #                                         pos_bbox_bit_targets.long().reshape(-1), 
-            #                                         avg_factor=num_pos + num_imgs)
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets) 
         else:
             loss_bbox = pos_bbox_bit_decoded_preds.sum()
-            # loss_bit_bbox = pos_bbox_bit_pred[0].sum()
+            loss_bit_bbox = pos_bbox_bit_pred[0].sum()
             loss_centerness = pos_centerness.sum()
         return dict(
             loss_cls=loss_cls,
             loss_bbox=loss_bbox,
-            # loss_bit_bbox=loss_bit_bbox,
+            loss_bit_bbox=loss_bit_bbox,
             loss_centerness=loss_centerness)
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
@@ -366,12 +365,18 @@ class BoxCodingIoUHead(nn.Module):
             '''
             Handle bit, merge to boxes
             '''
+            beta = 1
+            soft_arg_multiplier = torch.arange(10, dtype=cls_score.dtype, device=cls_score.device).reshape(-1, 10, 1, 1)
             _, w, h = bit_bbox_pred[0].shape
             bit_boxes_pred = torch.zeros([4, w ,h], device=bit_bbox_pred[0].device)
             for i in range(len(bit_bbox_pred)):
-                bit_pred = bit_bbox_pred[i]
-                bit_boxes_pred = bit_boxes_pred * 10 + bit_pred.reshape(4, 10, w ,h).max(1)[1].float()
-                        
+                exp_bit_bbox_pred = (bit_bbox_pred[i].reshape(-1, 10, w, h) * beta).exp()
+                bbox_bit_pred_soft_argmax = (exp_bit_bbox_pred / exp_bit_bbox_pred.sum(1).reshape(-1, 1, w, h) * soft_arg_multiplier).sum(1) 
+                bit_boxes_pred = bit_boxes_pred * 10 + bbox_bit_pred_soft_argmax
+
+                # bit_pred = bit_bbox_pred[i]
+                # bit_boxes_pred = bit_boxes_pred * 10 + bit_pred.reshape(4, 10, w ,h).max(1)[1].float()
+                # soft argmax here
             bit_boxes_pred = bit_boxes_pred / (10**self.bit_nums)
             bit_boxes_pred = bit_boxes_pred.permute(1, 2, 0).reshape(-1, 4)
             # NOTE: Single batch only
@@ -388,8 +393,7 @@ class BoxCodingIoUHead(nn.Module):
                 scores = scores[topk_inds, :]
                 centerness = centerness[topk_inds]
             bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
-            # bit_bboxes = distance2bbox(points, bit_boxes_pred, max_shape=img_shape)
-            bit_bboxes = bit_boxes_pred
+            bit_bboxes = distance2bbox(points, bit_boxes_pred, max_shape=img_shape)
             mlvl_bboxes.append(bboxes)
             mlvl_bit_bboxes.append(bit_bboxes)
             mlvl_scores.append(scores)

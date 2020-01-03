@@ -4,8 +4,8 @@ import numpy as np
 from IPython import embed
 # config_file = './configs/srretinanet_r50_fpn_4gpu.py'
 # checkpoint_file = './work/dirs/srretinanet_r50_fpn_1x_4gpu/latest.pth'
-config_file = './configs/fcos/box_coding_r50_caffe_fpn_gn_1x_single_test.py'
-checkpoint_file = './work/dirs/box_coding_ce_loss/box_coding_ce_loss_epoch_12.pth'
+config_file = './configs/fcos/box_coding_iou_r50_caffe_fpn_gn_1x_single_test.py'
+checkpoint_file = './work/dirs/box_coding_iou/box_coding_iou_epoch_12.pth'
 
 # build the model from a config file and a checkpoint file
 

@@ -23,6 +23,7 @@ from .mixup_fcos_head import MixupFCOSHead
 from .box_coding_head import BoxCodingHead
 from .box_coding_headV2 import BoxCodingHeadV2
 from .box_coding_iou_head import BoxCodingIoUHead
+from .box_coding_iou_coord_reg_head import BoxCodingIoUCoordRegHead
 __all__ = [
     'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption', 'RPNHead',
     'GARPNHead', 'RetinaHead', 'GARetinaHead', 'SSDHead', 'FCOSHead',
@@ -30,5 +31,5 @@ __all__ = [
     'FCOSGradientAssignHead', 'FairLossAssignHead', 'FCOSConventionAssignHead', 'FCOSDeeperFeedbackHead', 
     'FCOSMergedHead', 'FCOSDeeperFeedbackHeadV2', 'FCOSDeeperFeedbackHeadV3', 'FCOSDeeperFeedbackHeadV1S', 
     'FCOSDeeperFeedbackHeadV3S', 'MixupFCOSHead', 'BoxCodingHead', 
-    'BoxCodingHeadV2', 'BoxCodingIoUHead'
+    'BoxCodingHeadV2', 'BoxCodingIoUHead', 'BoxCodingIoUCoordRegHead'
 ]
