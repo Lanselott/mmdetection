@@ -82,6 +82,7 @@ class BoxCodingIoUCoordRegHead(nn.Module):
     def _init_layers(self):
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
+        self.bit_reg_convs = nn.ModuleList()
         self.bit_reg = nn.ModuleList()
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
@@ -113,6 +114,16 @@ class BoxCodingIoUCoordRegHead(nn.Module):
         bit coding: 
         '''
         for i in range(self.bit_nums):
+            self.bit_reg_convs.append(
+                ConvModule(
+                    chn,
+                    self.feat_channels,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=self.norm_cfg is None))
             self.bit_reg.append(nn.Conv2d(self.feat_channels, 10 * 4, 3, padding=1)) # 10 bits * (l, t, r, b)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
@@ -121,6 +132,8 @@ class BoxCodingIoUCoordRegHead(nn.Module):
         for m in self.cls_convs:
             normal_init(m.conv, std=0.01)
         for m in self.reg_convs:
+            normal_init(m.conv, std=0.01)
+        for m in self.bit_reg_convs:
             normal_init(m.conv, std=0.01)
         for m in self.bit_reg:
             normal_init(m, std=0.01)
@@ -153,8 +166,8 @@ class BoxCodingIoUCoordRegHead(nn.Module):
         '''
         bit coding:
         '''
-        for bit_reg_layer in self.bit_reg:
-            bit_box_prediction.append(bit_reg_layer(reg_feat))
+        for bit_reg_conv, bit_reg_layer in zip(self.bit_reg_convs, self.bit_reg):
+            bit_box_prediction.append(scale(bit_reg_layer(bit_reg_conv(reg_feat))).float().exp())
 
         return cls_score, bbox_pred, centerness, bit_box_prediction
 
@@ -250,7 +263,7 @@ class BoxCodingIoUCoordRegHead(nn.Module):
                 pos_bbox_bit_coded_preds = pos_bbox_bit_coded_preds * 10 + pos_bbox_bit_coords_pred
 
             # Normalize
-            pos_bbox_bit_coded_preds = pos_bbox_bit_coded_preds.reshape(-1 ,4) / bit_loc
+            pos_bbox_bit_coded_preds = pos_bbox_bit_coded_preds.reshape(-1, 4) / bit_loc
             '''
             NOTE: Test on box coding
             Box Coding:
@@ -374,21 +387,19 @@ class BoxCodingIoUCoordRegHead(nn.Module):
             '''
             Handle bit, merge to boxes
             '''
-            beta = 1
-            soft_arg_multiplier = torch.arange(10, dtype=cls_score.dtype, device=cls_score.device).reshape(-1, 10, 1, 1)
+            # beta = 1
+            # soft_arg_multiplier = torch.arange(10, dtype=cls_score.dtype, device=cls_score.device).reshape(-1, 10, 1, 1)
             _, w, h = bit_bbox_pred[0].shape
-            bit_boxes_pred = torch.zeros([4, w ,h], device=bit_bbox_pred[0].device)
+            bit_boxes_pred = torch.zeros([w ,h, 4], device=bit_bbox_pred[0].device)
             for i in range(len(bit_bbox_pred)):
-                exp_bit_bbox_pred = (bit_bbox_pred[i].reshape(-1, 10, w, h) * beta).exp()
-                bbox_bit_pred_soft_argmax = (exp_bit_bbox_pred / exp_bit_bbox_pred.sum(1).reshape(-1, 1, w, h) * soft_arg_multiplier).sum(1) 
-                bit_boxes_pred = bit_boxes_pred * 10 + bbox_bit_pred_soft_argmax
+                exp_bit_bbox_pred = dsntnn.flat_softmax(bit_bbox_pred[i].permute(1, 2, 0).reshape(-1, 1, 1, 10)) # [w*h*4, 1, 1, 10]
+                bbox_bit_pred_soft_argmax = (dsntnn.dsnt(exp_bit_bbox_pred)[..., 0] + 0.9) / 0.2
+                bit_boxes_pred = bit_boxes_pred * 10 + bbox_bit_pred_soft_argmax.reshape(w, h, 4)
 
-                # bit_pred = bit_bbox_pred[i]
-                # bit_boxes_pred = bit_boxes_pred * 10 + bit_pred.reshape(4, 10, w ,h).max(1)[1].float()
-                # soft argmax here
             bit_boxes_pred = bit_boxes_pred / (10**self.bit_nums)
-            bit_boxes_pred = bit_boxes_pred.permute(1, 2, 0).reshape(-1, 4)
+
             # NOTE: Single batch only
+            bit_boxes_pred = bit_boxes_pred.reshape(-1, 4)
             bit_boxes_pred[:, (0, 2)] *= img_shape[1]
             bit_boxes_pred[:, (1, 3)] *= img_shape[0]
             
@@ -403,6 +414,7 @@ class BoxCodingIoUCoordRegHead(nn.Module):
                 centerness = centerness[topk_inds]
             bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
             bit_bboxes = distance2bbox(points, bit_boxes_pred, max_shape=img_shape)
+
             mlvl_bboxes.append(bboxes)
             mlvl_bit_bboxes.append(bit_bboxes)
             mlvl_scores.append(scores)
