@@ -167,7 +167,7 @@ class BoxCodingIoUCoordRegHead(nn.Module):
         bit coding:
         '''
         for bit_reg_conv, bit_reg_layer in zip(self.bit_reg_convs, self.bit_reg):
-            bit_box_prediction.append(scale(bit_reg_layer(bit_reg_conv(reg_feat))).float().exp())
+            bit_box_prediction.append(scale(bit_reg_layer(bit_reg_conv(reg_feat))).float())
 
         return cls_score, bbox_pred, centerness, bit_box_prediction
 
