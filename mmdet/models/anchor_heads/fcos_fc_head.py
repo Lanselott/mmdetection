@@ -221,13 +221,15 @@ class FCOSFCHead(nn.Module):
 
             instance_counter = instance_counter.int()
             obj_ids = torch.bincount(instance_counter).nonzero().int()
-            opt_threshold = 0.5
+            opt_threshold = 0.0
             for obj_id in obj_ids:
                 dist_conf_mask_list.append((instance_counter==obj_id).float())
             
             obj_topk_pos_bbox_preds = []
             obj_topk_pos_decoded_bbox_targets = []
-            
+            obj_pos_reg_feat_list = []
+            mean_obj_topk_inds_list = []
+
             for dist_conf_mask in dist_conf_mask_list:
                 obj_mask_inds = dist_conf_mask.nonzero().reshape(-1)
                 obj_pos_iou_scores = pos_iou_scores[obj_mask_inds]
@@ -242,18 +244,20 @@ class FCOSFCHead(nn.Module):
                     # obj_scores, obj_topk_inds = obj_pos_iou_scores.topk(obj_sample_nums)
                     continue
 
-                mean_obj_topk_inds = pos_points[obj_mask_inds[obj_topk_inds]].mean(0).reshape(1, 2)
+                mean_obj_topk_inds_list.append(pos_points[obj_mask_inds[obj_topk_inds]].sum(0).reshape(1, 2) / self.topk_select_num)
                 '''
                 # UPDATE
                 '''
-                obj_topk_pos_bbox_preds.append(
-                                distance2bbox(
-                                    mean_obj_topk_inds, 
-                                    self.topk_obj_reg(obj_pos_reg_feat[obj_topk_inds].permute(1, 0).contiguous().reshape(1, 256, 3 ,3)).float().exp().reshape(1, 4)))
+                obj_pos_reg_feat_list.append(obj_pos_reg_feat[obj_topk_inds].reshape(1, -1, 256))
                 obj_topk_pos_decoded_bbox_targets.append(pos_decoded_target_preds[obj_mask_inds[obj_topk_inds]][0].reshape(1, 4))
+            
+            obj_pos_reg_feats = torch.cat(obj_pos_reg_feat_list)
+            mean_obj_topk_inds = torch.cat(mean_obj_topk_inds_list)
+            obj_topk_pos_bbox_preds = distance2bbox(
+                                        mean_obj_topk_inds, 
+                                        self.topk_obj_reg(obj_pos_reg_feats.permute(0, 2, 1).contiguous().reshape(-1, 256, 3 ,3)).float().exp().reshape(-1, 4))
 
             if len(obj_topk_pos_bbox_preds) != 0:
-                obj_topk_pos_bbox_preds = torch.cat(obj_topk_pos_bbox_preds)
                 obj_topk_pos_decoded_bbox_targets = torch.cat(obj_topk_pos_decoded_bbox_targets)
                 # print("length of topks", len(obj_topk_pos_bbox_preds))
                 loss_topk_bbox = self.loss_bbox(
@@ -265,7 +269,6 @@ class FCOSFCHead(nn.Module):
                 loss_topk_bbox = torch.zeros(0, device=pos_bbox_preds.device).sum()
             # print("loss_topk_bbox:", loss_topk_bbox)
             # centerness weighted iou loss
-            # embed()
             loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds,
                 pos_decoded_target_preds)
@@ -289,6 +292,7 @@ class FCOSFCHead(nn.Module):
                    cls_scores,
                    bbox_preds,
                    centernesses,
+                   reg_feats,
                    img_metas,
                    cfg,
                    rescale=None):
@@ -309,10 +313,14 @@ class FCOSFCHead(nn.Module):
             centerness_pred_list = [
                 centernesses[i][img_id].detach() for i in range(num_levels)
             ]
+            reg_feat_list = [
+                reg_feats[i][img_id].detach() for i in range(num_levels)
+            ]
             img_shape = img_metas[img_id]['img_shape']
             scale_factor = img_metas[img_id]['scale_factor']
             det_bboxes = self.get_bboxes_single(cls_score_list, bbox_pred_list,
                                                 centerness_pred_list,
+                                                reg_feat_list,
                                                 mlvl_points, img_shape,
                                                 scale_factor, cfg, rescale)
             result_list.append(det_bboxes)
@@ -322,35 +330,43 @@ class FCOSFCHead(nn.Module):
                           cls_scores,
                           bbox_preds,
                           centernesses,
+                          reg_feats,
                           mlvl_points,
                           img_shape,
                           scale_factor,
                           cfg,
                           rescale=False):
         assert len(cls_scores) == len(bbox_preds) == len(mlvl_points)
+        mlvl_reg_feat = []
+        _mlvl_points = []
         mlvl_bboxes = []
         mlvl_scores = []
         mlvl_centerness = []
-        for cls_score, bbox_pred, centerness, points in zip(
-                cls_scores, bbox_preds, centernesses, mlvl_points):
+        for cls_score, bbox_pred, centerness, reg_feat, points in zip(
+                cls_scores, bbox_preds, centernesses, reg_feats, mlvl_points):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
             centerness = centerness.permute(1, 2, 0).reshape(-1).sigmoid()
-
+            
+            reg_feat = reg_feat.permute(1, 2, 0).reshape(-1, 256)
             bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
-                max_scores, _ = (scores * centerness[:, None]).max(dim=1)
+                # max_scores, _ = (scores * centerness[:, None]).max(dim=1)
+                max_scores, _ = scores.max(dim=1)
                 _, topk_inds = max_scores.topk(nms_pre)
                 points = points[topk_inds, :]
+                reg_feat = reg_feat[topk_inds, :]
                 bbox_pred = bbox_pred[topk_inds, :]
                 scores = scores[topk_inds, :]
                 centerness = centerness[topk_inds]
             bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
+            mlvl_reg_feat.append(reg_feat)
             mlvl_bboxes.append(bboxes)
             mlvl_scores.append(scores)
             mlvl_centerness.append(centerness)
+            _mlvl_points.append(points)
         mlvl_bboxes = torch.cat(mlvl_bboxes)
         if rescale:
             mlvl_bboxes /= mlvl_bboxes.new_tensor(scale_factor)
@@ -358,14 +374,41 @@ class FCOSFCHead(nn.Module):
         padding = mlvl_scores.new_zeros(mlvl_scores.shape[0], 1)
         mlvl_scores = torch.cat([padding, mlvl_scores], dim=1)
         mlvl_centerness = torch.cat(mlvl_centerness)
-        det_bboxes, det_labels = multiclass_nms(
+        mlvl_reg_feat = torch.cat(mlvl_reg_feat)
+        _mlvl_points = torch.cat(_mlvl_points)
+        # topk_mlvl_bboxes_ious, topk_inds = bbox_overlaps(mlvl_bboxes, mlvl_bboxes, is_aligned=False).clamp(min=1e-6).topk(self.topk_select_num)
+        # topk_encoded_boxes_list = []
+        # mean_points_list = []
+        # for selected_inds in topk_inds:
+        #     mean_points_list.append(_mlvl_points[selected_inds].mean(0).reshape(1, 2))
+        #     topk_encoded_boxes_list.append(mlvl_reg_feat[selected_inds].reshape(1, self.topk_select_num, -1))
+        #     # topk_boxes_list.append(distance2bbox(mean_points, self.topk_obj_reg(mlvl_reg_feat[selected_inds].permute(1, 0).contiguous().reshape(1, 256, 3, 3)).float().exp().reshape(1 ,4)))
+        # topk_encoded_boxes = torch.cat(topk_encoded_boxes_list)
+        # mean_points = torch.cat(mean_points_list)
+        # topk_boxes = distance2bbox(mean_points, self.topk_obj_reg(topk_encoded_boxes.permute(0, 2, 1).contiguous().reshape(-1, 256, 3, 3)).float().exp().reshape(-1 ,4))
+
+        det_bboxes, det_labels, det_inds = multiclass_nms(
             mlvl_bboxes,
+            # topk_boxes,
             mlvl_scores,
             cfg.score_thr,
             cfg.nms,
             cfg.max_per_img,
-            score_factors=mlvl_centerness)
-        return det_bboxes, det_labels
+            with_inds=True)
+            # score_factors=mlvl_centerness)
+
+        nms_selected_boxes_ious, nms_selected_boxes_inds = bbox_overlaps(det_bboxes[:, :4], mlvl_bboxes, is_aligned=False).topk(self.topk_select_num)
+
+        topk_encoded_boxes_list = []
+        mean_points_list = []
+        for selected_inds in nms_selected_boxes_inds:
+            mean_points_list.append(_mlvl_points[selected_inds].mean(0).reshape(1, 2))
+            topk_encoded_boxes_list.append(mlvl_reg_feat[selected_inds].reshape(1, self.topk_select_num, -1))
+
+        topk_encoded_boxes = torch.cat(topk_encoded_boxes_list)
+        mean_points = torch.cat(mean_points_list)
+        topk_boxes = distance2bbox(mean_points, self.topk_obj_reg(topk_encoded_boxes.permute(0, 2, 1).contiguous().reshape(-1, 256, 3, 3)).float().exp().reshape(-1 ,4))
+        return topk_boxes, det_labels
 
     def get_points(self, featmap_sizes, dtype, device):
         """Get points according to feature map sizes.

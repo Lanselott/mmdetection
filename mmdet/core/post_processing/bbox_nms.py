@@ -8,7 +8,8 @@ def multiclass_nms(multi_bboxes,
                    score_thr,
                    nms_cfg,
                    max_num=-1,
-                   score_factors=None):
+                   score_factors=None,
+                   with_inds=False):
     """NMS for multi-class bboxes.
 
     Args:
@@ -62,5 +63,8 @@ def multiclass_nms(multi_bboxes,
     else:
         bboxes = multi_bboxes.new_zeros((0, 5))
         labels = multi_bboxes.new_zeros((0, ), dtype=torch.long)
-
-    return bboxes, labels
+    
+    if with_inds:
+        return bboxes, labels, inds
+    else:
+        return bboxes, labels

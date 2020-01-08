@@ -2,10 +2,9 @@ from mmdet.apis import init_detector, inference_detector, show_result
 from mmdet.datasets.coco import CocoDataset
 import numpy as np
 from IPython import embed
-# config_file = './configs/srretinanet_r50_fpn_4gpu.py'
-# checkpoint_file = './work/dirs/srretinanet_r50_fpn_1x_4gpu/latest.pth'
-config_file = './configs/fcos/box_coding_iou_coord_reg_v2_r50_caffe_fpn_gn_1x_single_test.py'
-checkpoint_file = 'work/dirs/box_coding_multi_focal_loss/box_coord_multi_focal_loss_epoch_12.pth'
+
+config_file = './configs/fcos/fcos_fc_r50_caffe_fpn_gn_1x_single_test.py'
+checkpoint_file = 'work/dirs/fcos_fc/fcos_fc_epoch_12.pth'
 
 # build the model from a config file and a checkpoint file
 
@@ -22,5 +21,5 @@ for img in imgs:
     result = inference_detector(model, img)
     # or save the visualization results to image files
     # embed()
-    show_result(img, result, model.CLASSES, score_thr=0.3, show=False, out_file='result_{}.jpg'.format(i))
+    show_result(img, result, model.CLASSES, score_thr=0.5, show=False, out_file='result_{}.jpg'.format(i))
     i += 1
