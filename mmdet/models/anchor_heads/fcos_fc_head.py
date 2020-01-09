@@ -221,7 +221,7 @@ class FCOSFCHead(nn.Module):
 
             instance_counter = instance_counter.int()
             obj_ids = torch.bincount(instance_counter).nonzero().int()
-            opt_threshold = 0.9
+            opt_threshold = 0.8
             for obj_id in obj_ids:
                 dist_conf_mask_list.append((instance_counter==obj_id).float())
             
@@ -250,7 +250,6 @@ class FCOSFCHead(nn.Module):
                 '''
                 obj_pos_reg_feat_list.append(obj_pos_reg_feat[obj_topk_inds].reshape(1, -1, 256))
                 obj_topk_pos_decoded_bbox_targets.append(pos_decoded_target_preds[obj_mask_inds[obj_topk_inds]][0].reshape(1, 4))
-            
             if len(obj_pos_reg_feat_list) != 0:
                 obj_pos_reg_feats = torch.cat(obj_pos_reg_feat_list)
                 mean_obj_topk_inds = torch.cat(mean_obj_topk_inds_list)
