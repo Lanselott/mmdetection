@@ -225,7 +225,7 @@ class FCOSFCV2Head(nn.Module):
 
             instance_counter = instance_counter.int()
             obj_ids = torch.bincount(instance_counter).nonzero().int()
-            opt_threshold = 0.0
+            opt_threshold = 0.9
             for obj_id in obj_ids:
                 dist_conf_mask_list.append((instance_counter==obj_id).float())
             
@@ -258,30 +258,30 @@ class FCOSFCV2Head(nn.Module):
                 obj_pos_reg_feat_list.append(obj_pos_reg_feat[obj_topk_inds].reshape(1, -1, 256))
                 obj_topk_pos_decoded_bbox_targets.append(pos_decoded_target_preds[obj_mask_inds[obj_topk_inds]][0].reshape(1, 4))
             
-            obj_pos_reg_feats = torch.cat(obj_pos_reg_feat_list).permute(0, 2, 1).contiguous().reshape(-1, 256, 3 ,3)
-            obj_topk_points = torch.cat(obj_topk_points_list).permute(0, 2, 1).contiguous().reshape(-1, 2, 3 ,3)
-            # Normalize points
-            obj_scales = torch.cat(obj_scales).permute(0, 2, 1).contiguous().reshape(-1, 2, 3 ,3)
-            obj_topk_points[:, 0] /= obj_scales[:, 0] 
-            obj_topk_points[:, 1] /= obj_scales[:, 1] 
-            # Pred expect point
-            mean_obj_topk_inds = self.expect_obj_point(obj_topk_points).reshape(-1, 2).exp()
-            # Rescale
-            rescaled_obj_topk_inds = []
-            rescaled_obj_topk_inds.append((mean_obj_topk_inds[:, 0] * obj_scales[:, 0, 0, 0]).reshape(-1, 1))
-            rescaled_obj_topk_inds.append((mean_obj_topk_inds[:, 1] * obj_scales[:, 1, 0, 0]).reshape(-1, 1))
+            if len(obj_pos_reg_feat_list) != 0:
+                obj_pos_reg_feats = torch.cat(obj_pos_reg_feat_list).permute(0, 2, 1).contiguous().reshape(-1, 256, 3 ,3)
+                obj_topk_points = torch.cat(obj_topk_points_list).permute(0, 2, 1).contiguous().reshape(-1, 2, 3 ,3)
+                # Normalize points
+                obj_scales = torch.cat(obj_scales).permute(0, 2, 1).contiguous().reshape(-1, 2, 3 ,3)
+                obj_topk_points[:, 0] /= obj_scales[:, 0] 
+                obj_topk_points[:, 1] /= obj_scales[:, 1] 
+                # Pred expect point
+                mean_obj_topk_inds = self.expect_obj_point(obj_topk_points).reshape(-1, 2).exp()
+                # Rescale
+                rescaled_obj_topk_inds = []
+                rescaled_obj_topk_inds.append((mean_obj_topk_inds[:, 0] * obj_scales[:, 0, 0, 0]).reshape(-1, 1))
+                rescaled_obj_topk_inds.append((mean_obj_topk_inds[:, 1] * obj_scales[:, 1, 0, 0]).reshape(-1, 1))
 
-            rescaled_obj_topk_inds = torch.cat(rescaled_obj_topk_inds, 1)
-            
-            expected_obj_preds = self.topk_obj_reg(obj_pos_reg_feats).float().exp().reshape(-1, 4)
-            # mean_obj_topk_inds = torch.cat(mean_obj_topk_inds_list)
-            obj_topk_pos_bbox_preds = distance2bbox(
-                                        rescaled_obj_topk_inds, 
-                                        expected_obj_preds)
+                rescaled_obj_topk_inds = torch.cat(rescaled_obj_topk_inds, 1)
+                
+                expected_obj_preds = self.topk_obj_reg(obj_pos_reg_feats).float().exp().reshape(-1, 4)
 
-            if len(obj_topk_pos_bbox_preds) != 0:
+                obj_topk_pos_bbox_preds = distance2bbox(
+                                            rescaled_obj_topk_inds, 
+                                            expected_obj_preds)
+
                 obj_topk_pos_decoded_bbox_targets = torch.cat(obj_topk_pos_decoded_bbox_targets)
-                # print("length of topks", len(obj_topk_pos_bbox_preds))
+
                 loss_topk_bbox = self.loss_bbox(
                     obj_topk_pos_bbox_preds,
                     obj_topk_pos_decoded_bbox_targets)

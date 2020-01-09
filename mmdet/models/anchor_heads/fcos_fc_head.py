@@ -221,7 +221,7 @@ class FCOSFCHead(nn.Module):
 
             instance_counter = instance_counter.int()
             obj_ids = torch.bincount(instance_counter).nonzero().int()
-            opt_threshold = 0.0
+            opt_threshold = 0.9
             for obj_id in obj_ids:
                 dist_conf_mask_list.append((instance_counter==obj_id).float())
             
@@ -251,13 +251,13 @@ class FCOSFCHead(nn.Module):
                 obj_pos_reg_feat_list.append(obj_pos_reg_feat[obj_topk_inds].reshape(1, -1, 256))
                 obj_topk_pos_decoded_bbox_targets.append(pos_decoded_target_preds[obj_mask_inds[obj_topk_inds]][0].reshape(1, 4))
             
-            obj_pos_reg_feats = torch.cat(obj_pos_reg_feat_list)
-            mean_obj_topk_inds = torch.cat(mean_obj_topk_inds_list)
-            obj_topk_pos_bbox_preds = distance2bbox(
-                                        mean_obj_topk_inds, 
-                                        self.topk_obj_reg(obj_pos_reg_feats.permute(0, 2, 1).contiguous().reshape(-1, 256, 3 ,3)).float().exp().reshape(-1, 4))
+            if len(obj_pos_reg_feat_list) != 0:
+                obj_pos_reg_feats = torch.cat(obj_pos_reg_feat_list)
+                mean_obj_topk_inds = torch.cat(mean_obj_topk_inds_list)
+                obj_topk_pos_bbox_preds = distance2bbox(
+                                            mean_obj_topk_inds, 
+                                            self.topk_obj_reg(obj_pos_reg_feats.permute(0, 2, 1).contiguous().reshape(-1, 256, 3 ,3)).float().exp().reshape(-1, 4))
 
-            if len(obj_topk_pos_bbox_preds) != 0:
                 obj_topk_pos_decoded_bbox_targets = torch.cat(obj_topk_pos_decoded_bbox_targets)
                 # print("length of topks", len(obj_topk_pos_bbox_preds))
                 loss_topk_bbox = self.loss_bbox(
@@ -399,16 +399,24 @@ class FCOSFCHead(nn.Module):
 
         nms_selected_boxes_ious, nms_selected_boxes_inds = bbox_overlaps(det_bboxes[:, :4], mlvl_bboxes, is_aligned=False).topk(self.topk_select_num)
 
+        infer_threshold = 0.95
+        saved_bboxes_inds = nms_selected_boxes_ious[:, -1] < infer_threshold
+        saved_det_bboxes = det_bboxes[saved_bboxes_inds]
+        removed_det_bboxes = det_bboxes[(saved_bboxes_inds!=1).nonzero()].reshape(-1, 5)
+        nms_selected_boxes_inds = nms_selected_boxes_inds[(saved_bboxes_inds!=1).nonzero()].reshape(-1, 9)
         topk_encoded_boxes_list = []
         mean_points_list = []
         for selected_inds in nms_selected_boxes_inds:
-            mean_points_list.append(_mlvl_points[selected_inds].mean(0).reshape(1, 2))
+            mean_points_list.append(_mlvl_points[selected_inds].sum(0).reshape(1, 2) / self.topk_select_num)
             topk_encoded_boxes_list.append(mlvl_reg_feat[selected_inds].reshape(1, self.topk_select_num, -1))
 
         topk_encoded_boxes = torch.cat(topk_encoded_boxes_list)
         mean_points = torch.cat(mean_points_list)
         topk_boxes = distance2bbox(mean_points, self.topk_obj_reg(topk_encoded_boxes.permute(0, 2, 1).contiguous().reshape(-1, 256, 3, 3)).float().exp().reshape(-1 ,4))
-        return topk_boxes, det_labels
+        topk_boxes = torch.cat([topk_boxes, removed_det_bboxes[:, 4:]], 1)
+        final_det_bboxes = torch.cat([saved_det_bboxes, topk_boxes])
+
+        return final_det_bboxes, det_labels
 
     def get_points(self, featmap_sizes, dtype, device):
         """Get points according to feature map sizes.
