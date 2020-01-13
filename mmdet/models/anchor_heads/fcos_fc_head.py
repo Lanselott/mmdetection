@@ -386,14 +386,13 @@ class FCOSFCHead(nn.Module):
         # mean_points = torch.cat(mean_points_list)
         # topk_boxes = distance2bbox(mean_points, self.topk_obj_reg(topk_encoded_boxes.permute(0, 2, 1).contiguous().reshape(-1, 256, 3, 3)).float().exp().reshape(-1 ,4))
 
-        det_bboxes, det_labels, det_inds = multiclass_nms(
+        det_bboxes, det_labels = multiclass_nms(
             mlvl_bboxes,
             # topk_boxes,
             mlvl_scores,
             cfg.score_thr,
             cfg.nms,
-            cfg.max_per_img,
-            with_inds=True)
+            cfg.max_per_img)
             # score_factors=mlvl_centerness)
 
         nms_selected_boxes_ious, nms_selected_boxes_inds = bbox_overlaps(det_bboxes[:, :4], mlvl_bboxes, is_aligned=False).topk(self.topk_select_num)
