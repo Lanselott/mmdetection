@@ -249,7 +249,7 @@ class FCOSFCV2Head(nn.Module):
 
             instance_counter = instance_counter.int()
             obj_ids = torch.bincount(instance_counter).nonzero().int()
-            opt_threshold = 0.5
+            opt_threshold = 0.9
             for obj_id in obj_ids:
                 dist_conf_mask_list.append((instance_counter==obj_id).float())
             
