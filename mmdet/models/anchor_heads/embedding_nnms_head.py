@@ -240,14 +240,16 @@ class EmbeddingNNmsHead(nn.Module):
                 obj_embedding_preds = pos_embedding_preds[obj_mask_inds]
                 objs_embedding_list.append(obj_embedding_preds)
                 # mean value
-                embedding_mean = obj_embedding_preds.mean().detach()
+                embedding_mean = obj_embedding_preds.sum() / obj_embedding_preds.shape[0]
                 obj_embedding_means_list.append(embedding_mean)
                 obj_embedding_means_expand_list.append(torch.zeros_like(obj_embedding_preds).fill_(embedding_mean))
 
             # pull loss
+            theta = 1
             embedding_expand_means = torch.cat(obj_embedding_means_expand_list)
             pull_embedding = torch.cat(objs_embedding_list)
-            pull_loss = self.pull_loss(pull_embedding, embedding_expand_means)
+            pull_loss = theta * self.pull_loss(pull_embedding, embedding_expand_means)
+
             # push loss
             N_samples = len(dist_conf_mask_list) 
             push_loss = 0   
