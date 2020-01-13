@@ -27,6 +27,7 @@ from .box_coding_iou_coord_reg_head import BoxCodingIoUCoordRegHead
 from .box_coding_iou_coord_reg_headV2 import BoxCodingIoUCoordRegHeadV2
 from .fcos_fc_head import FCOSFCHead
 from .fcos_fc_v2_head import FCOSFCV2Head
+from .embedding_nnms_head import EmbeddingNNmsHead
 __all__ = [
     'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption', 'RPNHead',
     'GARPNHead', 'RetinaHead', 'GARetinaHead', 'SSDHead', 'FCOSHead',
@@ -35,5 +36,6 @@ __all__ = [
     'FCOSMergedHead', 'FCOSDeeperFeedbackHeadV2', 'FCOSDeeperFeedbackHeadV3', 'FCOSDeeperFeedbackHeadV1S', 
     'FCOSDeeperFeedbackHeadV3S', 'MixupFCOSHead', 'BoxCodingHead', 
     'BoxCodingHeadV2', 'BoxCodingIoUHead', 'BoxCodingIoUCoordRegHead',
-    'BoxCodingIoUCoordRegHeadV2', 'FCOSFCHead', 'FCOSFCV2Head'
+    'BoxCodingIoUCoordRegHeadV2', 'FCOSFCHead', 'FCOSFCV2Head',
+    'EmbeddingNNmsHead'
 ]
