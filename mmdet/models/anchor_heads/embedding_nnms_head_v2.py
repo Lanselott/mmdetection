@@ -11,7 +11,7 @@ INF = 1e8
 
 
 @HEADS.register_module
-class EmbeddingNNmsHead(nn.Module):
+class EmbeddingNNmsHeadV2(nn.Module):
     """
     Fully Convolutional One-Stage Object Detection head from [1]_.
 
@@ -48,7 +48,7 @@ class EmbeddingNNmsHead(nn.Module):
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
-        super(EmbeddingNNmsHead, self).__init__()
+        super(EmbeddingNNmsHeadV2, self).__init__()
 
         self.num_classes = num_classes
         self.cls_out_channels = num_classes - 1
@@ -94,7 +94,6 @@ class EmbeddingNNmsHead(nn.Module):
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
-        for _ in range(self.embedding_convs_num):
             self.embedding_convs.append(
                 ConvModule(
                     chn,
@@ -132,18 +131,15 @@ class EmbeddingNNmsHead(nn.Module):
     def forward_single(self, x, scale):
         cls_feat = x
         reg_feat = x
+        embedding_feat = x
 
-        for j in range(len(self.cls_convs)):
-            cls_layer = self.cls_convs[j]
+        for cls_layer in self.cls_convs:
             cls_feat = cls_layer(cls_feat)
-            if j == 2:
-                embedding_feat = cls_feat
         cls_score = self.fcos_cls(cls_feat)
 
         for embedding_layer in self.embedding_convs:
             embedding_feat = embedding_layer(embedding_feat)
-        
-        embedding_pred = self.embedding_cls(embedding_feat)
+        embedding_pred = self.embedding_cls(embedding_feat)        
         
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
