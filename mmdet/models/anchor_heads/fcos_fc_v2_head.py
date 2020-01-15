@@ -112,8 +112,10 @@ class FCOSFCV2Head(nn.Module):
 
         # self.fcos_topk_reg = nn.Linear(self.feat_channels, 4)
         # self.topk_obj_reg = nn.Linear(self.topk_select_num, 1)
-        self.topk_obj_reg = nn.Conv2d(self.feat_channels, 4, 3) # (in, out, kernel_size)
-        self.expect_obj_point = nn.Conv2d(self.feat_channels + 2, 2, 3)
+        self.merge_size = 3
+        self.topk_obj_reg = nn.Conv2d(self.feat_channels, 4, self.merge_size) # (in, out, kernel_size)
+        self.expect_obj_point = nn.Conv2d(2, 2, self.merge_size)
+        self.adp_pooling = nn.AdaptiveAvgPool1d(self.topk_select_num)
 
         self.fcos_cls = nn.Conv2d(
             self.feat_channels, self.cls_out_channels, 3, padding=1)
@@ -249,14 +251,14 @@ class FCOSFCV2Head(nn.Module):
 
             instance_counter = instance_counter.int()
             obj_ids = torch.bincount(instance_counter).nonzero().int()
-            opt_threshold = 0.9
+
             for obj_id in obj_ids:
                 dist_conf_mask_list.append((instance_counter==obj_id).float())
             
             obj_topk_pos_bbox_preds = []
             obj_topk_pos_decoded_bbox_targets = []
             obj_pos_reg_feat_list = []
-            obj_topk_points_list = []
+            obj_pooled_points_list = []
             obj_scales = []
 
             # Opt for each obj
@@ -265,32 +267,29 @@ class FCOSFCV2Head(nn.Module):
                 obj_pos_iou_scores = pos_iou_scores[obj_mask_inds]
                 obj_pos_reg_feat = pos_opt_reg_feats[obj_mask_inds]
                 obj_pos_scales = pos_scales[obj_mask_inds]
+                obj_pos_points = pos_points[obj_mask_inds]
+                obj_pos_decoded_target_preds = pos_decoded_target_preds[obj_mask_inds]
                 obj_sample_nums = obj_mask_inds.size()[0]
-
-                if obj_sample_nums > topk_select_num:
-                    obj_scores, obj_topk_inds = torch.topk(obj_pos_iou_scores, topk_select_num)
-                    if (obj_topk_inds == 0).sum() > 1 or obj_scores.min() < opt_threshold:
-                        continue
-                else:
-                    # obj_scores, obj_topk_inds = obj_pos_iou_scores.topk(obj_sample_nums)
-                    continue
-                obj_topk_points_list.append(pos_points[obj_mask_inds[obj_topk_inds]].reshape(1, topk_select_num, -1))
-                obj_scales.append(obj_pos_scales[obj_topk_inds].reshape(1, -1, 2))
-                obj_pos_reg_feat_list.append(obj_pos_reg_feat[obj_topk_inds].reshape(1, -1, self.feat_channels))
-                obj_topk_pos_decoded_bbox_targets.append(pos_decoded_target_preds[obj_mask_inds[obj_topk_inds]][0].reshape(1, 4))
+                
+                pooled_obj_pos_reg_feat = self.adp_pooling(obj_pos_reg_feat.permute(1, 0).reshape(1, self.feat_channels, -1))
+                pooled_obj_pos_points = self.adp_pooling(obj_pos_points.permute(1, 0).reshape(1, 2, -1))
+                
+                obj_pos_reg_feat_list.append(pooled_obj_pos_reg_feat)
+                obj_pooled_points_list.append(pooled_obj_pos_points)
+                obj_scales.append(obj_pos_scales[0].repeat(self.topk_select_num, 1).reshape(1, -1, 2))
+                obj_topk_pos_decoded_bbox_targets.append(obj_pos_decoded_target_preds[:1])
             
             # Opt prediction
             if len(obj_pos_reg_feat_list) != 0:
-                obj_pos_reg_feats = torch.cat(obj_pos_reg_feat_list).permute(0, 2, 1).contiguous().reshape(-1, self.feat_channels, 3 ,3)
-                obj_topk_points = torch.cat(obj_topk_points_list).permute(0, 2, 1).contiguous().reshape(-1, 2, 3 ,3)
-               
+                obj_pos_reg_feats = torch.cat(obj_pos_reg_feat_list).reshape(-1, self.feat_channels, self.merge_size ,self.merge_size)
+                obj_topk_points = torch.cat(obj_pooled_points_list).reshape(-1, 2, self.merge_size, self.merge_size)
                 # Normalize points
-                obj_scales = torch.cat(obj_scales).permute(0, 2, 1).contiguous().reshape(-1, 2, 3 ,3)
+                obj_scales = torch.cat(obj_scales).permute(0, 2, 1).contiguous().reshape(-1, 2, self.merge_size, self.merge_size)
                 obj_topk_points[:, 0] /= obj_scales[:, 0] 
                 obj_topk_points[:, 1] /= obj_scales[:, 1] 
                
                 # Pred expect point
-                obj_topk_points = torch.cat([obj_topk_points, obj_pos_reg_feats], 1)
+                # obj_topk_points = torch.cat([obj_topk_points, obj_pos_reg_feats], 1)
                 mean_obj_topk_inds = self.expect_obj_point(obj_topk_points).reshape(-1, 2).exp()
 
                 # Rescale
@@ -301,7 +300,6 @@ class FCOSFCV2Head(nn.Module):
                 rescaled_obj_topk_inds = torch.cat(rescaled_obj_topk_inds, 1)
                 
                 expected_obj_preds = self.topk_obj_reg(obj_pos_reg_feats).float().exp().reshape(-1, 4)
-
                 obj_topk_pos_bbox_preds = distance2bbox(
                                             rescaled_obj_topk_inds, 
                                             expected_obj_preds)
@@ -436,33 +434,36 @@ class FCOSFCV2Head(nn.Module):
 
         nms_selected_boxes_ious, nms_selected_boxes_inds = bbox_overlaps(det_bboxes[:, :4], mlvl_bboxes, is_aligned=False).topk(self.topk_select_num)
 
-        infer_threshold = 1.00
+        infer_threshold = 0.96
         saved_bboxes_inds = nms_selected_boxes_ious[:, -1] < infer_threshold
         saved_det_bboxes = det_bboxes[saved_bboxes_inds]
         removed_det_bboxes = det_bboxes[(saved_bboxes_inds!=1).nonzero()].reshape(-1, 5)
         nms_selected_boxes_inds = nms_selected_boxes_inds[(saved_bboxes_inds!=1).nonzero()].reshape(-1, 9)
-        topk_encoded_boxes_list = []
+        topk_encoded_features_list = []
         mean_points_list = []
         for selected_inds in nms_selected_boxes_inds:
             obj_topk_points = _mlvl_points[selected_inds]
             obj_topk_points[:, 0] /= img_shape[0] 
             obj_topk_points[:, 1] /= img_shape[1] 
             mean_points_list.append(obj_topk_points.reshape(-1, self.topk_select_num, 2))
-            topk_encoded_boxes_list.append(mlvl_reg_feat[selected_inds].reshape(1, self.topk_select_num, -1))
+            topk_encoded_features_list.append(mlvl_reg_feat[selected_inds].reshape(1, self.topk_select_num, -1))
 
-        if len(topk_encoded_boxes_list) != 0:
+        if len(topk_encoded_features_list) != 0:
             mean_points = torch.cat(mean_points_list).permute(0, 2, 1).contiguous().reshape(-1, 2, 3, 3)
+            topk_encoded_boxes_features = torch.cat(topk_encoded_features_list).permute(0, 2, 1).contiguous().reshape(-1, 256, 3, 3)
+            mean_points = torch.cat([mean_points, topk_encoded_boxes_features], 1)
             mean_points = self.expect_obj_point(mean_points).reshape(-1, 2).exp()
             mean_points[:, 0] *= img_shape[0]
             mean_points[:, 1] *= img_shape[1]
-            topk_encoded_boxes = torch.cat(topk_encoded_boxes_list)
-            topk_boxes = distance2bbox(mean_points, self.topk_obj_reg(topk_encoded_boxes.permute(0, 2, 1).contiguous().reshape(-1, 256, 3, 3)).float().exp().reshape(-1 ,4))
+
+            topk_boxes = distance2bbox(mean_points, self.topk_obj_reg(topk_encoded_boxes_features).float().exp().reshape(-1 ,4))
             topk_boxes = torch.cat([topk_boxes, removed_det_bboxes[:, 4:]], 1)
             final_det_bboxes = torch.cat([saved_det_bboxes, topk_boxes])
+            embed()
         else:
             final_det_bboxes = det_bboxes
 
-        return det_bboxes, det_labels
+        return final_det_bboxes, det_labels
 
     def get_points(self, featmap_sizes, dtype, device):
         """Get points according to feature map sizes.

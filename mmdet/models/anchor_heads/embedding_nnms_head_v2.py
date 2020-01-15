@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from mmcv.cnn import normal_init
 
-from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms, bbox_overlaps
+from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms, multiclass_nms_test, bbox_overlaps
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import ConvModule, Scale, bias_init_with_prob
@@ -278,6 +278,7 @@ class EmbeddingNNmsHeadV2(nn.Module):
     def get_bboxes(self,
                    cls_scores,
                    bbox_preds,
+                   embedding_preds,
                    img_metas,
                    cfg,
                    rescale=None):
@@ -295,10 +296,13 @@ class EmbeddingNNmsHeadV2(nn.Module):
             bbox_pred_list = [
                 bbox_preds[i][img_id].detach() for i in range(num_levels)
             ]
-         
+            embedding_pred_list = [
+                embedding_preds[i][img_id].detach() for i in range(num_levels)
+            ]
             img_shape = img_metas[img_id]['img_shape']
             scale_factor = img_metas[img_id]['scale_factor']
             det_bboxes = self.get_bboxes_single(cls_score_list, bbox_pred_list,
+                                                embedding_pred_list,
                                                 mlvl_points, img_shape,
                                                 scale_factor, cfg, rescale)
             result_list.append(det_bboxes)
@@ -307,40 +311,58 @@ class EmbeddingNNmsHeadV2(nn.Module):
     def get_bboxes_single(self,
                           cls_scores,
                           bbox_preds,
+                          embedding_preds,
                           mlvl_points,
                           img_shape,
                           scale_factor,
                           cfg,
                           rescale=False):
-        assert len(cls_scores) == len(bbox_preds) == len(mlvl_points)
+        assert len(cls_scores) == len(bbox_preds) == len(embedding_preds) == len(mlvl_points)
         mlvl_bboxes = []
         mlvl_scores = []
-        for cls_score, bbox_pred, points in zip(
-                cls_scores, bbox_preds, mlvl_points):
-            assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
+        mlvl_embeddings = []
+        for cls_score, bbox_pred, embedding_pred, points in zip(
+                cls_scores, bbox_preds, embedding_preds, mlvl_points):
+            assert cls_score.size()[-2:] == bbox_pred.size()[-2:] == embedding_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
-
             bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
+            # import imageio
+            # imageio.imwrite("embedding_features.png", embedding_pred[0].cpu().numpy())
+            embedding_pred = embedding_pred.permute(1, 2, 0).reshape(-1, 1)
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
                 max_scores, _ = scores.max(dim=1)
                 _, topk_inds = max_scores.topk(nms_pre)
                 points = points[topk_inds, :]
                 bbox_pred = bbox_pred[topk_inds, :]
+                embedding_pred = embedding_pred[topk_inds, :]
+
                 scores = scores[topk_inds, :]
             bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
             mlvl_bboxes.append(bboxes)
             mlvl_scores.append(scores)
+            mlvl_embeddings.append(embedding_pred)
         mlvl_bboxes = torch.cat(mlvl_bboxes)
         if rescale:
             mlvl_bboxes /= mlvl_bboxes.new_tensor(scale_factor)
         mlvl_scores = torch.cat(mlvl_scores)
         padding = mlvl_scores.new_zeros(mlvl_scores.shape[0], 1)
         mlvl_scores = torch.cat([padding, mlvl_scores], dim=1)
+        mlvl_embeddings = torch.cat(mlvl_embeddings)
+        max_scores, max_inds = mlvl_scores.max(1)
+        selected_embedding = mlvl_embeddings[max_scores > 0.05]
+        selected_mlvl_scores = mlvl_scores[max_scores > 0.05]
+        selected_max_scores, selected_max_inds = selected_mlvl_scores.max(1)
+
+        for i in range(mlvl_scores.shape[1]):
+            cls_embeddings = selected_embedding[selected_max_inds == i]
+            embed()
+
         det_bboxes, det_labels = multiclass_nms(
             mlvl_bboxes,
             mlvl_scores,
+            # mlvl_embeddings,
             cfg.score_thr,
             cfg.nms,
             cfg.max_per_img)
