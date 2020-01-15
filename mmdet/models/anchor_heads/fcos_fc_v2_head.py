@@ -51,7 +51,7 @@ class FCOSFCV2Head(nn.Module):
                      loss_weight=1.0),
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
-                 topk_select_num=9):
+                 topk_select_num=25):
         super(FCOSFCV2Head, self).__init__()
 
         self.num_classes = num_classes
@@ -96,9 +96,7 @@ class FCOSFCV2Head(nn.Module):
                     padding=1,
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
-                    bias=self.norm_cfg is None))
-        
-        for j in range(self.sub_stacked_convs):
+                    bias=self.norm_cfg is None))        
             self.opt_reg_convs.append(
                 ConvModule(
                     chn,
@@ -112,7 +110,7 @@ class FCOSFCV2Head(nn.Module):
 
         # self.fcos_topk_reg = nn.Linear(self.feat_channels, 4)
         # self.topk_obj_reg = nn.Linear(self.topk_select_num, 1)
-        self.merge_size = 3
+        self.merge_size = 5
         self.topk_obj_reg = nn.Conv2d(self.feat_channels, 4, self.merge_size) # (in, out, kernel_size)
         self.expect_obj_point = nn.Conv2d(2, 2, self.merge_size)
         self.adp_pooling = nn.AdaptiveAvgPool1d(self.topk_select_num)
