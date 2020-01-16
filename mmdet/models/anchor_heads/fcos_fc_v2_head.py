@@ -144,17 +144,15 @@ class FCOSFCV2Head(nn.Module):
     def forward_single(self, x, scale):
         cls_feat = x
         reg_feat = x
+        opt_reg_feat = x
 
         for cls_layer in self.cls_convs:
             cls_feat = cls_layer(cls_feat)
         cls_score = self.fcos_cls(cls_feat)
         centerness = self.fcos_centerness(cls_feat)
 
-        for i in range(len(self.reg_convs)):
-            reg_layer = self.reg_convs[i]
+        for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
-            if i == 2:
-                opt_reg_feat = reg_feat
 
         for opt_reg_layer in self.opt_reg_convs:
             opt_reg_feat = opt_reg_layer(opt_reg_feat)
@@ -279,7 +277,7 @@ class FCOSFCV2Head(nn.Module):
             
             # Opt prediction
             if len(obj_pos_reg_feat_list) != 0:
-                obj_pos_reg_feats = torch.cat(obj_pos_reg_feat_list).reshape(-1, self.feat_channels, self.merge_size ,self.merge_size)
+                obj_pos_reg_feats = torch.cat(obj_pos_reg_feat_list).reshape(-1, self.feat_channels, self.merge_size, self.merge_size)
                 obj_topk_points = torch.cat(obj_pooled_points_list).reshape(-1, 2, self.merge_size, self.merge_size)
                 # Normalize points
                 obj_scales = torch.cat(obj_scales).permute(0, 2, 1).contiguous().reshape(-1, 2, self.merge_size, self.merge_size)
