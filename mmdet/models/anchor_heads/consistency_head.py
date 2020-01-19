@@ -193,7 +193,7 @@ class ConsistencyHead(nn.Module):
             pos_iou_scores = bbox_overlaps(pos_decoded_bbox_preds, 
                                                 pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
             
-            loss_consistency = self.loss_consistency(pos_iou_scores, consist_pos_cls_scores.detach())
+            loss_consistency = self.loss_consistency(pos_iou_scores, consist_pos_cls_scores)
             # centerness weighted iou loss
             loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds,
