@@ -11,7 +11,7 @@ INF = 1e8
 
 
 @HEADS.register_module
-class FCOSFCV2PlusHead(nn.Module):
+class ConsistencyHead(nn.Module):
     """
     Fully Convolutional One-Stage Object Detection head from [1]_.
 
@@ -33,7 +33,6 @@ class FCOSFCV2PlusHead(nn.Module):
                  num_classes,
                  in_channels,
                  feat_channels=256,
-                 sub_stacked_convs=2,
                  stacked_convs=4,
                  strides=(4, 8, 16, 32, 64),
                  regress_ranges=((-1, 64), (64, 128), (128, 256), (256, 512),
@@ -45,36 +44,36 @@ class FCOSFCV2PlusHead(nn.Module):
                      alpha=0.25,
                      loss_weight=1.0),
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
+                 loss_consistency=dict(
+                    type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
                  loss_centerness=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
                      loss_weight=1.0),
                  conv_cfg=None,
-                 norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
-                 topk_select_num=25):
-        super(FCOSFCV2PlusHead, self).__init__()
+                 norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
+        super(ConsistencyHead, self).__init__()
 
         self.num_classes = num_classes
         self.cls_out_channels = num_classes - 1
         self.in_channels = in_channels
         self.feat_channels = feat_channels
         self.stacked_convs = stacked_convs
-        self.sub_stacked_convs = sub_stacked_convs
         self.strides = strides
         self.regress_ranges = regress_ranges
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
+        self.loss_consistency = build_loss(loss_consistency)
         self.loss_centerness = build_loss(loss_centerness)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
-        self.topk_select_num = topk_select_num
+
         self._init_layers()
 
     def _init_layers(self):
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
-        self.opt_reg_convs = nn.ModuleList()
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
             self.cls_convs.append(
@@ -96,25 +95,7 @@ class FCOSFCV2PlusHead(nn.Module):
                     padding=1,
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
-                    bias=self.norm_cfg is None))        
-            self.opt_reg_convs.append(
-                ConvModule(
-                    chn,
-                    self.feat_channels,
-                    3,
-                    stride=1,
-                    padding=1,
-                    conv_cfg=self.conv_cfg,
-                    norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
-
-        # self.fcos_topk_reg = nn.Linear(self.feat_channels, 4)
-        # self.topk_obj_reg = nn.Linear(self.topk_select_num, 1)
-        self.merge_size = 5
-        self.topk_obj_reg = nn.Conv2d(self.feat_channels, 4, self.merge_size) # (in, out, kernel_size)
-        self.expect_obj_point = nn.Conv2d(2, 2, self.merge_size)
-        self.adp_pooling = nn.AdaptiveAvgPool1d(self.topk_select_num)
-
         self.fcos_cls = nn.Conv2d(
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
@@ -127,13 +108,7 @@ class FCOSFCV2PlusHead(nn.Module):
             normal_init(m.conv, std=0.01)
         for m in self.reg_convs:
             normal_init(m.conv, std=0.01)
-        for m in self.opt_reg_convs:
-            normal_init(m.conv, std=0.01)
         bias_cls = bias_init_with_prob(0.01)
-        
-        # normal_init(self.fcos_topk_reg, std=0.01)
-        normal_init(self.topk_obj_reg, std=0.01)
-        normal_init(self.expect_obj_point, std=0.01)
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
         normal_init(self.fcos_centerness, std=0.01)
@@ -144,7 +119,6 @@ class FCOSFCV2PlusHead(nn.Module):
     def forward_single(self, x, scale):
         cls_feat = x
         reg_feat = x
-        opt_reg_feat = x
 
         for cls_layer in self.cls_convs:
             cls_feat = cls_layer(cls_feat)
@@ -153,32 +127,27 @@ class FCOSFCV2PlusHead(nn.Module):
 
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
-
-        for opt_reg_layer in self.opt_reg_convs:
-            opt_reg_feat = opt_reg_layer(opt_reg_feat)
-
         # scale the bbox_pred of different level
         # float to avoid overflow when enabling FP16
         bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
-        return cls_score, bbox_pred, centerness, opt_reg_feat
+        return cls_score, bbox_pred, centerness
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def loss(self,
              cls_scores,
              bbox_preds,
              centernesses,
-             opt_reg_feats,
              gt_bboxes,
              gt_labels,
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-        assert len(cls_scores) == len(bbox_preds) == len(centernesses) == len(opt_reg_feats)
+        assert len(cls_scores) == len(bbox_preds) == len(centernesses)
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         all_level_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                            bbox_preds[0].device)
-        labels, bbox_targets, scales = self.fcos_target(all_level_points, gt_bboxes,
-                                                gt_labels, img_metas)
+        labels, bbox_targets = self.fcos_target(all_level_points, gt_bboxes,
+                                                gt_labels)
 
         num_imgs = cls_scores[0].size(0)
         # flatten cls_scores, bbox_preds and centerness
@@ -194,17 +163,11 @@ class FCOSFCV2PlusHead(nn.Module):
             centerness.permute(0, 2, 3, 1).reshape(-1)
             for centerness in centernesses
         ]
-        flatten_opt_reg_feats = [
-            opt_reg_feat.permute(0, 2, 3, 1).reshape(-1, self.feat_channels)
-            for opt_reg_feat in opt_reg_feats
-        ]
         flatten_cls_scores = torch.cat(flatten_cls_scores)
         flatten_bbox_preds = torch.cat(flatten_bbox_preds)
         flatten_centerness = torch.cat(flatten_centerness)
-        flatten_opt_reg_feats = torch.cat(flatten_opt_reg_feats)
         flatten_labels = torch.cat(labels)
         flatten_bbox_targets = torch.cat(bbox_targets)
-        flatten_scales = torch.cat(scales)
         # repeat points to align with bbox_preds
         flatten_points = torch.cat(
             [points.repeat(num_imgs, 1) for points in all_level_points])
@@ -217,8 +180,6 @@ class FCOSFCV2PlusHead(nn.Module):
 
         pos_bbox_preds = flatten_bbox_preds[pos_inds]
         pos_centerness = flatten_centerness[pos_inds]
-        pos_scales = flatten_scales[pos_inds].float().cuda()
-        pos_opt_reg_feats = flatten_opt_reg_feats[pos_inds]
 
         if num_pos > 0:
             pos_bbox_targets = flatten_bbox_targets[pos_inds]
@@ -227,98 +188,36 @@ class FCOSFCV2PlusHead(nn.Module):
             pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
             pos_decoded_target_preds = distance2bbox(pos_points,
                                                      pos_bbox_targets)
-            pos_iou_scores = bbox_overlaps(pos_decoded_bbox_preds, pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
-            # Instance level op
-            dist_conf_mask_list = []
-            # generate instance levels index
-            instance_counter = torch.zeros(num_pos, device=pos_points.device)
-            remove = torch.zeros(num_pos, device=pos_points.device)
-            obj_id = 0
+            pos_cls_scores = flatten_cls_scores[pos_inds]
+            consist_pos_cls_scores = pos_cls_scores.max(1)[0]
+            pos_iou_scores = bbox_overlaps(pos_decoded_bbox_preds, 
+                                                pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
             
-            # NOTE: get mask for each obj
-            topk_select_num = self.topk_select_num
-            for i in range(len(pos_decoded_target_preds)):
-                if remove[i] == 0:
-                    current_bbox = pos_decoded_target_preds[i]                
-                    mask = ((pos_decoded_target_preds == current_bbox).sum(1)==4).nonzero()
-                    instance_counter[mask] = obj_id
-                    remove[mask] = 1
-                    obj_id += 1
-
-            instance_counter = instance_counter.int()
-            obj_ids = torch.bincount(instance_counter).nonzero().int()
-
-            for obj_id in obj_ids:
-                dist_conf_mask_list.append((instance_counter==obj_id).float())
-            
-            obj_topk_pos_bbox_preds = []
-            obj_topk_pos_decoded_bbox_targets = []
-            obj_pos_reg_feat_list = []
-            obj_pooled_points_list = []
-
-            # Opt for each obj
-            for dist_conf_mask in dist_conf_mask_list:
-                obj_mask_inds = dist_conf_mask.nonzero().reshape(-1)
-                obj_pos_iou_scores = pos_iou_scores[obj_mask_inds]
-                obj_pos_reg_feat = pos_opt_reg_feats[obj_mask_inds]
-                obj_pos_scales = pos_scales[obj_mask_inds]
-                obj_pos_points = pos_points[obj_mask_inds]
-                obj_pos_decoded_target_preds = pos_decoded_target_preds[obj_mask_inds]
-                obj_sample_nums = obj_mask_inds.size()[0]
-                
-                pooled_obj_pos_reg_feat = self.adp_pooling(obj_pos_reg_feat.permute(1, 0).reshape(1, self.feat_channels, -1))
-                pooled_obj_pos_points = self.adp_pooling(obj_pos_points.permute(1, 0).reshape(1, 2, -1))
-                
-                obj_pos_reg_feat_list.append(pooled_obj_pos_reg_feat)
-                obj_pooled_points_list.append(pooled_obj_pos_points)
-                obj_topk_pos_decoded_bbox_targets.append(obj_pos_decoded_target_preds[:1])
-            
-            # Opt prediction
-            if len(obj_pos_reg_feat_list) != 0:
-                obj_pos_reg_feats = torch.cat(obj_pos_reg_feat_list).reshape(-1, self.feat_channels, self.merge_size, self.merge_size)
-                obj_topk_points = torch.cat(obj_pooled_points_list)
-                obj_topk_points = obj_topk_points.sum(2) / self.topk_select_num
-                
-                expected_obj_preds = self.topk_obj_reg(obj_pos_reg_feats).float().exp().reshape(-1, 4)
-                obj_topk_pos_bbox_preds = distance2bbox(
-                                            obj_topk_points, 
-                                            expected_obj_preds)
-                                            
-                obj_topk_pos_decoded_bbox_targets = torch.cat(obj_topk_pos_decoded_bbox_targets)
-
-                loss_topk_bbox = self.loss_bbox(
-                    obj_topk_pos_bbox_preds,
-                    obj_topk_pos_decoded_bbox_targets)
-                    # weight=pos_centerness_targets,
-                    # avg_factor=len(obj_topk_pos_bbox_preds))
-            else:
-                loss_topk_bbox = torch.zeros(0, device=pos_bbox_preds.device).sum()
-            # print("loss_topk_bbox:", loss_topk_bbox)
+            loss_consistency = self.loss_consistency(pos_iou_scores, consist_pos_cls_scores.detach())
             # centerness weighted iou loss
             loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds,
-                pos_decoded_target_preds)
-                # weight=pos_centerness_targets,
-                # avg_factor=pos_centerness_targets.sum())
-            # loss_centerness = self.loss_centerness(pos_centerness,
-            #                                        pos_centerness_targets)
+                pos_decoded_target_preds,
+                weight=pos_centerness_targets,
+                avg_factor=pos_centerness_targets.sum())
+            loss_centerness = self.loss_centerness(pos_centerness,
+                                                   pos_centerness_targets)
         else:
-            loss_topk_bbox = pos_bbox_preds.sum()
             loss_bbox = pos_bbox_preds.sum()
-            # loss_centerness = pos_centerness.sum()
+            loss_centerness = pos_centerness.sum()
+            loss_consistency = pos_bbox_preds.sum()
 
         return dict(
             loss_cls=loss_cls,
-            loss_topk_bbox=loss_topk_bbox,
-            loss_bbox=loss_bbox)
-            # loss_centerness=loss_centerness)
+            loss_bbox=loss_bbox,
+            loss_centerness=loss_centerness,
+            loss_consistency=loss_consistency)
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,
                    cls_scores,
                    bbox_preds,
                    centernesses,
-                   reg_feats,
                    img_metas,
                    cfg,
                    rescale=None):
@@ -339,14 +238,10 @@ class FCOSFCV2PlusHead(nn.Module):
             centerness_pred_list = [
                 centernesses[i][img_id].detach() for i in range(num_levels)
             ]
-            reg_feat_list = [
-                reg_feats[i][img_id].detach() for i in range(num_levels)
-            ]
             img_shape = img_metas[img_id]['img_shape']
             scale_factor = img_metas[img_id]['scale_factor']
             det_bboxes = self.get_bboxes_single(cls_score_list, bbox_pred_list,
                                                 centerness_pred_list,
-                                                reg_feat_list,
                                                 mlvl_points, img_shape,
                                                 scale_factor, cfg, rescale)
             result_list.append(det_bboxes)
@@ -356,43 +251,35 @@ class FCOSFCV2PlusHead(nn.Module):
                           cls_scores,
                           bbox_preds,
                           centernesses,
-                          reg_feats,
                           mlvl_points,
                           img_shape,
                           scale_factor,
                           cfg,
                           rescale=False):
         assert len(cls_scores) == len(bbox_preds) == len(mlvl_points)
-        mlvl_reg_feat = []
-        _mlvl_points = []
         mlvl_bboxes = []
         mlvl_scores = []
         mlvl_centerness = []
-        for cls_score, bbox_pred, centerness, reg_feat, points in zip(
-                cls_scores, bbox_preds, centernesses, reg_feats, mlvl_points):
+        for cls_score, bbox_pred, centerness, points in zip(
+                cls_scores, bbox_preds, centernesses, mlvl_points):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
             centerness = centerness.permute(1, 2, 0).reshape(-1).sigmoid()
-            
-            reg_feat = reg_feat.permute(1, 2, 0).reshape(-1, 256)
+
             bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
-                # max_scores, _ = (scores * centerness[:, None]).max(dim=1)
-                max_scores, _ = scores.max(dim=1)
+                max_scores, _ = (scores * centerness[:, None]).max(dim=1)
                 _, topk_inds = max_scores.topk(nms_pre)
                 points = points[topk_inds, :]
-                reg_feat = reg_feat[topk_inds, :]
                 bbox_pred = bbox_pred[topk_inds, :]
                 scores = scores[topk_inds, :]
                 centerness = centerness[topk_inds]
             bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
-            mlvl_reg_feat.append(reg_feat)
             mlvl_bboxes.append(bboxes)
             mlvl_scores.append(scores)
             mlvl_centerness.append(centerness)
-            _mlvl_points.append(points)
         mlvl_bboxes = torch.cat(mlvl_bboxes)
         if rescale:
             mlvl_bboxes /= mlvl_bboxes.new_tensor(scale_factor)
@@ -400,49 +287,14 @@ class FCOSFCV2PlusHead(nn.Module):
         padding = mlvl_scores.new_zeros(mlvl_scores.shape[0], 1)
         mlvl_scores = torch.cat([padding, mlvl_scores], dim=1)
         mlvl_centerness = torch.cat(mlvl_centerness)
-        mlvl_reg_feat = torch.cat(mlvl_reg_feat)
-        _mlvl_points = torch.cat(_mlvl_points)
-
         det_bboxes, det_labels = multiclass_nms(
             mlvl_bboxes,
-            # topk_boxes,
             mlvl_scores,
             cfg.score_thr,
             cfg.nms,
-            cfg.max_per_img)
-            # score_factors=mlvl_centerness)
-        embed()
-        nms_selected_boxes_ious = bbox_overlaps(det_bboxes[:, :4], mlvl_bboxes, is_aligned=False)
-
-        infer_threshold = 1.0
-        clustered_bboxes_inds = nms_selected_boxes_ious >= infer_threshold
-
-        obj_pos_reg_feat_list = []
-        obj_pooled_points_list = []
-        for clustered_bboxes_ind in clustered_bboxes_inds:
-            saved_inds = (clustered_bboxes_ind == 1).nonzero()
-            clustered_reg_feat = mlvl_reg_feat[saved_inds].permute(2, 1, 0).contiguous().reshape(1, self.feat_channels, -1)
-            clustered_pos_points = _mlvl_points[saved_inds].permute(2, 1, 0).contiguous().reshape(1, 2, -1)
-            
-            pooled_obj_pos_reg_feat = self.adp_pooling(clustered_reg_feat)
-            pooled_obj_pos_points = self.adp_pooling(clustered_pos_points)
-            obj_pos_reg_feat_list.append(pooled_obj_pos_reg_feat)
-            obj_pooled_points_list.append(pooled_obj_pos_points)
-
-        obj_pos_reg_feats = torch.cat(obj_pos_reg_feat_list).reshape(-1, self.feat_channels, self.merge_size, self.merge_size)
-        obj_topk_points = torch.cat(obj_pooled_points_list)
-        obj_topk_points = obj_topk_points.sum(2) / self.topk_select_num
-
-        expected_obj_preds = self.topk_obj_reg(obj_pos_reg_feats).float().exp().reshape(-1, 4)
-        obj_topk_pos_bbox_preds = distance2bbox(
-                                            obj_topk_points, 
-                                            expected_obj_preds)
-        # print("shape of obj_topk_pos_bbox_preds:{}".format(obj_topk_pos_bbox_preds.shape))
-        # print("shape of det_bboxes:{}".format(det_bboxes.shape))
-
-        final_det_bboxes = torch.cat([obj_topk_pos_bbox_preds, det_bboxes[:, 4:]], 1)
-
-        return final_det_bboxes, det_labels
+            cfg.max_per_img,
+            score_factors=mlvl_centerness)
+        return det_bboxes, det_labels
 
     def get_points(self, featmap_sizes, dtype, device):
         """Get points according to feature map sizes.
@@ -473,7 +325,7 @@ class FCOSFCV2PlusHead(nn.Module):
             (x.reshape(-1), y.reshape(-1)), dim=-1) + stride // 2
         return points
 
-    def fcos_target(self, points, gt_bboxes_list, gt_labels_list, img_metas):
+    def fcos_target(self, points, gt_bboxes_list, gt_labels_list):
         assert len(points) == len(self.regress_ranges)
         num_levels = len(points)
         # expand regress ranges to align with points
@@ -485,12 +337,10 @@ class FCOSFCV2PlusHead(nn.Module):
         concat_regress_ranges = torch.cat(expanded_regress_ranges, dim=0)
         concat_points = torch.cat(points, dim=0)
         # get labels and bbox_targets of each image
-        img_scale_list = [meta['img_shape'][:2] for meta in img_metas]        
-        labels_list, bbox_targets_list, scales_list = multi_apply(
+        labels_list, bbox_targets_list = multi_apply(
             self.fcos_target_single,
             gt_bboxes_list,
             gt_labels_list,
-            img_scale_list,
             points=concat_points,
             regress_ranges=concat_regress_ranges)
 
@@ -501,29 +351,19 @@ class FCOSFCV2PlusHead(nn.Module):
             bbox_targets.split(num_points, 0)
             for bbox_targets in bbox_targets_list
         ]
-        scales_list = [
-            scales.split(num_points, 0)
-            for scales in scales_list
-        ]
-
 
         # concat per level image
         concat_lvl_labels = []
         concat_lvl_bbox_targets = []
-        concat_lvl_scales = []
-
         for i in range(num_levels):
             concat_lvl_labels.append(
                 torch.cat([labels[i] for labels in labels_list]))
             concat_lvl_bbox_targets.append(
                 torch.cat(
                     [bbox_targets[i] for bbox_targets in bbox_targets_list]))
-            concat_lvl_scales.append(
-                torch.cat([scales[i] for scales in scales_list]))
+        return concat_lvl_labels, concat_lvl_bbox_targets
 
-        return concat_lvl_labels, concat_lvl_bbox_targets, concat_lvl_scales
-
-    def fcos_target_single(self, gt_bboxes, gt_labels, img_scale, points, regress_ranges):
+    def fcos_target_single(self, gt_bboxes, gt_labels, points, regress_ranges):
         num_points = points.size(0)
         num_gts = gt_labels.size(0)
         if num_gts == 0:
@@ -565,8 +405,8 @@ class FCOSFCV2PlusHead(nn.Module):
         labels = gt_labels[min_area_inds]
         labels[min_area == INF] = 0
         bbox_targets = bbox_targets[range(num_points), min_area_inds]
-        scales = torch.tensor(img_scale).expand(bbox_targets.shape[0], 2)
-        return labels, bbox_targets, scales
+
+        return labels, bbox_targets
 
     def centerness_target(self, pos_bbox_targets):
         # only calculate pos centerness targets, otherwise there may be nan
