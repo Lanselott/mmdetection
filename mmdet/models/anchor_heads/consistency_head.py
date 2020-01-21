@@ -76,6 +76,8 @@ class ConsistencyHead(nn.Module):
     def _init_layers(self):
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
+        self.upsampled_cls_convs = nn.ModuleList()
+        self.upsampled_reg_convs = nn.ModuleList()
         
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
@@ -99,11 +101,26 @@ class ConsistencyHead(nn.Module):
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
-
-        self.upsampled_cls_convs = nn.Conv2d(
-            self.feat_channels, self.feat_channels, 3, padding=1)
-        self.upsampled_reg_convs = nn.Conv2d(
-            self.feat_channels, self.feat_channels, 3, padding=1)
+        self.upsampled_cls_convs.append(
+                ConvModule(
+                    self.feat_channels,
+                    self.feat_channels,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=self.norm_cfg is None))
+        self.upsampled_reg_convs.append(
+                ConvModule(
+                    self.feat_channels,
+                    self.feat_channels,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=self.norm_cfg is None))
 
         self.fcos_cls = nn.Conv2d(
             self.feat_channels, self.cls_out_channels, 3, padding=1)
@@ -117,12 +134,15 @@ class ConsistencyHead(nn.Module):
             normal_init(m.conv, std=0.01)
         for m in self.reg_convs:
             normal_init(m.conv, std=0.01)
+        for m in self.upsampled_reg_convs:
+            normal_init(m.conv, std=0.01)
+        for m in self.upsampled_cls_convs:
+            normal_init(m.conv, std=0.01)
+
         bias_cls = bias_init_with_prob(0.01)
 
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
-        normal_init(self.upsampled_reg_convs, std=0.01)
-        normal_init(self.upsampled_cls_convs, std=0.01)
         normal_init(self.fcos_centerness, std=0.01)
 
     def forward(self, feats):
@@ -138,7 +158,9 @@ class ConsistencyHead(nn.Module):
             cls_feat = cls_layer(cls_feat)
         cls_feat = nn.functional.upsample(
             cls_feat, size=upsample_size, scale_factor=None, mode='nearest', align_corners=None)
-        cls_feat = self.upsampled_cls_convs(cls_feat)
+        
+        for upsampled_cls_layer in self.upsampled_cls_convs:
+            cls_feat = upsampled_cls_layer(cls_feat)
 
         cls_score = self.fcos_cls(cls_feat)
         centerness = self.fcos_centerness(cls_feat)
@@ -149,7 +171,8 @@ class ConsistencyHead(nn.Module):
         reg_feat = nn.functional.upsample(
             reg_feat, size=upsample_size, scale_factor=None, mode='nearest', align_corners=None)
 
-        reg_feat = self.upsampled_reg_convs(reg_feat)
+        for upsampled_reg_layer in self.upsampled_reg_convs:
+            reg_feat = upsampled_reg_layer(reg_feat)
         # scale the bbox_pred of different level
         # float to avoid overflow when enabling FP16
         bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
