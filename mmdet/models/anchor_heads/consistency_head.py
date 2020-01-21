@@ -6,6 +6,7 @@ from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms, b
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import ConvModule, Scale, bias_init_with_prob
+import math
 from IPython import embed
 INF = 1e8
 
@@ -68,12 +69,14 @@ class ConsistencyHead(nn.Module):
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
+        self.trans_conv_stride = [1, 2, 4, 8, 16]
 
         self._init_layers()
 
     def _init_layers(self):
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
+        
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
             self.cls_convs.append(
@@ -96,6 +99,12 @@ class ConsistencyHead(nn.Module):
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
+
+        self.upsampled_cls_convs = nn.Conv2d(
+            self.feat_channels, self.feat_channels, 3, padding=1)
+        self.upsampled_reg_convs = nn.Conv2d(
+            self.feat_channels, self.feat_channels, 3, padding=1)
+
         self.fcos_cls = nn.Conv2d(
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
@@ -109,27 +118,42 @@ class ConsistencyHead(nn.Module):
         for m in self.reg_convs:
             normal_init(m.conv, std=0.01)
         bias_cls = bias_init_with_prob(0.01)
+
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
+        normal_init(self.upsampled_reg_convs, std=0.01)
+        normal_init(self.upsampled_cls_convs, std=0.01)
         normal_init(self.fcos_centerness, std=0.01)
 
     def forward(self, feats):
-        return multi_apply(self.forward_single, feats, self.scales)
+        max_feat_size = feats[0].shape[2:]
+        upsample_size = [max_feat_size, max_feat_size, max_feat_size, max_feat_size, max_feat_size]
+        return multi_apply(self.forward_single, feats, upsample_size, self.scales)
 
-    def forward_single(self, x, scale):
+    def forward_single(self, x, upsample_size, scale):
         cls_feat = x
         reg_feat = x
 
         for cls_layer in self.cls_convs:
             cls_feat = cls_layer(cls_feat)
+        cls_feat = nn.functional.upsample(
+            cls_feat, size=upsample_size, scale_factor=None, mode='nearest', align_corners=None)
+        cls_feat = self.upsampled_cls_convs(cls_feat)
+
         cls_score = self.fcos_cls(cls_feat)
         centerness = self.fcos_centerness(cls_feat)
 
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
+
+        reg_feat = nn.functional.upsample(
+            reg_feat, size=upsample_size, scale_factor=None, mode='nearest', align_corners=None)
+
+        reg_feat = self.upsampled_reg_convs(reg_feat)
         # scale the bbox_pred of different level
         # float to avoid overflow when enabling FP16
         bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
+
         return cls_score, bbox_pred, centerness
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
@@ -148,7 +172,6 @@ class ConsistencyHead(nn.Module):
                                            bbox_preds[0].device)
         labels, bbox_targets = self.fcos_target(all_level_points, gt_bboxes,
                                                 gt_labels)
-
         num_imgs = cls_scores[0].size(0)
         # flatten cls_scores, bbox_preds and centerness
         flatten_cls_scores = [
@@ -177,7 +200,6 @@ class ConsistencyHead(nn.Module):
         loss_cls = self.loss_cls(
             flatten_cls_scores, flatten_labels,
             avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
-
         pos_bbox_preds = flatten_bbox_preds[pos_inds]
         pos_centerness = flatten_centerness[pos_inds]
 
@@ -189,10 +211,10 @@ class ConsistencyHead(nn.Module):
             pos_decoded_target_preds = distance2bbox(pos_points,
                                                      pos_bbox_targets)
             pos_cls_scores = flatten_cls_scores[pos_inds]
-            consist_pos_cls_scores = pos_cls_scores.max(1)[0].sigmoid()
-            pos_iou_scores = bbox_overlaps(pos_decoded_bbox_preds, 
-                                                pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
-            loss_consistency = self.loss_consistency(pos_iou_scores, consist_pos_cls_scores)
+            # consist_pos_cls_scores = pos_cls_scores.max(1)[0].sigmoid()
+            # pos_iou_scores = bbox_overlaps(pos_decoded_bbox_preds, 
+            #                                     pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
+            # loss_consistency = self.loss_consistency(pos_iou_scores, consist_pos_cls_scores)
             # centerness weighted iou loss
             loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds,
@@ -204,13 +226,13 @@ class ConsistencyHead(nn.Module):
         else:
             loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
-            loss_consistency = pos_bbox_preds.sum()
+            # loss_consistency = pos_bbox_preds.sum()
 
         return dict(
             loss_cls=loss_cls,
             loss_bbox=loss_bbox,
-            loss_centerness=loss_centerness,
-            loss_consistency=loss_consistency)
+            loss_centerness=loss_centerness)
+            # loss_consistency=loss_consistency)
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,
