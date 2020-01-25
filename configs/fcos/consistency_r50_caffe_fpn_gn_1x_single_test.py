@@ -29,6 +29,8 @@ model = dict(
         strides=[8, 8, 8, 8, 8],
         # regress_ranges=((-1, 96), (96, 192), (192, 288), (288, 384),
         #                          (384, INF)),
+        regress_ranges=((-1, INF), (-1, INF), (-1, INF), (-1, INF),
+                                 (-1, INF)),
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
