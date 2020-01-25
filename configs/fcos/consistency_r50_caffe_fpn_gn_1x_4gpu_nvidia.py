@@ -26,7 +26,7 @@ model = dict(
         in_channels=256,
         stacked_convs=3,
         feat_channels=256,
-        strides=[8, 16, 32, 64, 128],
+        strides=[8, 8, 8, 8, 8],
         # regress_ranges=((-1, 128), (128, 256), (256, 384), (384, 512),
         #                          (512, INF)),
         loss_cls=dict(
