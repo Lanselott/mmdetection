@@ -4,7 +4,7 @@ import numpy as np
 from IPython import embed
 
 config_file = './configs/fcos/consistency_r50_caffe_fpn_gn_1x_single_test.py'
-checkpoint_file = 'work/dirs/upsample/upsample_epoch_12.pth'
+checkpoint_file = 'work/dirs/upsample_inf_range/upsample_inf_epoch_12.pth'
 
 # build the model from a config file and a checkpoint file
 
