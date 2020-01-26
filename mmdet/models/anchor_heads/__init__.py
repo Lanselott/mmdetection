@@ -32,6 +32,7 @@ from .embedding_nnms_head import EmbeddingNNmsHead
 from .embedding_nnms_head_v2 import EmbeddingNNmsHeadV2
 from .embedding_nnms_head_v2_limited import EmbeddingNNmsHeadV2limited
 from .consistency_head import ConsistencyHead
+from .consistency_deconv_head import ConsistencyDeconvHead
 from .consistency_v2_head import ConsistencyV2Head
 
 __all__ = [
