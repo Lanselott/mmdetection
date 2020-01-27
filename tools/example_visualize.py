@@ -3,8 +3,8 @@ from mmdet.datasets.coco import CocoDataset
 import numpy as np
 from IPython import embed
 
-config_file = './configs/fcos/consistency_r50_caffe_fpn_gn_1x_single_test.py'
-checkpoint_file = 'work/dirs/upsample_inf_range/upsample_inf_epoch_12.pth'
+config_file = './configs/fcos/consistency_deconv_r50_caffe_fpn_gn_1x_single_test.py'
+checkpoint_file = 'work/dirs/upsample_deconv/upsample_deconv_epoch_12.pth'
 
 # build the model from a config file and a checkpoint file
 
@@ -21,5 +21,5 @@ for img in imgs:
     result = inference_detector(model, img)
     # or save the visualization results to image files
     # embed()
-    show_result(img, result, model.CLASSES, score_thr=0.1, show=False, out_file='result_{}.jpg'.format(i))
+    show_result(img, result, model.CLASSES, score_thr=0.3, show=False, out_file='result_{}.jpg'.format(i))
     i += 1
