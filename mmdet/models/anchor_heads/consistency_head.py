@@ -78,7 +78,6 @@ class ConsistencyHead(nn.Module):
         self.reg_convs = nn.ModuleList()
         self.upsampled_cls_convs = nn.ModuleList()
         self.upsampled_reg_convs = nn.ModuleList()
-        self.out_levels = [0, 1, 2, 3, 4]
 
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
@@ -103,7 +102,7 @@ class ConsistencyHead(nn.Module):
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
 
-        for i in range(len(self.strides)):
+        for i in range(4 - self.stacked_convs):
             self.upsampled_cls_convs.append(
                     ConvModule(
                         self.feat_channels,
@@ -151,9 +150,9 @@ class ConsistencyHead(nn.Module):
     def forward(self, feats):
         max_feat_size = feats[0].shape[2:]
         upsample_size = [max_feat_size, max_feat_size, max_feat_size, max_feat_size, max_feat_size]
-        return multi_apply(self.forward_single, feats, upsample_size, self.scales, self.out_levels)
+        return multi_apply(self.forward_single, feats, upsample_size, self.scales)
 
-    def forward_single(self, x, upsample_size, scale, level):
+    def forward_single(self, x, upsample_size, scale):
         cls_feat = x
         reg_feat = x
 
@@ -162,8 +161,8 @@ class ConsistencyHead(nn.Module):
         cls_feat = nn.functional.upsample(
             cls_feat, size=upsample_size, scale_factor=None, mode='bilinear', align_corners=None)
         
-        upsampled_cls_layer = self.upsampled_cls_convs[level]
-        cls_feat = upsampled_cls_layer(cls_feat)
+        for upsampled_cls_layer in self.upsampled_cls_convs:
+            cls_feat = upsampled_cls_layer(cls_feat)
 
         cls_score = self.fcos_cls(cls_feat)
         centerness = self.fcos_centerness(cls_feat)
@@ -174,8 +173,8 @@ class ConsistencyHead(nn.Module):
         reg_feat = nn.functional.upsample(
             reg_feat, size=upsample_size, scale_factor=None, mode='bilinear', align_corners=None)
 
-        upsampled_reg_layer = self.upsampled_reg_convs[level]
-        reg_feat = upsampled_reg_layer(reg_feat)
+        for upsampled_reg_layer in self.upsampled_reg_convs:
+            reg_feat = upsampled_reg_layer(reg_feat)
         # scale the bbox_pred of different level
         # float to avoid overflow when enabling FP16
         bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()

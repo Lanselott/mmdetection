@@ -3,8 +3,8 @@ from mmdet.datasets.coco import CocoDataset
 import numpy as np
 from IPython import embed
 
-config_file = './configs/fcos/consistency_deconv_r50_caffe_fpn_gn_1x_single_test.py'
-checkpoint_file = 'work/dirs/upsample_deconv/upsample_deconv_epoch_12.pth'
+config_file = './configs/fcos/consistency_r50_caffe_fpn_gn_1x_single_test.py'
+checkpoint_file = 'work/dirs/upsample_rerangev2/upsample_rangev2_epoch_12.pth'
 
 # build the model from a config file and a checkpoint file
 
