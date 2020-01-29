@@ -24,24 +24,20 @@ model = dict(
         type='ConsistencyHead',
         num_classes=81,
         in_channels=256,
-        stacked_convs=2,
+        stacked_convs=3,
         feat_channels=256,
         strides=[8, 8, 16, 32, 64],
-        # regress_ranges=((-1, 160), (160, 320), (320, 480), (480, 640),
-        #                          (640, INF)),
         # regress_ranges=((-1, 128), (128, 256), (256, 384), (384, 512),
-                                #  (512, INF)),
-        # regress_ranges=((-1, INF), (-1, INF), (-1, INF), (-1, INF),
-        #                          (-1, INF)),
+        #                          (512, INF)),
+        # regress_ranges=((-1, 128), (128, 256), (256, 384), (384, 512),
+        #                          (512, INF)),
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
-        loss_bbox=dict(type='IoULoss', loss_weight=1.0),
-        loss_consistency=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        loss_bbox=dict(type='GIoULoss', loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings
@@ -63,7 +59,7 @@ test_cfg = dict(
     max_per_img=100)
 # dataset settings
 dataset_type = 'CocoDataset'
-data_root = 'data/2017/'
+data_root = '/coco/data/2017/'
 img_norm_cfg = dict(
     mean=[102.9801, 115.9465, 122.7717], std=[1.0, 1.0, 1.0], to_rgb=False)
 train_pipeline = [
@@ -97,22 +93,22 @@ data = dict(
     train=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_train2017.json',
-        img_prefix=data_root + 'train2017/',
+        img_prefix=data_root + 'images/train2017/',
         pipeline=train_pipeline),
     val=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'val2017/',
+        img_prefix=data_root + 'images/val2017/',
         pipeline=test_pipeline),
     test=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'val2017/',
+        img_prefix=data_root + 'images/val2017/',
         pipeline=test_pipeline))
 # optimizer
 optimizer = dict(
     type='SGD',
-    lr=0.0025,
+    lr=0.01,
     momentum=0.9,
     weight_decay=0.0001,
     paramwise_options=dict(bias_lr_mult=2., bias_decay_mult=0.))

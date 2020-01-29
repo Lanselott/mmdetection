@@ -148,8 +148,11 @@ class ConsistencyHead(nn.Module):
         normal_init(self.fcos_centerness, std=0.01)
 
     def forward(self, feats):
-        max_feat_size = feats[0].shape[2:]
-        upsample_size = [max_feat_size, max_feat_size, max_feat_size, max_feat_size, max_feat_size]
+        upsample_size = []
+        for stride in self.strides:
+            upsample_level = int(math.log2(stride / 8))
+            max_feat_size = feats[upsample_level].shape[2:]
+            upsample_size.append(max_feat_size)
         return multi_apply(self.forward_single, feats, upsample_size, self.scales)
 
     def forward_single(self, x, upsample_size, scale):
