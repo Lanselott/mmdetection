@@ -36,6 +36,7 @@ from .consistency_deconv_head import ConsistencyDeconvHead
 from .consistency_v2_head import ConsistencyV2Head
 from .fcos_label_assign_head import FCOSLabelAssignHead
 from .ddb_head import DDBHead
+from .ddb_v2_head import DDBV2Head
 
 __all__ = [
     'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption', 'RPNHead',
@@ -48,5 +49,5 @@ __all__ = [
     'BoxCodingIoUCoordRegHeadV2', 'FCOSFCHead', 'FCOSFCV2Head',
     'EmbeddingNNmsHead', 'EmbeddingNNmsHeadV2', 'EmbeddingNNmsHeadV2limited',
     'FCOSFCV2PlusHead', 'ConsistencyHead', 'ConsistencyV2Head',
-    'FCOSLabelAssignHead', 'DDBHead'
+    'FCOSLabelAssignHead', 'DDBHead', 'DDBV2Head'
 ]
