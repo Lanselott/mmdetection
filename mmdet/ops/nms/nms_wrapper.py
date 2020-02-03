@@ -142,9 +142,7 @@ def nms_v2(dets, iou_thr, c_thr, device_id=None):
             inds = inds.reshape(-1, 5)
             selected_id = (inds[:,0]!=0).nonzero()
             inds = (inds[selected_id].long() - 1).reshape(-1, 5)
-            '''
-            inds = nms_cpu_v2.nms_v2(dets_th, iou_thr, c_thr)
-            '''
+           
     if is_numpy:
         inds = inds.cpu().numpy()
         
