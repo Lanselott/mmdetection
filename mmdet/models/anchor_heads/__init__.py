@@ -37,6 +37,7 @@ from .consistency_v2_head import ConsistencyV2Head
 from .fcos_label_assign_head import FCOSLabelAssignHead
 from .ddb_head import DDBHead
 from .ddb_v2_head import DDBV2Head
+from .ddb_v3_head import DDBV3Head
 
 __all__ = [
     'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption', 'RPNHead',
