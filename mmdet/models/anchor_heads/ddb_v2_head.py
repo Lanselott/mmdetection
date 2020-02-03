@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from mmcv.cnn import normal_init
 
-from mmdet.core import multi_apply, multiclass_nms, distance2bbox, bbox2delta, bbox_overlaps
+from mmdet.core import multi_apply, multiclass_nms, multiclass_nms_sorting, distance2bbox, bbox2delta, bbox_overlaps
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import bias_init_with_prob, Scale, ConvModule
@@ -408,7 +408,7 @@ class DDBV2Head(nn.Module):
             # boundary scores
             updated_selected_pos_dist_scores_sorted = torch.max(_bd_iou, _bd_sort_iou)
 
-            dist_scores_weights = (updated_selected_pos_dist_scores_sorted > 0.90).float()
+            dist_scores_weights = (updated_selected_pos_dist_scores_sorted > 0.75).float()
             
             loss_dist_scores = self.loss_dist_scores(
                 pos_bd_scores_preds,

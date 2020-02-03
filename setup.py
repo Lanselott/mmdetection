@@ -164,6 +164,10 @@ if __name__ == '__main__':
                 module='mmdet.ops.nms',
                 sources=['src/nms_cpu.cpp']),
             make_cuda_ext(
+                name='nms_cpu_v2',
+                module='mmdet.ops.nms',
+                sources=['src/nms_cpu_v2.cpp']),
+            make_cuda_ext(
                 name='nms_cuda',
                 module='mmdet.ops.nms',
                 sources=['src/nms_cuda.cpp', 'src/nms_kernel.cu']),
