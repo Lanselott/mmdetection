@@ -14,7 +14,7 @@ MIN = 1e-8
 
 
 @HEADS.register_module
-class DDBV2Head(nn.Module):
+class DDBV4Head(nn.Module):
 
     def __init__(self,
                  num_classes,
@@ -36,7 +36,7 @@ class DDBV2Head(nn.Module):
                  loss_dist_scores=dict(type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
-        super(DDBV2Head, self).__init__()
+        super(DDBV4Head, self).__init__()
 
         self.num_classes = num_classes
         self.cls_out_channels = num_classes - 1
@@ -82,23 +82,24 @@ class DDBV2Head(nn.Module):
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
-
-        self.bd_convs.append(
-            ConvModule(
-                    chn,
-                    self.feat_channels,
-                    3,
-                    stride=1,
-                    padding=1,
-                    conv_cfg=self.conv_cfg,
-                    norm_cfg=self.norm_cfg,
-                    bias=self.norm_cfg is None))
+        
+        for _ in range(2):
+            self.bd_convs.append(
+                ConvModule(
+                        chn,
+                        self.feat_channels,
+                        3,
+                        stride=1,
+                        padding=1,
+                        conv_cfg=self.conv_cfg,
+                        norm_cfg=self.norm_cfg,
+                        bias=self.norm_cfg is None))
 
         self.fcos_cls = nn.Conv2d(
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
-        self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
+        self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 5, padding=3)
 
         self.relu = nn.ReLU(inplace=True)
 
@@ -147,7 +148,7 @@ class DDBV2Head(nn.Module):
         bbox_pred = self.relu(bbox_pred)
         
         for bd_layer in self.bd_convs:
-            reg_feat = bd_layer(reg_feat)
+            reg_feat = bd_layer(reg_feat.detach())
 
         bd_scores_pred = self.fcos_bd_scores(reg_feat)
 
@@ -406,10 +407,10 @@ class DDBV2Head(nn.Module):
 
             
             # boundary scores
-            updated_selected_pos_dist_scores_sorted = torch.max(_bd_iou, _bd_sort_iou)
+            updated_selected_pos_dist_scores_sorted = 1 - pos_dist_scores_sorted.tanh()
 
-            dist_scores_weights = (updated_selected_pos_dist_scores_sorted > 0.75).float()
-            
+            dist_scores_weights = (updated_selected_pos_dist_scores_sorted > 0.8).float()
+
             loss_dist_scores = self.loss_dist_scores(
                 pos_bd_scores_preds,
                 updated_selected_pos_dist_scores_sorted,
@@ -528,6 +529,7 @@ class DDBV2Head(nn.Module):
         mlvl_bd_scores = torch.cat(mlvl_bd_scores)
         mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
         
+        '''
         det_bboxes, det_labels = multiclass_nms_sorting(
             mlvl_bboxes,
             mlvl_scores,
@@ -545,7 +547,6 @@ class DDBV2Head(nn.Module):
             cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
-        '''
             
         return det_bboxes, det_labels
 

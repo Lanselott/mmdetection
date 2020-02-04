@@ -20,7 +20,7 @@ model = dict(
         num_outs=5,
         relu_before_extra_convs=True),
     bbox_head=dict(
-        type='DDBV2Head',
+        type='DDBV4Head',
         num_classes=81,
         in_channels=256,
         stacked_convs=4,
@@ -53,8 +53,8 @@ test_cfg = dict(
     nms_pre=1000,
     min_bbox_size=0,
     score_thr=0.05,
-    # nms=dict(type='nms', iou_thr=0.6),
-    nms=dict(type='nms_v2', iou_thr=0.6, c_thr=0.5),
+    nms=dict(type='nms', iou_thr=0.5),
+    # nms=dict(type='nms_v2', iou_thr=0.5, c_thr=0.95),
     max_per_img=100)
 # dataset settings
 dataset_type = 'CocoDataset'
