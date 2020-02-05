@@ -39,6 +39,7 @@ from .ddb_head import DDBHead
 from .ddb_v2_head import DDBV2Head
 from .ddb_v3_head import DDBV3Head
 from .ddb_v4_head import DDBV4Head
+from .ddb_v3_center_sampling_head import DDBV3CSHead
 
 __all__ = [
     'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption', 'RPNHead',
@@ -51,6 +52,6 @@ __all__ = [
     'BoxCodingIoUCoordRegHeadV2', 'FCOSFCHead', 'FCOSFCV2Head',
     'EmbeddingNNmsHead', 'EmbeddingNNmsHeadV2', 'EmbeddingNNmsHeadV2limited',
     'FCOSFCV2PlusHead', 'ConsistencyHead', 'ConsistencyV2Head',
-    'FCOSLabelAssignHead', 'DDBHead', 'DDBV2Head', 'DDBV3Head',
+    'FCOSLabelAssignHead', 'DDBHead', 'DDBV2Head', 'DDBV3Head', 'DDBV3CSHead',
     'DDBV4Head'
 ]
