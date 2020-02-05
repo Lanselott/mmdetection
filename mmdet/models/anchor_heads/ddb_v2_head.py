@@ -528,6 +528,7 @@ class DDBV2Head(nn.Module):
         mlvl_bd_scores = torch.cat(mlvl_bd_scores)
         mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
         
+        '''
         det_bboxes, det_labels = multiclass_nms_sorting(
             mlvl_bboxes,
             mlvl_scores,
@@ -545,7 +546,6 @@ class DDBV2Head(nn.Module):
             cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
-        '''
             
         return det_bboxes, det_labels
 

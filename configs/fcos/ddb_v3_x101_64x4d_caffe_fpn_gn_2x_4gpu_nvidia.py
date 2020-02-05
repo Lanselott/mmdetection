@@ -10,7 +10,7 @@ model = dict(
         num_stages=4,
         out_indices=(0, 1, 2, 3),
         frozen_stages=1,
-        style='pytorch'),
+        style='pytorch'),    
     neck=dict(
         type='FPN',
         in_channels=[256, 512, 1024, 2048],
@@ -21,7 +21,7 @@ model = dict(
         num_outs=5,
         relu_before_extra_convs=True),
     bbox_head=dict(
-        type='DDBHead',
+        type='DDBV3Head',
         num_classes=81,
         in_channels=256,
         stacked_convs=4,
@@ -33,7 +33,7 @@ model = dict(
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
-        loss_bbox=dict(type='IoULoss', loss_weight=1.0),
+        loss_bbox=dict(type='GIoULoss', loss_weight=1.0),
         loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
         loss_dist_scores=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
@@ -54,11 +54,11 @@ test_cfg = dict(
     nms_pre=1000,
     min_bbox_size=0,
     score_thr=0.05,
-    nms=dict(type='nms', iou_thr=0.6),
+    nms=dict(type='nms', iou_thr=0.5),
     max_per_img=100)
 # dataset settings
 dataset_type = 'CocoDataset'
-data_root = 'data/2017/'
+data_root = '/coco/data/2017/'
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 train_pipeline = [
@@ -96,17 +96,17 @@ data = dict(
     train=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_train2017.json',
-        img_prefix=data_root + 'train2017/',
+        img_prefix=data_root + 'images/train2017/',
         pipeline=train_pipeline),
     val=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'val2017/',
+        img_prefix=data_root + 'images/val2017/',
         pipeline=test_pipeline),
     test=dict(
         type=dataset_type,
-        ann_file=data_root + 'annotations/image_info_test-dev2017.json',
-        img_prefix=data_root + 'test2017/',
+        ann_file=data_root + 'annotations/instances_val2017.json',
+        img_prefix=data_root + 'images/val2017/',
         pipeline=test_pipeline))
 # optimizer
 optimizer = dict(
@@ -136,7 +136,7 @@ log_config = dict(
 total_epochs = 24
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
-work_dir = './work_dirs/fcos_mstrain_640_800_x101_64x4d_fpn_gn_2x'
+work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
 load_from = None
 resume_from = None
 workflow = [('train', 1)]
