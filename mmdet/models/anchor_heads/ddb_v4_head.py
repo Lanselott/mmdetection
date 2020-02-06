@@ -99,7 +99,7 @@ class DDBV4Head(nn.Module):
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
-        self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
+        self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 5, padding=3)
 
         self.relu = nn.ReLU(inplace=True)
 
@@ -529,6 +529,7 @@ class DDBV4Head(nn.Module):
         mlvl_bd_scores = torch.cat(mlvl_bd_scores)
         mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
         
+        '''
         det_bboxes, det_labels = multiclass_nms_sorting(
             mlvl_bboxes,
             mlvl_scores,
@@ -546,7 +547,6 @@ class DDBV4Head(nn.Module):
             cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
-        '''
             
         return det_bboxes, det_labels
 
