@@ -101,7 +101,7 @@ class DDBV3CSHead(nn.Module):
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
-        self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 5, padding=3)
+        self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
 
         self.relu = nn.ReLU(inplace=True)
 
