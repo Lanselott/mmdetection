@@ -294,8 +294,8 @@ class DDBV3CSHead(nn.Module):
                 pos_scores_obj = pos_scores[obj_mask_inds]
                 # pos_scores_obj = pos_scores
                 # mean IoU of an object
-                regression_reduced_threshold = pos_centerness_obj.mean()
-                classification_reduced_threshold = pos_scores_obj.mean()
+                regression_reduced_threshold = 0 # pos_centerness_obj.mean()
+                classification_reduced_threshold = 0 # pos_scores_obj.mean()
 
                 regression_mask = pos_centerness_obj < regression_reduced_threshold
                 classification_mask = pos_scores_obj < classification_reduced_threshold
@@ -335,9 +335,7 @@ class DDBV3CSHead(nn.Module):
             delta_x1, delta_y1, delta_x2, delta_y2 = gt - pred
             delta_x1 >= 0, delta_y1 >= 0, delta_x2 <= 0, delta_y2 <= 0
             '''
-            pos_dist_scores = pos_decoded_target_preds - pos_decoded_bbox_preds
-        
-            pos_dist_scores[:, 2:] = -pos_dist_scores[:, 2:]
+            pos_dist_scores = torch.abs(pos_decoded_target_preds - pos_decoded_bbox_preds)
             pos_dist_scores_sorted = torch.abs(pos_decoded_target_preds - pos_decoded_sort_bbox_preds).detach()
 
             pos_dist_scores = pos_dist_scores.permute(1, 0).contiguous() # [pos_inds * 4] -> [4 * pos_inds]
@@ -530,6 +528,7 @@ class DDBV3CSHead(nn.Module):
         mlvl_bd_scores = torch.cat(mlvl_bd_scores)
         mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
         
+        '''
         det_bboxes, det_labels = multiclass_nms_sorting(
             mlvl_bboxes,
             mlvl_scores,
@@ -547,7 +546,6 @@ class DDBV3CSHead(nn.Module):
             cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
-        '''
             
         return det_bboxes, det_labels
 
