@@ -237,7 +237,7 @@ class DDBV3CSHead(nn.Module):
                 instance_counter[id] = start_id
         instance_counter = instance_counter.int()
         '''
-            
+        print("num_pos{}".format(num_pos))
         if num_pos > 0:
             pos_points = flatten_points[pos_inds]
             '''
