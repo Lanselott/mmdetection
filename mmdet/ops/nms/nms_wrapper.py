@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from . import nms_cpu, nms_cuda#, nms_cpu_v2
+from . import nms_cpu, nms_cuda, nms_cpu_v2
 from .soft_nms_cpu import soft_nms_cpu
 
 
@@ -100,7 +100,7 @@ def soft_nms(dets, iou_thr, method='linear', sigma=0.5, min_score=1e-3):
             inds, dtype=torch.long)
     else:
         return new_dets.astype(np.float32), inds.astype(np.int64)
-'''
+
 def nms_v2(dets, iou_thr, c_thr, device_id=None):
     """Dispatch to either CPU or GPU NMS implementations.
 
@@ -155,5 +155,5 @@ def nms_v2(dets, iou_thr, c_thr, device_id=None):
 
     # dets[inds[]]
     return torch.cat([dets_x1, dets_y1, dets_x2, dets_y2, dets_score],dim=1), inds
-'''
+
 

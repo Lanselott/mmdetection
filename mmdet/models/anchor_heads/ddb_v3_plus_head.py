@@ -408,7 +408,7 @@ class DDBV3PHead(nn.Module):
             # boundary scores
             updated_selected_pos_dist_scores_sorted = torch.max(_bd_iou, _bd_sort_iou)
 
-            dist_scores_weights = (updated_selected_pos_dist_scores_sorted > 0.75).float()
+            dist_scores_weights = (updated_selected_pos_dist_scores_sorted > 0.9).float()
 
             loss_dist_scores = self.loss_dist_scores(
                 pos_bd_scores_preds,
@@ -537,8 +537,8 @@ class DDBV3PHead(nn.Module):
             cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
-        
         '''
+        
         det_bboxes, det_labels = multiclass_nms(
             mlvl_bboxes,
             mlvl_scores,
