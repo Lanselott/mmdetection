@@ -237,7 +237,10 @@ class DDBV3CSHead(nn.Module):
                 instance_counter[id] = start_id
         instance_counter = instance_counter.int()
         '''
-        print("num_pos{}".format(num_pos))
+        loss_cls = self.loss_cls(
+                flatten_cls_scores, flatten_labels,
+                avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
+
         if num_pos > 0:
             pos_points = flatten_points[pos_inds]
             '''
@@ -399,10 +402,6 @@ class DDBV3CSHead(nn.Module):
             loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds,
                 pos_decoded_target_preds)
-            
-            loss_cls = self.loss_cls(
-                flatten_cls_scores, flatten_labels,
-                avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
             
             # boundary scores
             updated_selected_pos_dist_scores_sorted = torch.max(_bd_iou, _bd_sort_iou)
