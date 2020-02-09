@@ -135,7 +135,6 @@ class AnchorHead(nn.Module):
                     device=device)
                 multi_level_flags.append(flags)
             valid_flag_list.append(multi_level_flags)
-        embed()
         return anchor_list, valid_flag_list
 
     def loss_single(self, cls_score, bbox_pred, labels, label_weights,

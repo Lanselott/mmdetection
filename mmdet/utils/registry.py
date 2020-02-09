@@ -1,7 +1,7 @@
 import inspect
 
 import mmcv
-
+from IPython import embed
 
 class Registry(object):
 

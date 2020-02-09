@@ -4,6 +4,7 @@ from .double_head_rcnn import DoubleHeadRCNN
 from .fast_rcnn import FastRCNN
 from .faster_rcnn import FasterRCNN
 from .fcos import FCOS
+from .fcos_t_s import FCOSTS
 from .fovea import FOVEA
 from .grid_rcnn import GridRCNN
 from .htc import HybridTaskCascade
