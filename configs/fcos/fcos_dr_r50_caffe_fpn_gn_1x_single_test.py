@@ -20,23 +20,19 @@ model = dict(
         num_outs=5,
         relu_before_extra_convs=True),
     bbox_head=dict(
-        type='DDBV3PHead',
+        type='FCOSDRHead',
         num_classes=81,
         in_channels=256,
         stacked_convs=4,
         feat_channels=256,
         strides=[8, 16, 32, 64, 128],
-        bbox_normalize=False,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
-        loss_bbox=dict(type='GIoULoss', loss_weight=1.0),
-        loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
-        loss_dist_scores=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        loss_bbox=dict(type='IoULoss', loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings
@@ -54,8 +50,7 @@ test_cfg = dict(
     nms_pre=1000,
     min_bbox_size=0,
     score_thr=0.05,
-    # nms=dict(type='nms', iou_thr=0.5),
-    nms=dict(type='nms_v2', iou_thr=0.6, c_thr=0.97),
+    nms=dict(type='nms', iou_thr=0.5),
     max_per_img=100)
 # dataset settings
 dataset_type = 'CocoDataset'

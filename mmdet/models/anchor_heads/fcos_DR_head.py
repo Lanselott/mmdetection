@@ -2,19 +2,32 @@ import torch
 import torch.nn as nn
 from mmcv.cnn import normal_init
 
-from mmdet.core import multi_apply, multiclass_nms, multiclass_nms_sorting, distance2bbox, bbox2delta, bbox_overlaps
+from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms, bbox_overlaps
 from ..builder import build_loss
 from ..registry import HEADS
-from ..utils import bias_init_with_prob, Scale, ConvModule
-
+from ..utils import ConvModule, Scale, bias_init_with_prob
 from IPython import embed
-
 INF = 1e8
-MIN = 1e-8
 
 
 @HEADS.register_module
-class DDBV3PHead(nn.Module):
+class FCOSDRHead(nn.Module):
+    """
+    Fully Convolutional One-Stage Object Detection head from [1]_.
+
+    The FCOS head does not use anchor boxes. Instead bounding boxes are
+    predicted at each pixel and a centerness measure is used to supress
+    low-quality predictions.
+
+    References:
+        .. [1] https://arxiv.org/abs/1904.01355
+
+    Example:
+        >>> self = FCOSHead(11, 7)
+        >>> feats = [torch.rand(1, 7, s, s) for s in [4, 8, 16, 32, 64]]
+        >>> cls_score, bbox_pred, centerness = self.forward(feats)
+        >>> assert len(cls_score) == len(self.scales)
+    """
 
     def __init__(self,
                  num_classes,
@@ -24,7 +37,6 @@ class DDBV3PHead(nn.Module):
                  strides=(4, 8, 16, 32, 64),
                  regress_ranges=((-1, 64), (64, 128), (128, 256), (256, 512),
                                  (512, INF)),
-                 bbox_normalize=True,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -32,12 +44,13 @@ class DDBV3PHead(nn.Module):
                      alpha=0.25,
                      loss_weight=1.0),
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
-                 loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),     
-                 loss_centerness=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-                 loss_dist_scores=dict(type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
+                 loss_centerness=dict(
+                     type='CrossEntropyLoss',
+                     use_sigmoid=True,
+                     loss_weight=1.0),
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
-        super(DDBV3PHead, self).__init__()
+        super(FCOSDRHead, self).__init__()
 
         self.num_classes = num_classes
         self.cls_out_channels = num_classes - 1
@@ -46,22 +59,18 @@ class DDBV3PHead(nn.Module):
         self.stacked_convs = stacked_convs
         self.strides = strides
         self.regress_ranges = regress_ranges
-        self.bbox_normalize = bbox_normalize
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
-        self.loss_sorted_bbox = build_loss(loss_sorted_bbox)
-        self.loss_dist_scores = build_loss(loss_dist_scores)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
+        self.fp16_enabled = False
 
         self._init_layers()
 
     def _init_layers(self):
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
-        self.bd_convs  = nn.ModuleList()
-
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
             self.cls_convs.append(
@@ -84,26 +93,10 @@ class DDBV3PHead(nn.Module):
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
-        
-        for _ in range(2):
-            self.bd_convs.append(
-                ConvModule(
-                        chn,
-                        self.feat_channels,
-                        3,
-                        stride=1,
-                        padding=1,
-                        conv_cfg=self.conv_cfg,
-                        norm_cfg=self.norm_cfg,
-                        bias=self.norm_cfg is None))
-
         self.fcos_cls = nn.Conv2d(
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
-        self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
-
-        self.relu = nn.ReLU(inplace=True)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
@@ -112,14 +105,10 @@ class DDBV3PHead(nn.Module):
             normal_init(m.conv, std=0.01)
         for m in self.reg_convs:
             normal_init(m.conv, std=0.01)
-        for m in self.bd_convs:
-            normal_init(m.conv, std=0.01)
-
         bias_cls = bias_init_with_prob(0.01)
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
         normal_init(self.fcos_centerness, std=0.01)
-        normal_init(self.fcos_bd_scores, std=0.01)
 
     def forward(self, feats):
         return multi_apply(self.forward_single, feats, self.scales)
@@ -130,48 +119,27 @@ class DDBV3PHead(nn.Module):
 
         for cls_layer in self.cls_convs:
             cls_feat = cls_layer(cls_feat)
-
         cls_score = self.fcos_cls(cls_feat)
-
+        centerness = self.fcos_centerness(cls_feat)
 
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
-        
-        # trick: centerness to reg branch
-        centerness = self.fcos_centerness(reg_feat)
-        '''
         # scale the bbox_pred of different level
-        bbox_pred = scale(self.fcos_reg(reg_feat)).exp()
-        '''
-        '''
-        # tricks in https://github.com/tianzhi0549/FCOS/blob/4697f876b5aeead5f60423e0d04ea7e3e1282790/fcos_core/modeling/rpn/fcos/fcos.py
-        '''
-        bbox_pred = scale(self.fcos_reg(reg_feat))
-        bbox_pred = self.relu(bbox_pred)
+        # float to avoid overflow when enabling FP16
+        bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
+        return cls_score, bbox_pred, centerness
 
-        bd_feat = reg_feat.detach()
-        
-        for bd_layer in self.bd_convs:
-            bd_feat = bd_layer(bd_feat)
-
-        bd_scores_pred = self.fcos_bd_scores(bd_feat)
-
-        return cls_score, bbox_pred, bd_scores_pred, centerness
-
-    # def regression_hook()
-
+    @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def loss(self,
              cls_scores,
              bbox_preds,
-             bd_scores_preds,
              centernesses,
              gt_bboxes,
              gt_labels,
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-
-        assert len(cls_scores) == len(bbox_preds) == len(centernesses) == len(bd_scores_preds)
+        assert len(cls_scores) == len(bbox_preds) == len(centernesses) 
         dist_conf_mask_list = []
 
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
@@ -181,7 +149,7 @@ class DDBV3PHead(nn.Module):
         normalized bbox: bbox_targets
         origin bbox: bbox_origins
         '''
-        labels, bbox_targets, bbox_strided_targets, bbox_strides = self.fcos_target(all_level_points, gt_bboxes,
+        labels, bbox_targets = self.fcos_target(all_level_points, gt_bboxes,
                                                 gt_labels)
         num_imgs = cls_scores[0].size(0)
         # flatten cls_scores, bbox_preds 
@@ -193,11 +161,6 @@ class DDBV3PHead(nn.Module):
             bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
             for bbox_pred in bbox_preds
         ]
-        flatten_bd_scores_preds = [
-            bd_scores_pred.permute(0, 2, 3, 1).reshape(-1, 4)
-            for bd_scores_pred in bd_scores_preds
-        ]
-
         flatten_centerness = [
             centerness.permute(0, 2, 3, 1).reshape(-1)
             for centerness in centernesses
@@ -205,12 +168,10 @@ class DDBV3PHead(nn.Module):
 
         flatten_cls_scores = torch.cat(flatten_cls_scores)
         flatten_bbox_preds = torch.cat(flatten_bbox_preds)
-        flatten_bd_scores_preds = torch.cat(flatten_bd_scores_preds)
         flatten_centerness = torch.cat(flatten_centerness)
         flatten_labels = torch.cat(labels)
         
         flatten_bbox_targets = torch.cat(bbox_targets)
-        flatten_bbox_strides = torch.cat(bbox_strides)
         # repeat points to align with bbox_preds
         flatten_points = torch.cat(
             [points.repeat(num_imgs, 1) for points in all_level_points])
@@ -220,27 +181,16 @@ class DDBV3PHead(nn.Module):
 
         pos_bbox_preds = flatten_bbox_preds[pos_inds]
         pos_bbox_targets = flatten_bbox_targets[pos_inds]
-        pos_bbox_strides = flatten_bbox_strides[pos_inds]
 
         pos_centerness = flatten_centerness[pos_inds]
-        pos_labels = flatten_labels[pos_inds]
-        pos_bd_scores_preds = flatten_bd_scores_preds[pos_inds]
+        pos_labels = flatten_labels[pos_inds]        
             
         if num_pos > 0:
-            pos_points = flatten_points[pos_inds]
-            '''
-            NOTE: 
-            Strided box and Origin box
-            '''
-            if self.bbox_normalize:
-                pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds * pos_bbox_strides)
-            else:
-                pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
-                
-            pos_decoded_bbox_strided_preds = distance2bbox(pos_points, pos_bbox_preds)
+            pos_points = flatten_points[pos_inds]   
+            pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
             pos_decoded_target_preds = distance2bbox(pos_points,
                                                      pos_bbox_targets)
-            # create centerness targets, iou based, NOTE: strided as FCOS implementation
+    
             pos_centerness_targets = bbox_overlaps(pos_decoded_bbox_preds.clone().detach(), pos_decoded_target_preds, is_aligned=True)
             '''
             sorting bbox branch
@@ -291,15 +241,15 @@ class DDBV3PHead(nn.Module):
                 consistency_mask = (regression_mask + classification_mask) == 2
                 masks_for_all[obj_mask_inds[consistency_mask]] = 0
 
+            # cls branch
+            reduced_mask = (masks_for_all==0).nonzero()
+            flatten_labels[pos_inds[reduced_mask]] = 0 # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
+            saved_target_mask = masks_for_all.nonzero().reshape(-1)
+            pos_centerness = pos_centerness[saved_target_mask].reshape(-1)
+            
             '''
             consistency between regression and classification
             '''
-            # cls branch
-            reduced_mask = (masks_for_all==0).nonzero()
-            flatten_labels[pos_inds[reduced_mask]] = 0 
-            saved_target_mask = masks_for_all.nonzero().reshape(-1)
-            pos_centerness = pos_centerness[saved_target_mask].reshape(-1)
-            pos_bd_scores_preds = pos_bd_scores_preds[saved_target_mask].reshape(-1, 4)
             # bbox branch
             pos_decoded_target_preds = pos_decoded_target_preds[saved_target_mask].reshape(-1, 4)
             pos_decoded_bbox_preds = pos_decoded_bbox_preds[saved_target_mask].reshape(-1, 4)
@@ -320,11 +270,9 @@ class DDBV3PHead(nn.Module):
             delta_x1 >= 0, delta_y1 >= 0, delta_x2 <= 0, delta_y2 <= 0
             '''
             pos_dist_scores = torch.abs(pos_decoded_target_preds - pos_decoded_bbox_preds)
-            pos_dist_scores = pos_dist_scores.permute(1, 0).contiguous()
-            
-            pos_dist_scores_sorted = torch.abs(pos_decoded_target_preds - pos_decoded_sort_bbox_preds).detach()
-            pos_gradient_update_mapping = torch.zeros_like(pos_dist_scores_sorted, dtype=torch.int64).detach()
-            pos_gradient_update_anti_mapping = torch.zeros_like(pos_dist_scores_sorted, dtype=torch.int64).detach()
+            pos_dist_scores = pos_dist_scores.permute(1, 0).contiguous() # [pos_inds * 4] -> [4 * pos_inds]
+            pos_gradient_update_mapping = torch.zeros_like(pos_dist_scores, dtype=torch.int64)
+            pos_gradient_update_anti_mapping = torch.zeros_like(pos_dist_scores, dtype=torch.int64)
 
             inds_shift = 0
             for dist_conf_mask in dist_conf_mask_list:
@@ -348,7 +296,7 @@ class DDBV3PHead(nn.Module):
                 pos_gradient_update_anti_mapping[inds_shift + sorted_inds[3], 3] = obj_mask_inds
 
                 inds_shift += sorted_inds.shape[1]
-
+            embed()
             sorted_ious_weights = bbox_overlaps(pos_decoded_sort_bbox_preds, pos_decoded_target_preds, is_aligned=True).detach()
             ious_weights = bbox_overlaps(pos_decoded_bbox_preds, pos_decoded_target_preds, is_aligned=True).detach()
 
@@ -386,7 +334,8 @@ class DDBV3PHead(nn.Module):
             loss_cls = self.loss_cls(
                 flatten_cls_scores, flatten_labels,
                 avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
-        
+
+            
             # boundary scores
             updated_selected_pos_dist_scores_sorted = torch.max(_bd_iou, _bd_sort_iou)
 
@@ -413,16 +362,17 @@ class DDBV3PHead(nn.Module):
             loss_centerness=loss_centerness,
             loss_dist_scores=loss_dist_scores)
 
+    @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,
                    cls_scores,
                    bbox_preds,
-                   bd_scores_preds,
                    centernesses,
                    img_metas,
                    cfg,
                    rescale=None):
-        assert len(cls_scores) == len(bbox_preds) == len(bd_scores_preds)
+        assert len(cls_scores) == len(bbox_preds)
         num_levels = len(cls_scores)
+
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         mlvl_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                       bbox_preds[0].device)
@@ -434,16 +384,12 @@ class DDBV3PHead(nn.Module):
             bbox_pred_list = [
                 bbox_preds[i][img_id].detach() for i in range(num_levels)
             ]
-            bd_scores_pred_list = [
-                bd_scores_preds[i][img_id].detach() for i in range(num_levels)
-            ]
             centerness_pred_list = [
                 centernesses[i][img_id].detach() for i in range(num_levels)
             ]
             img_shape = img_metas[img_id]['img_shape']
             scale_factor = img_metas[img_id]['scale_factor']
             det_bboxes = self.get_bboxes_single(cls_score_list, bbox_pred_list,
-                                                bd_scores_pred_list,
                                                 centerness_pred_list,
                                                 mlvl_points, img_shape,
                                                 scale_factor, cfg, rescale)
@@ -453,56 +399,36 @@ class DDBV3PHead(nn.Module):
     def get_bboxes_single(self,
                           cls_scores,
                           bbox_preds,
-                          bd_scores_preds,
                           centernesses,
                           mlvl_points,
                           img_shape,
                           scale_factor,
                           cfg,
                           rescale=False):
-        assert len(cls_scores) == len(bbox_preds) == len(mlvl_points) == len(bd_scores_preds)
+        assert len(cls_scores) == len(bbox_preds) == len(mlvl_points)
         mlvl_bboxes = []
         mlvl_scores = []
         mlvl_centerness = []
-        mlvl_bd_scores = []
-        mlvl_bd_score_factors = []
-        for cls_score, bbox_pred, points, centerness, bd_scores_pred, stride in zip(
-                cls_scores, bbox_preds, mlvl_points, centernesses, bd_scores_preds, self.strides):
+        for cls_score, bbox_pred, centerness, points in zip(
+                cls_scores, bbox_preds, centernesses, mlvl_points):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
             centerness = centerness.permute(1, 2, 0).reshape(-1).sigmoid()
-            bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
-            if self.bbox_normalize:
-                bbox_pred = bbox_pred * stride
-            else:
-                pass
-            
-            bd_scores_pred = bd_scores_pred.permute(1, 2, 0).reshape(-1, 4).sigmoid()
 
-            bd_score_factors = bd_scores_pred.sum(1) / 4
-            
+            bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
-                # max_scores, _ = scores.max(dim=1)
                 max_scores, _ = (scores * centerness[:, None]).max(dim=1)
-                # max_scores, _ = (scores * bd_score_factors[:, None]).max(dim=1)
-
                 _, topk_inds = max_scores.topk(nms_pre)
                 points = points[topk_inds, :]
                 bbox_pred = bbox_pred[topk_inds, :]
-                bd_scores_pred = bd_scores_pred[topk_inds, :]
                 scores = scores[topk_inds, :]
                 centerness = centerness[topk_inds]
-                bd_score_factors = bd_score_factors[topk_inds]
-
             bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
-
             mlvl_bboxes.append(bboxes)
             mlvl_scores.append(scores)
             mlvl_centerness.append(centerness)
-            mlvl_bd_score_factors.append(bd_score_factors)
-            mlvl_bd_scores.append(bd_scores_pred)
         mlvl_bboxes = torch.cat(mlvl_bboxes)
         if rescale:
             mlvl_bboxes /= mlvl_bboxes.new_tensor(scale_factor)
@@ -510,19 +436,6 @@ class DDBV3PHead(nn.Module):
         padding = mlvl_scores.new_zeros(mlvl_scores.shape[0], 1)
         mlvl_scores = torch.cat([padding, mlvl_scores], dim=1)
         mlvl_centerness = torch.cat(mlvl_centerness)
-        mlvl_bd_scores = torch.cat(mlvl_bd_scores)
-        mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
-        
-        det_bboxes, det_labels = multiclass_nms_sorting(
-            mlvl_bboxes,
-            mlvl_scores,
-            mlvl_bd_scores,
-            cfg.score_thr,
-            cfg.nms,
-            cfg.max_per_img,
-            score_factors=mlvl_centerness)
-        
-        '''
         det_bboxes, det_labels = multiclass_nms(
             mlvl_bboxes,
             mlvl_scores,
@@ -530,8 +443,6 @@ class DDBV3PHead(nn.Module):
             cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
-        '''
-            
         return det_bboxes, det_labels
 
     def get_points(self, featmap_sizes, dtype, device):
@@ -589,37 +500,27 @@ class DDBV3PHead(nn.Module):
             bbox_targets.split(num_points, 0)
             for bbox_targets in bbox_targets_list
         ]
-       
+
         # concat per level image
         concat_lvl_labels = []
         concat_lvl_bbox_targets = []
-        concat_lvl_bbox_strided_targets = []
-        concat_lvl_strides = []
         for i in range(num_levels):
-            stride = torch.ones(1, device=bbox_targets_list[0][0].device)
-            stride[0] = self.strides[i]
-
             concat_lvl_labels.append(
                 torch.cat([labels[i] for labels in labels_list]))
             concat_lvl_bbox_targets.append(
                 torch.cat(
                     [bbox_targets[i] for bbox_targets in bbox_targets_list]))
-            concat_lvl_bbox_strided_targets.append(
-                torch.cat(
-                    [bbox_targets[i] / self.strides[i] for bbox_targets in bbox_targets_list]))
-            concat_lvl_strides.append(
-                torch.cat(
-                    [stride.expand_as(bbox_targets[i]) for bbox_targets in bbox_targets_list]))
-
-        return concat_lvl_labels, concat_lvl_bbox_targets, concat_lvl_bbox_strided_targets, concat_lvl_strides
+        return concat_lvl_labels, concat_lvl_bbox_targets
 
     def fcos_target_single(self, gt_bboxes, gt_labels, points, regress_ranges):
         num_points = points.size(0)
         num_gts = gt_labels.size(0)
+        if num_gts == 0:
+            return gt_labels.new_zeros(num_points), \
+                   gt_bboxes.new_zeros((num_points, 4))
 
         areas = (gt_bboxes[:, 2] - gt_bboxes[:, 0] + 1) * (
             gt_bboxes[:, 3] - gt_bboxes[:, 1] + 1)
-
         # TODO: figure out why these two are different
         # areas = areas[None].expand(num_points, num_gts)
         areas = areas[None].repeat(num_points, 1)
@@ -634,22 +535,10 @@ class DDBV3PHead(nn.Module):
         right = gt_bboxes[..., 2] - xs
         top = ys - gt_bboxes[..., 1]
         bottom = gt_bboxes[..., 3] - ys
-
-        # cut = 3
-        # w_stride = (gt_bboxes[..., 2] - gt_bboxes[..., 0]) / cut
-        # h_stride = (gt_bboxes[..., 3] - gt_bboxes[..., 1]) / cut
-
-        # center_left = xs - (gt_bboxes[..., 0] + w_stride)
-        # center_right = gt_bboxes[..., 2] - w_stride - xs
-        # center_top = ys - (gt_bboxes[..., 1] + h_stride)
-        # center_bottom = gt_bboxes[..., 3] - h_stride - ys
-
         bbox_targets = torch.stack((left, top, right, bottom), -1)
-        # bbox_center_targets = torch.stack((center_left, center_top, center_right, center_bottom), -1)
-
         # condition1: inside a gt bbox
         inside_gt_bbox_mask = bbox_targets.min(-1)[0] > 0
-        # inside_gt_bbox_center_mask = bbox_center_targets.min(-1)[0] > 0
+
         # condition2: limit the regression range for each location
         max_regress_distance = bbox_targets.max(-1)[0]
         inside_regress_range = (
@@ -659,7 +548,6 @@ class DDBV3PHead(nn.Module):
         # if there are still more than one objects for a location,
         # we choose the one with minimal area
         areas[inside_gt_bbox_mask == 0] = INF
-        # areas[inside_gt_bbox_center_mask == 0] = INF
         areas[inside_regress_range == 0] = INF
         min_area, min_area_inds = areas.min(dim=1)
 
@@ -668,3 +556,12 @@ class DDBV3PHead(nn.Module):
         bbox_targets = bbox_targets[range(num_points), min_area_inds]
 
         return labels, bbox_targets
+
+    def centerness_target(self, pos_bbox_targets):
+        # only calculate pos centerness targets, otherwise there may be nan
+        left_right = pos_bbox_targets[:, [0, 2]]
+        top_bottom = pos_bbox_targets[:, [1, 3]]
+        centerness_targets = (
+            left_right.min(dim=-1)[0] / left_right.max(dim=-1)[0]) * (
+                top_bottom.min(dim=-1)[0] / top_bottom.max(dim=-1)[0])
+        return torch.sqrt(centerness_targets)
