@@ -146,11 +146,13 @@ class DDBV3PHead(nn.Module):
         '''
         bbox_pred = scale(self.fcos_reg(reg_feat))
         bbox_pred = self.relu(bbox_pred)
+
+        bd_feat = reg_feat.detach()
         
         for bd_layer in self.bd_convs:
-            reg_feat = bd_layer(reg_feat.detach())
+            bd_feat = bd_layer(bd_feat)
 
-        bd_scores_pred = self.fcos_bd_scores(reg_feat)
+        bd_scores_pred = self.fcos_bd_scores(bd_feat)
 
         return cls_score, bbox_pred, bd_scores_pred, centerness
 
@@ -408,7 +410,7 @@ class DDBV3PHead(nn.Module):
             # boundary scores
             updated_selected_pos_dist_scores_sorted = torch.max(_bd_iou, _bd_sort_iou)
 
-            dist_scores_weights = (updated_selected_pos_dist_scores_sorted > 0.9).float()
+            dist_scores_weights = (updated_selected_pos_dist_scores_sorted > 0.95).float()
 
             loss_dist_scores = self.loss_dist_scores(
                 pos_bd_scores_preds,
@@ -528,7 +530,6 @@ class DDBV3PHead(nn.Module):
         mlvl_bd_scores = torch.cat(mlvl_bd_scores)
         mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
         
-        '''
         det_bboxes, det_labels = multiclass_nms_sorting(
             mlvl_bboxes,
             mlvl_scores,
@@ -537,8 +538,8 @@ class DDBV3PHead(nn.Module):
             cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
-        '''
         
+        '''
         det_bboxes, det_labels = multiclass_nms(
             mlvl_bboxes,
             mlvl_scores,
@@ -546,6 +547,7 @@ class DDBV3PHead(nn.Module):
             cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
+        '''
             
         return det_bboxes, det_labels
 
