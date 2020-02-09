@@ -249,8 +249,8 @@ class FCOSTSHead(nn.Module):
         flatten_reg_feat = torch.cat(flatten_reg_feat)
 
         if self.learn_when_train:
-            loss_s_t_cls = self.loss_s_t_cls(flatten_s_cls_feat, flatten_cls_feat.detach())
-            loss_s_t_reg = self.loss_s_t_reg(flatten_s_reg_feat, flatten_reg_feat.detach())
+            loss_s_t_cls = self.loss_s_t_cls(flatten_s_cls_feat, flatten_cls_feat.detach().sigmoid())
+            loss_s_t_reg = self.loss_s_t_reg(flatten_s_reg_feat, flatten_reg_feat.detach().sigmoid())
 
             return dict(    
                 loss_cls=loss_cls,
