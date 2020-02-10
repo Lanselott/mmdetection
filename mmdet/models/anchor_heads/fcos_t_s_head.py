@@ -38,7 +38,10 @@ class FCOSTSHead(nn.Module):
                  regress_ranges=((-1, 64), (64, 128), (128, 256), (256, 512),
                                  (512, INF)),
                  t_s_ratio=4,
+                 eval_student=True,
+                 training=True,
                  learn_when_train=False,
+                 align_level=1,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -66,6 +69,9 @@ class FCOSTSHead(nn.Module):
         self.strides = strides
         self.regress_ranges = regress_ranges
         self.t_s_ratio = t_s_ratio
+        self.align_level = align_level
+        self.training = training
+        self.eval_student = eval_student
         self.learn_when_train = learn_when_train
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
@@ -181,28 +187,47 @@ class FCOSTSHead(nn.Module):
         s_cls_feat = x.detach()
         s_reg_feat = x.detach()
 
-        for cls_layer, cls_s_layer in zip(self.cls_convs, self.s_cls_convs):
+        for i in range(len(self.cls_convs)):
+            cls_layer = self.cls_convs[i]
+            cls_s_layer = self.s_cls_convs[i]
             cls_feat = cls_layer(cls_feat)
             s_cls_feat = cls_s_layer(s_cls_feat)
+
+            if i == self.align_level:
+                s_align_cls_feat = s_cls_feat
+                t_aligned_cls_feat = cls_feat
 
         cls_score = self.fcos_cls(cls_feat)
         s_cls_score = self.fcos_s_cls(s_cls_feat)
         centerness = self.fcos_centerness(cls_feat)
         s_centerness = self.fcos_s_centerness(s_cls_feat)
 
-        for reg_layer, s_reg_layer in zip(self.reg_convs, self.s_reg_convs):
+        for j in range(len(self.reg_convs)):
+            reg_layer = self.reg_convs[j]
+            s_reg_layer = self.s_reg_convs[j]
             reg_feat = reg_layer(reg_feat)
             s_reg_feat = s_reg_layer(s_reg_feat)
+
+            if j == self.align_level:
+                s_align_reg_feat = s_reg_feat
+                t_aligned_reg_feat = reg_feat
+
         # scale the bbox_pred of different level
         # float to avoid overflow when enabling FP16
         bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
         s_bbox_pred = scale(self.fcos_s_reg(s_reg_feat)).float().exp()
 
         # feature align to teacher
-        s_reg_feat = self.t_s_reg_align(s_reg_feat)
-        s_cls_feat = self.t_s_cls_align(s_cls_feat)
-
-        return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, cls_feat, s_cls_feat, reg_feat, s_reg_feat
+        s_align_reg_feat = self.t_s_reg_align(s_align_reg_feat)
+        s_align_cls_feat = self.t_s_cls_align(s_align_cls_feat)
+        
+        if self.training:
+            return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat
+        else: 
+            if self.eval_student:
+                return s_cls_score, s_bbox_pred, s_centerness
+            else: 
+                return cls_score, bbox_pred, centerness
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def loss(self, cls_scores, bbox_preds, centernesses,
