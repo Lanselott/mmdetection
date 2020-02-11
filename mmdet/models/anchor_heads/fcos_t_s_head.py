@@ -181,7 +181,6 @@ class FCOSTSHead(nn.Module):
         return multi_apply(self.forward_single, feats, self.scales)
 
     def forward_single(self, x, scale):
-        embed()
         cls_feat = x
         reg_feat = x
         # only update student head model
