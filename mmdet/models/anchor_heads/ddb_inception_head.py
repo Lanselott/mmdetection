@@ -60,7 +60,6 @@ class DDBInceptionHead(nn.Module):
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
         self.bd_convs = nn.ModuleList()
-        self.bd_offsets = nn.ModuleList()
 
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
@@ -84,35 +83,24 @@ class DDBInceptionHead(nn.Module):
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
+        
+        for _ in range(2):
+            self.bd_convs.append(
+                ConvModule(
+                        chn,
+                        self.feat_channels,
+                        3,
+                        stride=1,
+                        padding=1,
+                        conv_cfg=self.conv_cfg,
+                        norm_cfg=self.norm_cfg,
+                        bias=self.norm_cfg is None))
 
         self.fcos_cls = nn.Conv2d(
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
-        
-        '''
-        Inception bd:
-        '''
-        self.bd_feat_channels = 256
-                        
-        kernel_size = 3
-        self.deformable_groups = 4
-        self.offset_channels = kernel_size * kernel_size * 2
-
-        # for _ in range(4): # four sides
-        self.bd_offsets.append(nn.Conv2d(
-                                self.feat_channels, 
-                                self.deformable_groups * self.offset_channels, 
-                                1, 
-                                bias=False))
-        self.bd_convs.append(DeformConv(
-                                self.feat_channels,
-                                self.bd_feat_channels,
-                                kernel_size=kernel_size,
-                                padding=(kernel_size - 1) // 2,
-                                deformable_groups=self.deformable_groups))
-
-        self.fcos_bd_scores = nn.Conv2d(self.bd_feat_channels, 4, 3, padding=1)
+        self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.relu = nn.ReLU(inplace=True)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
@@ -122,17 +110,11 @@ class DDBInceptionHead(nn.Module):
             normal_init(m.conv, std=0.01)
         for m in self.reg_convs:
             normal_init(m.conv, std=0.01)
-        
-        for m in self.bd_convs:
-            normal_init(m, std=0.01)
-        for m in self.bd_offsets:
-            normal_init(m, std=0.01)
 
         bias_cls = bias_init_with_prob(0.01)
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
         normal_init(self.fcos_centerness, std=0.01)
-
         normal_init(self.fcos_bd_scores, std=0.01)
 
     def forward(self, feats):
@@ -146,27 +128,9 @@ class DDBInceptionHead(nn.Module):
             cls_feat = cls_layer(cls_feat)
 
         cls_score = self.fcos_cls(cls_feat)
-
-        '''
-        res block on bd
-        '''
-        bd_feat_res = 0
-
-        # concat/plus regression features
-        bd_reg_feat = 0
-
+        
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
-            bd_reg_feat += reg_feat
-        
-        for bd_layer, offset_layer in zip(self.bd_convs, self.bd_offsets):
-            offset = offset_layer(bd_reg_feat.detach())
-
-            bd_feat = bd_layer(bd_reg_feat, offset)
-            bd_feat_res += bd_feat
-
-        bd_scores_pred = self.fcos_bd_scores(self.relu(bd_feat_res))
-        
         # trick: centerness to reg branch
         centerness = self.fcos_centerness(reg_feat)
         '''
@@ -178,6 +142,11 @@ class DDBInceptionHead(nn.Module):
         '''
         bbox_pred = scale(self.fcos_reg(reg_feat))
         bbox_pred = self.relu(bbox_pred)
+        
+        for bd_layer in self.bd_convs:
+            bd_feat = bd_layer(reg_feat.detach())
+
+        bd_scores_pred = self.fcos_bd_scores(bd_feat)
         
         return cls_score, bbox_pred, bd_scores_pred, centerness
 
@@ -447,7 +416,7 @@ class DDBInceptionHead(nn.Module):
                 # print("obj_dist_mean:{}".format(obj_dist_mean))
                 dist_scores_weights[obj_mask_inds] =  (updated_selected_pos_dist_scores_sorted[obj_mask_inds] >= obj_dist_mean).float()
             '''
-            dist_scores_weights = (updated_selected_pos_dist_scores_sorted >= 0.9).float()
+            dist_scores_weights = (updated_selected_pos_dist_scores_sorted >= 0.95).float()
             loss_dist_scores = self.loss_dist_scores(
                 pos_bd_scores_preds,
                 updated_selected_pos_dist_scores_sorted,
@@ -522,6 +491,7 @@ class DDBInceptionHead(nn.Module):
         mlvl_centerness = []
         mlvl_bd_scores = []
         mlvl_bd_score_factors = []
+        embed()
         for cls_score, bbox_pred, points, centerness, bd_scores_pred, stride in zip(
                 cls_scores, bbox_preds, mlvl_points, centernesses, bd_scores_preds, self.strides):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
@@ -564,6 +534,7 @@ class DDBInceptionHead(nn.Module):
         mlvl_centerness = torch.cat(mlvl_centerness)
         mlvl_bd_scores = torch.cat(mlvl_bd_scores)
         mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
+        '''
         det_bboxes, det_labels = multiclass_nms_sorting(
             mlvl_bboxes,
             mlvl_scores,
@@ -581,7 +552,6 @@ class DDBInceptionHead(nn.Module):
             dict(type='nms', iou_thr=0.5),# cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
-        '''
         
         return det_bboxes, det_labels
 
