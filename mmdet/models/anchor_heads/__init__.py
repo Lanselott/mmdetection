@@ -44,6 +44,7 @@ from .ddb_v3_plus_head import DDBV3PHead
 from .ddb_v4_plus_head import DDBV4PHead
 from .fcos_t_s_head import FCOSTSHead
 from .ddb_inception_head import DDBInceptionHead
+from .fcos_t_s_full_head import FCOSTSFullHead
 
 __all__ = [
     'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption', 'RPNHead',
@@ -58,5 +59,5 @@ __all__ = [
     'FCOSFCV2PlusHead', 'ConsistencyHead', 'ConsistencyV2Head',
     'FCOSLabelAssignHead', 'DDBHead', 'DDBV2Head', 'DDBV3Head', 'DDBV3CSHead',
     'DDBV4Head', 'DDBV3PHead', 'DDBV4PHead', 'FCOSTSHead',
-    'DDBInceptionHead'
+    'DDBInceptionHead', 'FCOSTSFullHead'
 ]

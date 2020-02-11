@@ -3,7 +3,7 @@ model = dict(
     type='FCOSTS',
     pretrained='open-mmlab://resnet50_caffe',
     backbone=dict(
-        type='ResNet',
+        type='ResTSNet',
         depth=50,
         t_s_ratio=4,
         num_stages=4,
@@ -12,20 +12,25 @@ model = dict(
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe'),
     neck=dict(
-        type='FPN',
+        type='FPNTS',
         in_channels=[256, 512, 1024, 2048],
         out_channels=256,
+        s_in_channels=[64, 128, 256, 512],
+        s_out_channels=64,
         start_level=1,
+        t_s_ratio=4,
         add_extra_convs=True,
         extra_convs_on_inputs=False,  # use P5
         num_outs=5,
         relu_before_extra_convs=True),
     bbox_head=dict(
-        type='FCOSTSHead',
+        type='FCOSTSFullHead',
         num_classes=81,
         in_channels=256,
+        s_in_channels=64,
         stacked_convs=4,
         feat_channels=256,
+        s_feat_channels=64,
         t_s_ratio=4,
         training=True,
         eval_student=False,
@@ -39,10 +44,12 @@ model = dict(
             alpha=0.25,
             loss_weight=1.0),
         loss_bbox=dict(type='IoULoss', loss_weight=1.0),
-        loss_s_t_cls=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-        loss_s_t_reg=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        # loss_s_t_cls=dict(
+        #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        # loss_s_t_reg=dict(
+        #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        loss_s_t_cls=dict(type='MSELoss', loss_weight=0.5),
+        loss_s_t_reg=dict(type='MSELoss', loss_weight=0.5),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings

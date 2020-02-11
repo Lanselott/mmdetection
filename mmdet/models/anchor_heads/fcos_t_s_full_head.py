@@ -11,7 +11,7 @@ INF = 1e8
 
 
 @HEADS.register_module
-class FCOSTSHead(nn.Module):
+class FCOSTSFullHead(nn.Module):
     """
     Fully Convolutional One-Stage Object Detection head from [1]_.
 
@@ -32,7 +32,9 @@ class FCOSTSHead(nn.Module):
     def __init__(self,
                  num_classes,
                  in_channels,
+                 s_in_channels,
                  feat_channels=256,
+                 s_feat_channels=64,
                  stacked_convs=4,
                  strides=(4, 8, 16, 32, 64),
                  regress_ranges=((-1, 64), (64, 128), (128, 256), (256, 512),
@@ -59,12 +61,14 @@ class FCOSTSHead(nn.Module):
                      loss_weight=1.0),
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
-        super(FCOSTSHead, self).__init__()
+        super(FCOSTSFullHead, self).__init__()
 
         self.num_classes = num_classes
         self.cls_out_channels = num_classes - 1
         self.in_channels = in_channels
+        self.s_in_channels = s_in_channels
         self.feat_channels = feat_channels
+        self.s_feat_channels = s_feat_channels
         self.stacked_convs = stacked_convs
         self.strides = strides
         self.regress_ranges = regress_ranges
@@ -119,14 +123,13 @@ class FCOSTSHead(nn.Module):
     def _init_student_layers(self):
         self.s_cls_convs = nn.ModuleList()
         self.s_reg_convs = nn.ModuleList()
-        self.student_feat_channels = int(self.feat_channels / self.t_s_ratio)
 
         for i in range(self.stacked_convs):
-            chn = self.in_channels if i == 0 else self.student_feat_channels
+            chn = self.s_in_channels if i == 0 else self.s_feat_channels
             self.s_cls_convs.append(
                 ConvModule(
                     chn,
-                    self.student_feat_channels,
+                    self.s_feat_channels,
                     3,
                     stride=1,
                     padding=1,
@@ -136,7 +139,7 @@ class FCOSTSHead(nn.Module):
             self.s_reg_convs.append(
                 ConvModule(
                     chn,
-                    self.student_feat_channels,
+                    self.s_feat_channels,
                     3,
                     stride=1,
                     padding=1,
@@ -145,14 +148,14 @@ class FCOSTSHead(nn.Module):
                     bias=self.norm_cfg is None))
         # Align student feature to teacher
         self.t_s_cls_align = nn.Conv2d(
-            self.student_feat_channels, self.feat_channels, 3, padding=1)
+            self.s_feat_channels, self.feat_channels, 3, padding=1)
         self.t_s_reg_align = nn.Conv2d(
-            self.student_feat_channels, self.feat_channels, 3, padding=1)
+            self.s_feat_channels, self.feat_channels, 3, padding=1)
         
         self.fcos_s_cls = nn.Conv2d(
-            self.student_feat_channels, self.cls_out_channels, 3, padding=1)
-        self.fcos_s_reg = nn.Conv2d(self.student_feat_channels, 4, 3, padding=1)
-        self.fcos_s_centerness = nn.Conv2d(self.student_feat_channels, 1, 3, padding=1)
+            self.s_feat_channels, self.cls_out_channels, 3, padding=1)
+        self.fcos_s_reg = nn.Conv2d(self.s_feat_channels, 4, 3, padding=1)
+        self.fcos_s_centerness = nn.Conv2d(self.s_feat_channels, 1, 3, padding=1)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
@@ -178,50 +181,51 @@ class FCOSTSHead(nn.Module):
         normal_init(self.fcos_s_centerness, std=0.01)
 
     def forward(self, feats):
-        return multi_apply(self.forward_single, feats, self.scales)
+        t_feats = feats[0]
+        s_feats = feats[1]
+        return multi_apply(self.forward_single, t_feats, s_feats, self.scales)
 
-    def forward_single(self, x, scale):
-        embed()
-        cls_feat = x
-        reg_feat = x
+    def forward_single(self, t_x, s_x, scale):
+        t_cls_feat = t_x
+        t_reg_feat = t_x
         # only update student head model
-        s_cls_feat = x.detach()
-        s_reg_feat = x.detach()
+        s_cls_feat = s_x
+        s_reg_feat = s_x
 
         for i in range(len(self.cls_convs)):
             cls_layer = self.cls_convs[i]
             cls_s_layer = self.s_cls_convs[i]
-            cls_feat = cls_layer(cls_feat)
+            t_cls_feat = cls_layer(t_cls_feat)
             s_cls_feat = cls_s_layer(s_cls_feat)
 
             if i == self.align_level:
                 s_align_cls_feat = s_cls_feat
-                t_aligned_cls_feat = cls_feat
+                t_aligned_cls_feat = t_cls_feat
 
-        cls_score = self.fcos_cls(cls_feat)
+        cls_score = self.fcos_cls(t_cls_feat)
         s_cls_score = self.fcos_s_cls(s_cls_feat)
-        centerness = self.fcos_centerness(cls_feat)
+        centerness = self.fcos_centerness(t_cls_feat)
         s_centerness = self.fcos_s_centerness(s_cls_feat)
 
         for j in range(len(self.reg_convs)):
             reg_layer = self.reg_convs[j]
             s_reg_layer = self.s_reg_convs[j]
-            reg_feat = reg_layer(reg_feat)
+            t_reg_feat = reg_layer(t_reg_feat)
             s_reg_feat = s_reg_layer(s_reg_feat)
 
             if j == self.align_level:
                 s_align_reg_feat = s_reg_feat
-                t_aligned_reg_feat = reg_feat
+                t_aligned_reg_feat = t_reg_feat
 
         # scale the bbox_pred of different level
         # float to avoid overflow when enabling FP16
-        bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
+        bbox_pred = scale(self.fcos_reg(t_reg_feat)).float().exp()
         s_bbox_pred = scale(self.fcos_s_reg(s_reg_feat)).float().exp()
 
         # feature align to teacher
         s_align_reg_feat = self.t_s_reg_align(s_align_reg_feat)
         s_align_cls_feat = self.t_s_cls_align(s_align_cls_feat)
-        
+
         if self.training:
             return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat
         else: 
@@ -254,20 +258,20 @@ class FCOSTSHead(nn.Module):
              gt_bboxes_ignore=None)
 
         flatten_s_cls_feat = [
-            s_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.student_feat_channels)
+            s_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
             for s_cls_feat in s_cls_feats
         ]
         flatten_cls_feat = [
-            cls_feat.permute(0, 2, 3, 1).reshape(-1, self.student_feat_channels)
-            for cls_feat in cls_feats
+            t_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
+            for t_cls_feat in cls_feats
         ]
         flatten_s_reg_feat = [
-            s_reg_feat.permute(0, 2, 3, 1).reshape(-1, self.student_feat_channels)
+            s_reg_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
             for s_reg_feat in s_reg_feats
         ]
         flatten_reg_feat = [
-            reg_feat.permute(0, 2, 3, 1).reshape(-1, self.student_feat_channels)
-            for reg_feat in reg_feats
+            t_reg_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
+            for t_reg_feat in reg_feats
         ]
         flatten_s_cls_feat = torch.cat(flatten_s_cls_feat)
         flatten_cls_feat = torch.cat(flatten_cls_feat)

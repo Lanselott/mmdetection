@@ -3,7 +3,7 @@ model = dict(
     type='FCOSTS',
     pretrained='open-mmlab://resnet50_caffe',
     backbone=dict(
-        type='ResNet',
+        type='ResTSNet',
         depth=50,
         t_s_ratio=4,
         num_stages=4,
@@ -12,20 +12,25 @@ model = dict(
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe'),
     neck=dict(
-        type='FPN',
+        type='FPNTS',
         in_channels=[256, 512, 1024, 2048],
         out_channels=256,
+        s_in_channels=[64, 128, 256, 512],
+        s_out_channels=64,
         start_level=1,
+        t_s_ratio=4,
         add_extra_convs=True,
         extra_convs_on_inputs=False,  # use P5
         num_outs=5,
         relu_before_extra_convs=True),
     bbox_head=dict(
-        type='FCOSTSHead',
+        type='FCOSTSFullHead',
         num_classes=81,
         in_channels=256,
+        s_in_channels=64,
         stacked_convs=4,
         feat_channels=256,
+        s_feat_channels=64,
         t_s_ratio=4,
         training=True,
         eval_student=False,
@@ -39,10 +44,12 @@ model = dict(
             alpha=0.25,
             loss_weight=1.0),
         loss_bbox=dict(type='IoULoss', loss_weight=1.0),
-        loss_s_t_cls=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-        loss_s_t_reg=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        # loss_s_t_cls=dict(
+        #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        # loss_s_t_reg=dict(
+        #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        loss_s_t_cls=dict(type='MSELoss', loss_weight=0.5),
+        loss_s_t_reg=dict(type='MSELoss', loss_weight=0.5),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings
@@ -64,7 +71,7 @@ test_cfg = dict(
     max_per_img=100)
 # dataset settings
 dataset_type = 'CocoDataset'
-data_root = '/coco/data/2017/'
+data_root = 'data/2017/'
 img_norm_cfg = dict(
     mean=[102.9801, 115.9465, 122.7717], std=[1.0, 1.0, 1.0], to_rgb=False)
 train_pipeline = [
@@ -98,22 +105,22 @@ data = dict(
     train=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_train2017.json',
-        img_prefix=data_root + 'images/train2017/',
+        img_prefix=data_root + 'train2017/',
         pipeline=train_pipeline),
     val=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'images/val2017/',
+        img_prefix=data_root + 'val2017/',
         pipeline=test_pipeline),
     test=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'images/val2017/',
+        img_prefix=data_root + 'val2017/',
         pipeline=test_pipeline))
 # optimizer
 optimizer = dict(
     type='SGD',
-    lr=0.01,
+    lr=0.0025,
     momentum=0.9,
     weight_decay=0.0001,
     paramwise_options=dict(bias_lr_mult=2., bias_decay_mult=0.))

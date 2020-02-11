@@ -8,13 +8,16 @@ from ..utils import ConvModule
 from IPython import embed
 
 @NECKS.register_module
-class FPN(nn.Module):
+class FPNTS(nn.Module):
 
     def __init__(self,
                  in_channels,
                  out_channels,
+                 s_in_channels,
+                 s_out_channels,
                  num_outs,
                  start_level=0,
+                 t_s_ratio=4,
                  end_level=-1,
                  add_extra_convs=False,
                  extra_convs_on_inputs=True,
@@ -23,10 +26,11 @@ class FPN(nn.Module):
                  conv_cfg=None,
                  norm_cfg=None,
                  activation=None):
-        super(FPN, self).__init__()
+        super(FPNTS, self).__init__()
         assert isinstance(in_channels, list)
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.t_s_ratio = t_s_ratio
         self.num_ins = len(in_channels)
         self.num_outs = num_outs
         self.activation = activation
@@ -46,10 +50,9 @@ class FPN(nn.Module):
         self.end_level = end_level
         self.add_extra_convs = add_extra_convs
         self.extra_convs_on_inputs = extra_convs_on_inputs
-
+        # Teacher Net
         self.lateral_convs = nn.ModuleList()
         self.fpn_convs = nn.ModuleList()
-
         for i in range(self.start_level, self.backbone_end_level):
             l_conv = ConvModule(
                 in_channels[i],
@@ -91,6 +94,51 @@ class FPN(nn.Module):
                     activation=self.activation,
                     inplace=False)
                 self.fpn_convs.append(extra_fpn_conv)
+        # Student Net
+        self.s_lateral_convs = nn.ModuleList()
+        self.s_fpn_convs = nn.ModuleList()
+
+        for i in range(self.start_level, self.backbone_end_level):
+            l_conv = ConvModule(
+                s_in_channels[i],
+                s_out_channels,
+                1,
+                conv_cfg=conv_cfg,
+                norm_cfg=norm_cfg if not self.no_norm_on_lateral else None,
+                activation=self.activation,
+                inplace=False)
+            fpn_conv = ConvModule(
+                s_out_channels,
+                s_out_channels,
+                3,
+                padding=1,
+                conv_cfg=conv_cfg,
+                norm_cfg=norm_cfg,
+                activation=self.activation,
+                inplace=False)
+
+            self.s_lateral_convs.append(l_conv)
+            self.s_fpn_convs.append(fpn_conv)
+
+        # add extra conv layers (e.g., RetinaNet)
+        extra_levels = num_outs - self.backbone_end_level + self.start_level
+        if add_extra_convs and extra_levels >= 1:
+            for i in range(extra_levels):
+                if i == 0 and self.extra_convs_on_inputs:
+                    s_in_channels = self.s_in_channels[self.backbone_end_level - 1]
+                else:
+                    s_in_channels = s_out_channels
+                extra_fpn_conv = ConvModule(
+                    s_in_channels,
+                    s_out_channels,
+                    3,
+                    stride=2,
+                    padding=1,
+                    conv_cfg=conv_cfg,
+                    norm_cfg=norm_cfg,
+                    activation=self.activation,
+                    inplace=False)
+                self.s_fpn_convs.append(extra_fpn_conv)
 
     # default init_weights for conv(msra) and norm in ConvModule
     def init_weights(self):
@@ -100,12 +148,21 @@ class FPN(nn.Module):
 
     @auto_fp16()
     def forward(self, inputs):
-        assert len(inputs) == len(self.in_channels)
+        # Teacher Net
+        t_outs = self.single_forward(inputs[0], self.fpn_convs, self.lateral_convs)
+        # Student Net
+        s_outs = self.single_forward(inputs[1], self.s_fpn_convs, self.s_lateral_convs)
+
+        return tuple(t_outs), tuple(s_outs)
+
+    @auto_fp16()
+    def single_forward(self, single_input, fpn_convs, lateral_convs):
+        assert len(single_input) == len(self.in_channels)
 
         # build laterals
         laterals = [
-            lateral_conv(inputs[i + self.start_level])
-            for i, lateral_conv in enumerate(self.lateral_convs)
+            lateral_conv(single_input[i + self.start_level])
+            for i, lateral_conv in enumerate(lateral_convs)
         ]
 
         # build top-down path
@@ -117,7 +174,7 @@ class FPN(nn.Module):
         # build outputs
         # part 1: from original levels
         outs = [
-            self.fpn_convs[i](laterals[i]) for i in range(used_backbone_levels)
+            fpn_convs[i](laterals[i]) for i in range(used_backbone_levels)
         ]
         # part 2: add extra levels
         if self.num_outs > len(outs):
@@ -129,13 +186,13 @@ class FPN(nn.Module):
             # add conv layers on top of original feature maps (RetinaNet)
             else:
                 if self.extra_convs_on_inputs:
-                    orig = inputs[self.backbone_end_level - 1]
-                    outs.append(self.fpn_convs[used_backbone_levels](orig))
+                    orig = single_input[self.backbone_end_level - 1]
+                    outs.append(fpn_convs[used_backbone_levels](orig))
                 else:
-                    outs.append(self.fpn_convs[used_backbone_levels](outs[-1]))
+                    outs.append(fpn_convs[used_backbone_levels](outs[-1]))
                 for i in range(used_backbone_levels + 1, self.num_outs):
                     if self.relu_before_extra_convs:
-                        outs.append(self.fpn_convs[i](F.relu(outs[-1])))
+                        outs.append(fpn_convs[i](F.relu(outs[-1])))
                     else:
-                        outs.append(self.fpn_convs[i](outs[-1]))
+                        outs.append(fpn_convs[i](outs[-1]))
         return tuple(outs)
