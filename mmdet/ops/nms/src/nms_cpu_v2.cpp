@@ -48,7 +48,7 @@ at::Tensor nms_cpu_kernel(const at::Tensor& dets, const float threshold, const f
 
   for (int64_t _i = 0; _i < ndets; _i++) {
     auto i = order[_i];
-    
+    // std::cout<<"i:"<<i<<std::endl;
     if (suppressed[i] == 1) continue;
 
     // conf[i*5 + 0] = i + 1;
@@ -143,10 +143,15 @@ at::Tensor nms_cpu_kernel(const at::Tensor& dets, const float threshold, const f
           conf[i*5 + 2] = i + 1;
           conf[i*5 + 3] = i + 1;
         }
-        // score should not be changed
-        conf[i*5 + 4] = i + 1;
-
       }
+      else {
+        conf[i*5 + 0] = i + 1;
+        conf[i*5 + 1] = i + 1;
+        conf[i*5 + 2] = i + 1;
+        conf[i*5 + 3] = i + 1;
+      }
+      // score should not be changed
+      conf[i*5 + 4] = i + 1;
     }
   }
   return conf_t;

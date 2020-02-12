@@ -15,7 +15,7 @@ MIN = 1e-8
 
 
 @HEADS.register_module
-class DDBBD1x1Head(nn.Module):
+class DDBMultiBDHead(nn.Module):
 
     def __init__(self,
                  num_classes,
@@ -37,7 +37,7 @@ class DDBBD1x1Head(nn.Module):
                  loss_dist_scores=dict(type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
-        super(DDBBD1x1Head, self).__init__()
+        super(DDBMultiBDHead, self).__init__()
 
         self.num_classes = num_classes
         self.cls_out_channels = num_classes - 1
@@ -60,7 +60,7 @@ class DDBBD1x1Head(nn.Module):
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
         self.bd_convs = nn.ModuleList()
-
+        self.multi_bd = [9, 7, 5, 3, 1]
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
             self.cls_convs.append(
@@ -84,14 +84,14 @@ class DDBBD1x1Head(nn.Module):
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
         
-        for _ in range(2):
+        for bd_kernel_size in self.multi_bd:
             self.bd_convs.append(
                 ConvModule(
                         chn,
                         self.feat_channels,
-                        1,
+                        bd_kernel_size,
                         stride=1,
-                        padding=0,
+                        padding=bd_kernel_size // 2,
                         conv_cfg=self.conv_cfg,
                         norm_cfg=self.norm_cfg,
                         groups=4,
@@ -101,7 +101,7 @@ class DDBBD1x1Head(nn.Module):
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
-        self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 1, padding=0)
+        self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.relu = nn.ReLU(inplace=True)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
@@ -111,6 +111,8 @@ class DDBBD1x1Head(nn.Module):
             normal_init(m.conv, std=0.01)
         for m in self.reg_convs:
             normal_init(m.conv, std=0.01)
+        for m in self.bd_convs:
+            normal_init(m.conv, std=0.01)
 
         bias_cls = bias_init_with_prob(0.01)
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
@@ -119,12 +121,13 @@ class DDBBD1x1Head(nn.Module):
         normal_init(self.fcos_bd_scores, std=0.01)
 
     def forward(self, feats):
-        return multi_apply(self.forward_single, feats, self.scales)
+        return multi_apply(self.forward_single, feats, self.scales, self.multi_bd)
 
-    def forward_single(self, x, scale):
+    def forward_single(self, x, scale, bd_kernel):
         cls_feat = x
         reg_feat = x
 
+        bd_conv_index = 4 - bd_kernel // 2
         for cls_layer in self.cls_convs:
             cls_feat = cls_layer(cls_feat)
 
@@ -144,8 +147,9 @@ class DDBBD1x1Head(nn.Module):
         bbox_pred = scale(self.fcos_reg(reg_feat))
         bbox_pred = self.relu(bbox_pred)
         
-        for bd_layer in self.bd_convs:
-            bd_feat = bd_layer(reg_feat.detach())
+        # for bd_layer in self.bd_convs:
+        bd_layer = self.bd_convs[bd_conv_index]
+        bd_feat = bd_layer(reg_feat.detach())
 
         bd_scores_pred = self.fcos_bd_scores(bd_feat)
 
