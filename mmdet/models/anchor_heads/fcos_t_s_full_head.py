@@ -43,6 +43,7 @@ class FCOSTSFullHead(nn.Module):
                  eval_student=True,
                  training=True,
                  learn_when_train=False,
+                 fix_teacher_finetune_student=False,
                  align_level=1,
                  loss_cls=dict(
                      type='FocalLoss',
@@ -77,6 +78,7 @@ class FCOSTSFullHead(nn.Module):
         self.training = training
         self.eval_student = eval_student
         self.learn_when_train = learn_when_train
+        self.fix_teacher_finetune_student = fix_teacher_finetune_student
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -284,16 +286,26 @@ class FCOSTSFullHead(nn.Module):
             elif str(self.loss_s_t_cls) == 'CrossEntropyLoss()':
                 loss_s_t_cls = self.loss_s_t_cls(flatten_s_cls_feat, flatten_cls_feat.detach().sigmoid())
                 loss_s_t_reg = self.loss_s_t_reg(flatten_s_reg_feat, flatten_reg_feat.detach().sigmoid())
-
-            return dict(    
-                loss_cls=loss_cls,
-                s_loss_cls=s_loss_cls,
-                loss_bbox=loss_bbox,
-                s_loss_bbox=s_loss_bbox,
-                loss_centerness=loss_centerness,
-                s_loss_centerness=s_loss_centerness,
-                loss_s_t_cls=loss_s_t_cls,
-                loss_s_t_reg=loss_s_t_reg)
+            if self.fix_teacher_finetune_student:
+                return dict(    
+                    # loss_cls=loss_cls,
+                    s_loss_cls=s_loss_cls,
+                    # loss_bbox=loss_bbox,
+                    s_loss_bbox=s_loss_bbox,
+                    # loss_centerness=loss_centerness,
+                    s_loss_centerness=s_loss_centerness,
+                    loss_s_t_cls=loss_s_t_cls,
+                    loss_s_t_reg=loss_s_t_reg)
+            else:
+                return dict(    
+                    loss_cls=loss_cls,
+                    s_loss_cls=s_loss_cls,
+                    loss_bbox=loss_bbox,
+                    s_loss_bbox=s_loss_bbox,
+                    loss_centerness=loss_centerness,
+                    s_loss_centerness=s_loss_centerness,
+                    loss_s_t_cls=loss_s_t_cls,
+                    loss_s_t_reg=loss_s_t_reg)
         else:
             return dict(    
                 loss_cls=loss_cls,

@@ -35,7 +35,7 @@ model = dict(
         training=True,
         eval_student=True,
         learn_when_train=True,
-        fix_teacher_finetune_student=False,
+        fix_teacher_finetune_student=True,
         align_level=0,
         strides=[8, 16, 32, 64, 128],
         loss_cls=dict(
@@ -147,6 +147,6 @@ total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
-load_from = None
+load_from = './work/dirs/fcos_t_s_full_nolearning/fcos_t_s_full_nolearning_epoch_12.pth'
 resume_from = None
 workflow = [('train', 1)]
