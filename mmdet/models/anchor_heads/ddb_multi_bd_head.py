@@ -421,7 +421,7 @@ class DDBMultiBDHead(nn.Module):
                 # print("obj_dist_mean:{}".format(obj_dist_mean))
                 dist_scores_weights[obj_mask_inds] =  (updated_selected_pos_dist_scores_sorted[obj_mask_inds] >= obj_dist_mean).float()
             '''
-            dist_scores_weights = (updated_selected_pos_dist_scores_sorted >= 0.95).float()
+            dist_scores_weights = (updated_selected_pos_dist_scores_sorted >= 0.8).float()
             loss_dist_scores = self.loss_dist_scores(
                 pos_bd_scores_preds,
                 updated_selected_pos_dist_scores_sorted,
@@ -539,13 +539,12 @@ class DDBMultiBDHead(nn.Module):
         mlvl_centerness = torch.cat(mlvl_centerness)
         mlvl_bd_scores = torch.cat(mlvl_bd_scores)
         mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
-        '''
         det_bboxes, det_labels = multiclass_nms_sorting(
             mlvl_bboxes,
             mlvl_scores,
             mlvl_bd_scores,
             cfg.score_thr,
-            dict(type='nms_v2', iou_thr=0.5, c_thr=0.95),# cfg.nms,
+            cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
         
@@ -554,9 +553,10 @@ class DDBMultiBDHead(nn.Module):
             mlvl_bboxes,
             mlvl_scores,
             cfg.score_thr,
-            dict(type='nms', iou_thr=0.5),# cfg.nms,
+            cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
+        '''
         
         return det_bboxes, det_labels
 
