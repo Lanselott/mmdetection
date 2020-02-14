@@ -201,16 +201,41 @@ class FCOSTSHead(nn.Module):
         s_cls_score = self.fcos_s_cls(s_cls_feat)
         centerness = self.fcos_centerness(cls_feat)
         s_centerness = self.fcos_s_centerness(s_cls_feat)
+        
+        prune = True
+        '''
+        testing: How about prune the teacher feature and weight directly?
+        '''
+        if not prune:
+            for j in range(len(self.reg_convs)):
+                reg_layer = self.reg_convs[j]
+                s_reg_layer = self.s_reg_convs[j]
+                reg_feat = reg_layer(reg_feat)
+                s_reg_feat = s_reg_layer(s_reg_feat)
 
-        for j in range(len(self.reg_convs)):
-            reg_layer = self.reg_convs[j]
-            s_reg_layer = self.s_reg_convs[j]
-            reg_feat = reg_layer(reg_feat)
-            s_reg_feat = s_reg_layer(s_reg_feat)
+                if j == self.align_level:
+                    s_align_reg_feat = s_reg_feat
+                    t_aligned_reg_feat = reg_feat
+        else:
+            for j in range(len(self.reg_convs)):
+                reg_layer = self.reg_convs[j]
+                s_reg_layer = self.s_reg_convs[j]
+                # prune teacher
+                origin_weight = reg_layer.conv.weight 
+                # zero_tensor = torch.zeros_like(origin_weight)
+                # weight_mean = reg_layer.conv.weight.mean(0).expand(256, 256, 3, 3)
+                # reg_layer.conv.weight.data = torch.where(reg_layer.conv.weight.data > weight_mean, reg_layer.conv.weight.data, zero_tensor)
+                
+                weight_mask = torch.zeros_like(origin_weight)
+                weight_mask[:192, ...] = 1
+                reg_layer.conv.weight.data = origin_weight * weight_mask
+                reg_feat[:, 192:, ...] = 0
+                reg_feat = reg_layer(reg_feat)
+                s_reg_feat = s_reg_layer(s_reg_feat)
 
-            if j == self.align_level:
-                s_align_reg_feat = s_reg_feat
-                t_aligned_reg_feat = reg_feat
+                if j == self.align_level:
+                    s_align_reg_feat = s_reg_feat
+                    t_aligned_reg_feat = reg_feat
 
         # scale the bbox_pred of different level
         # float to avoid overflow when enabling FP16

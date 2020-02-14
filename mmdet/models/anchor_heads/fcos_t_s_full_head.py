@@ -44,6 +44,7 @@ class FCOSTSFullHead(nn.Module):
                  training=True,
                  learn_when_train=False,
                  fix_teacher_finetune_student=False,
+                 temperature=1,
                  fix_student_train_teacher=False,
                  align_level=1,
                  loss_cls=dict(
@@ -57,6 +58,7 @@ class FCOSTSFullHead(nn.Module):
                      type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
                  loss_s_t_reg=dict(
                      type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+                 loss_s_soft_cls = dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
                  loss_centerness=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -80,12 +82,14 @@ class FCOSTSFullHead(nn.Module):
         self.eval_student = eval_student
         self.learn_when_train = learn_when_train
         self.fix_teacher_finetune_student = fix_teacher_finetune_student
+        self.temperature = temperature
         self.fix_student_train_teacher = fix_student_train_teacher
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
         self.loss_s_t_cls = build_loss(loss_s_t_cls)
-        self.loss_s_t_reg=build_loss(loss_s_t_reg)
+        self.loss_s_t_reg = build_loss(loss_s_t_reg)
+        self.loss_s_soft_cls = build_loss(loss_s_soft_cls)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
@@ -244,7 +248,7 @@ class FCOSTSFullHead(nn.Module):
             cls_feats, s_cls_feats, reg_feats, s_reg_feats,
             gt_bboxes, gt_labels, img_metas, cfg,
             gt_bboxes_ignore=None):
-        loss_cls, loss_bbox, loss_centerness = self.loss_single(cls_scores,
+        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores = self.loss_single(cls_scores,
              bbox_preds,
              centernesses,
              gt_bboxes,
@@ -252,7 +256,7 @@ class FCOSTSFullHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None)
-        s_loss_cls, s_loss_bbox, s_loss_centerness = self.loss_single(s_cls_scores,
+        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores = self.loss_single(s_cls_scores,
              s_bbox_preds,
              s_centernesses,
              gt_bboxes,
@@ -260,7 +264,12 @@ class FCOSTSFullHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None)
-
+        # Tempered Softmax for student classification
+        # Soft Cls Loss
+        s_tempered_cls_scores = s_cls_scores / self.temperature
+        s_gt_labels = (t_flatten_cls_scores.detach() / self.temperature).sigmoid()
+        s_soft_loss_cls = self.loss_s_soft_cls(s_tempered_cls_scores, s_gt_labels)  # avoid num_pos is 0
+        
         flatten_s_cls_feat = [
             s_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
             for s_cls_feat in s_cls_feats
@@ -281,6 +290,7 @@ class FCOSTSFullHead(nn.Module):
         flatten_cls_feat = torch.cat(flatten_cls_feat)
         flatten_s_reg_feat = torch.cat(flatten_s_reg_feat)
         flatten_reg_feat = torch.cat(flatten_reg_feat)
+        
         if self.learn_when_train:
             if str(self.loss_s_t_cls) == 'MSELoss()':
                 loss_s_t_cls = self.loss_s_t_cls(flatten_s_cls_feat, flatten_cls_feat.detach())
@@ -290,7 +300,8 @@ class FCOSTSFullHead(nn.Module):
                 loss_s_t_reg = self.loss_s_t_reg(flatten_s_reg_feat, flatten_reg_feat.detach().sigmoid())
             if self.fix_teacher_finetune_student:
                 return dict(    
-                    s_loss_cls=s_loss_cls,
+                    s_hard_loss_cls=s_hard_loss_cls,
+                    s_soft_loss_cls=s_soft_loss_cls,
                     s_loss_bbox=s_loss_bbox,
                     s_loss_centerness=s_loss_centerness,
                     loss_s_t_cls=loss_s_t_cls,
@@ -303,7 +314,8 @@ class FCOSTSFullHead(nn.Module):
             else:
                 return dict(    
                     loss_cls=loss_cls,
-                    s_loss_cls=s_loss_cls,
+                    s_hard_loss_cls=s_hard_loss_cls,
+                    s_soft_loss_cls=s_soft_loss_cls,
                     loss_bbox=loss_bbox,
                     s_loss_bbox=s_loss_bbox,
                     loss_centerness=loss_centerness,
@@ -313,7 +325,8 @@ class FCOSTSFullHead(nn.Module):
         else:
             return dict(    
                 loss_cls=loss_cls,
-                s_loss_cls=s_loss_cls,
+                s_hard_loss_cls=s_hard_loss_cls,
+                s_soft_loss_cls=s_soft_loss_cls,
                 loss_bbox=loss_bbox,
                 s_loss_bbox=s_loss_bbox,
                 loss_centerness=loss_centerness,
@@ -361,9 +374,10 @@ class FCOSTSFullHead(nn.Module):
 
         pos_inds = flatten_labels.nonzero().reshape(-1)
         num_pos = len(pos_inds)
+        cls_avg_factor = num_pos + num_imgs
         loss_cls = self.loss_cls(
             flatten_cls_scores, flatten_labels,
-            avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
+            avg_factor=cls_avg_factor)  # avoid num_pos is 0
 
         pos_bbox_preds = flatten_bbox_preds[pos_inds]
         pos_centerness = flatten_centerness[pos_inds]
@@ -387,7 +401,7 @@ class FCOSTSFullHead(nn.Module):
             loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
 
-        return loss_cls, loss_bbox, loss_centerness
+        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores
 
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
