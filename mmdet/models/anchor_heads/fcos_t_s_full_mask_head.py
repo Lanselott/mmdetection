@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from mmcv.cnn import normal_init
 
 from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms, bbox_overlaps
@@ -93,7 +94,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.loss_s_t_cls = build_loss(loss_s_t_cls)
         self.loss_s_t_reg = build_loss(loss_s_t_reg)
         self.loss_s_soft_cls = build_loss(loss_s_soft_cls)
-        self.loss_iou_similiarity = build_loss(loss_iou_similiarity)
+        self.loss_iou_similiarity = nn.BCELoss() #build_loss(loss_iou_similiarity)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
@@ -311,6 +312,7 @@ class FCOSTSFullMaskHead(nn.Module):
             if self.fix_teacher_finetune_student:
                 if self.apply_iou_similarity:
                     loss_iou_similiarity = self.loss_iou_similiarity(s_iou_maps, t_iou_maps.detach())
+                    # loss_iou_similiarity = self.loss_iou_similiarity(s_iou_maps.reshape(1, -1), t_iou_maps.reshape(1, -1).detach())
                     return dict(    
                         s_hard_loss_cls=s_hard_loss_cls,
                         s_soft_loss_cls=s_soft_loss_cls,

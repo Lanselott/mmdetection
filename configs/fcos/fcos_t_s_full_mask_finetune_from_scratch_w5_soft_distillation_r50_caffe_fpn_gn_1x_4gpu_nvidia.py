@@ -54,7 +54,7 @@ model = dict(
         loss_s_t_cls=dict(type='MSELoss', loss_weight=5),
         loss_s_t_reg=dict(type='MSELoss', loss_weight=5),
         loss_s_soft_cls = dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-        loss_iou_similiarity = dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        loss_iou_similiarity = dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings
