@@ -44,7 +44,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  training=True,
                  learn_when_train=False,
                  fix_teacher_finetune_student=False,
-                 apply_iou_similarity=True,
+                 apply_iou_similarity=False,
                  temperature=1,
                  fix_student_train_teacher=False,
                  align_level=1,
