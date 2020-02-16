@@ -36,7 +36,7 @@ model = dict(
         eval_student=False,
         learn_when_train=True,
         fix_teacher_finetune_student=True,
-        apply_iou_similarity=True,
+        apply_iou_similarity=False,
         temperature=1,
         align_level=0,
         # student distillation params
