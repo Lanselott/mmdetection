@@ -33,7 +33,7 @@ model = dict(
             alpha=0.25,
             loss_weight=1.0),
         loss_bbox=dict(type='GIoULoss', loss_weight=1.0),
-        loss_sorted_bbox=dict(type='GIoULoss', loss_weight=2.0),
+        loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
         loss_dist_scores=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_centerness=dict(

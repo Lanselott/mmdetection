@@ -20,7 +20,7 @@ model = dict(
         num_outs=5,
         relu_before_extra_convs=True),
     bbox_head=dict(
-        type='DDBBD1x1Head',
+        type='DDBMultiBDHead',
         num_classes=81,
         in_channels=256,
         stacked_convs=4,
@@ -34,6 +34,7 @@ model = dict(
             loss_weight=1.0),
         loss_bbox=dict(type='GIoULoss', loss_weight=1.0),
         loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
+        bd_detach=False,
         loss_dist_scores=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_centerness=dict(
@@ -53,8 +54,8 @@ test_cfg = dict(
     nms_pre=1000,
     min_bbox_size=0,
     score_thr=0.05,
-    # nms=dict(type='nms', iou_thr=0.5),
-    nms=dict(type='nms_v2', iou_thr=0.5, c_thr=0.90),
+    nms=dict(type='nms', iou_thr=0.5),
+    # nms=dict(type='nms_v2', iou_thr=0.5, c_thr=0.95),
     max_per_img=100)
 # dataset settings
 dataset_type = 'CocoDataset'
@@ -107,7 +108,7 @@ data = dict(
 # optimizer
 optimizer = dict(
     type='SGD',
-    lr=0.0025,
+    lr=0.005,
     momentum=0.9,
     weight_decay=0.0001,
     paramwise_options=dict(bias_lr_mult=2., bias_decay_mult=0.))

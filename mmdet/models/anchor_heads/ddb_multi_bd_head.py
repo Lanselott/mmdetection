@@ -32,7 +32,8 @@ class DDBMultiBDHead(nn.Module):
                      alpha=0.25,
                      loss_weight=1.0),
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
-                 loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),     
+                 loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),    
+                 bd_detach=False,
                  loss_centerness=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
                  loss_dist_scores=dict(type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
                  conv_cfg=None,
@@ -50,6 +51,7 @@ class DDBMultiBDHead(nn.Module):
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
         self.loss_sorted_bbox = build_loss(loss_sorted_bbox)
+        self.bd_detach = bd_detach
         self.loss_dist_scores = build_loss(loss_dist_scores)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
@@ -60,6 +62,7 @@ class DDBMultiBDHead(nn.Module):
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
         self.bd_convs = nn.ModuleList()
+        self.fcos_bd_scores = nn.ModuleList()
         self.multi_bd = [9, 7, 5, 3, 1]
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
@@ -101,7 +104,8 @@ class DDBMultiBDHead(nn.Module):
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
-        self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
+        for bd_kernel_size in self.multi_bd:
+            self.fcos_bd_scores.append(nn.Conv2d(self.feat_channels, 4, bd_kernel_size, padding=bd_kernel_size // 2))
         self.relu = nn.ReLU(inplace=True)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
@@ -118,7 +122,8 @@ class DDBMultiBDHead(nn.Module):
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
         normal_init(self.fcos_centerness, std=0.01)
-        normal_init(self.fcos_bd_scores, std=0.01)
+        for fcos_bd_score in self.fcos_bd_scores:
+            normal_init(fcos_bd_score, std=0.01)
 
     def forward(self, feats):
         return multi_apply(self.forward_single, feats, self.scales, self.multi_bd)
@@ -149,9 +154,14 @@ class DDBMultiBDHead(nn.Module):
         
         # for bd_layer in self.bd_convs:
         bd_layer = self.bd_convs[bd_conv_index]
-        bd_feat = bd_layer(reg_feat.detach())
 
-        bd_scores_pred = self.fcos_bd_scores(bd_feat)
+        if self.bd_detach:
+            bd_feat = bd_layer(reg_feat.detach())
+        else:
+            bd_feat = bd_layer(reg_feat)
+
+        bd_score_layer = self.fcos_bd_scores[bd_conv_index]
+        bd_scores_pred = bd_score_layer(bd_feat)
 
         return cls_score, bbox_pred, bd_scores_pred, centerness
 
@@ -539,7 +549,6 @@ class DDBMultiBDHead(nn.Module):
         mlvl_centerness = torch.cat(mlvl_centerness)
         mlvl_bd_scores = torch.cat(mlvl_bd_scores)
         mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
-        '''
         det_bboxes, det_labels = multiclass_nms_sorting(
             mlvl_bboxes,
             mlvl_scores,
@@ -557,6 +566,7 @@ class DDBMultiBDHead(nn.Module):
             cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
+        '''
         
         return det_bboxes, det_labels
 
