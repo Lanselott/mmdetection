@@ -37,8 +37,11 @@ model = dict(
         learn_when_train=True,
         fix_teacher_finetune_student=True,
         apply_iou_similarity=True,
-        temperature=3,
+        temperature=1,
         align_level=0,
+        # student distillation params
+        beta = 1.5,
+        gamma = 2,
         strides=[8, 16, 32, 64, 128],
         loss_cls=dict(
             type='FocalLoss',
@@ -53,7 +56,7 @@ model = dict(
         #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_s_t_cls=dict(type='MSELoss', loss_weight=5),
         loss_s_t_reg=dict(type='MSELoss', loss_weight=5),
-        loss_s_soft_cls = dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        t_s_distance = dict(type='CrossEntropyLoss', use_sigmoid=True, reduction='none', loss_weight=1.0),
         loss_iou_similiarity = dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
