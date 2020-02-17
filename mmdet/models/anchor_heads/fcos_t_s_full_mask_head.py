@@ -53,6 +53,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  align_level=1,
                  beta = 1,
                  gamma = 1,
+                 adap_distill_loss_weight = 0.5,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -87,6 +88,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.align_level = align_level
         self.beta = beta
         self.gamma = gamma
+        self.adap_distill_loss_weight = adap_distill_loss_weight
         self.training = training
         self.eval_student = eval_student
         self.learn_when_train = learn_when_train
@@ -291,7 +293,7 @@ class FCOSTSFullMaskHead(nn.Module):
         #
         t_entropy = - (s_gt_labels * s_gt_labels.log() + (1 - s_gt_labels) * (1 - s_gt_labels).log())
         adaptive_distillation_weight = (1 - (-t_s_distribution_distance - self.beta * t_entropy).exp()) ** self.gamma
-        adaptive_distillation_loss = (adaptive_distillation_weight * t_s_distribution_distance).sum() / (len(pos_inds) + cls_scores[0].size(0))
+        adaptive_distillation_loss = self.adap_distill_loss_weight * (adaptive_distillation_weight * t_s_distribution_distance).sum() / (len(pos_inds) + cls_scores[0].size(0))
 
         flatten_s_cls_feat = [
             s_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)

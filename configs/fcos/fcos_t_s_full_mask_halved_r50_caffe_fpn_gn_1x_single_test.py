@@ -42,6 +42,7 @@ model = dict(
         # student distillation params
         beta = 1.5,
         gamma = 2,
+        adap_distill_loss_weight = 0.5,
         strides=[8, 16, 32, 64, 128],
         loss_cls=dict(
             type='FocalLoss',
