@@ -38,6 +38,7 @@ model = dict(
         fix_teacher_finetune_student=True,
         apply_iou_similarity=False,
         temperature=1,
+        apply_feature_alignment=False,
         align_level=0,
         # student distillation params
         beta = 1.5,

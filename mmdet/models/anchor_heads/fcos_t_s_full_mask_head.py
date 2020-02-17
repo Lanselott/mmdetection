@@ -47,6 +47,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  fix_teacher_finetune_student=False,
                  apply_iou_similarity=False,
                  temperature=1,
+                 apply_feature_alignment=False,
                  fix_student_train_teacher=False,
                  align_level=1,
                  beta = 1,
@@ -91,6 +92,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.fix_teacher_finetune_student = fix_teacher_finetune_student
         self.apply_iou_similarity = apply_iou_similarity
         self.temperature = temperature
+        self.apply_feature_alignment = apply_feature_alignment
         self.fix_student_train_teacher = fix_student_train_teacher
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
@@ -311,31 +313,50 @@ class FCOSTSFullMaskHead(nn.Module):
         flatten_reg_feat = torch.cat(flatten_reg_feat)
         
         if self.learn_when_train:
-            if str(self.loss_s_t_cls) == 'MSELoss()':
-                # loss_s_t_cls = self.loss_s_t_cls(flatten_s_cls_feat, flatten_cls_feat.detach())
-                loss_s_t_reg = self.loss_s_t_reg(flatten_s_reg_feat[pos_inds], flatten_reg_feat[pos_inds].detach())
-            elif str(self.loss_s_t_cls) == 'CrossEntropyLoss()':
-                # loss_s_t_cls = self.loss_s_t_cls(flatten_s_cls_feat, flatten_cls_feat.detach().sigmoid())
-                loss_s_t_reg = self.loss_s_t_reg(flatten_s_reg_feat[pos_inds], flatten_reg_feat[pos_inds].detach().sigmoid())
+            if self.apply_feature_alignment:
+                if str(self.loss_s_t_cls) == 'MSELoss()':
+                    # loss_s_t_cls = self.loss_s_t_cls(flatten_s_cls_feat, flatten_cls_feat.detach())
+                    loss_s_t_reg = self.loss_s_t_reg(flatten_s_reg_feat[pos_inds], flatten_reg_feat[pos_inds].detach())
+                elif str(self.loss_s_t_cls) == 'CrossEntropyLoss()':
+                    # loss_s_t_cls = self.loss_s_t_cls(flatten_s_cls_feat, flatten_cls_feat.detach().sigmoid())
+                    loss_s_t_reg = self.loss_s_t_reg(flatten_s_reg_feat[pos_inds], flatten_reg_feat[pos_inds].detach().sigmoid())
             if self.fix_teacher_finetune_student:
                 if self.apply_iou_similarity:
                     loss_iou_similiarity = self.loss_iou_similiarity(s_iou_maps, t_iou_maps.detach())
-                    return dict(    
-                        s_hard_loss_cls=s_hard_loss_cls,
-                        # s_soft_loss_cls=s_soft_loss_cls,
-                        adaptive_distillation_loss=adaptive_distillation_loss,
-                        s_loss_bbox=s_loss_bbox,
-                        s_loss_centerness=s_loss_centerness,
-                        loss_iou_similiarity=loss_iou_similiarity,
-                        loss_s_t_reg=loss_s_t_reg)
+                    if self.apply_feature_alignment:
+                        return dict(    
+                            s_hard_loss_cls=s_hard_loss_cls,
+                            # s_soft_loss_cls=s_soft_loss_cls,
+                            adaptive_distillation_loss=adaptive_distillation_loss,
+                            s_loss_bbox=s_loss_bbox,
+                            s_loss_centerness=s_loss_centerness,
+                            loss_iou_similiarity=loss_iou_similiarity,
+                            loss_s_t_reg=loss_s_t_reg)
+                    else:
+                        return dict(    
+                            s_hard_loss_cls=s_hard_loss_cls,
+                            # s_soft_loss_cls=s_soft_loss_cls,
+                            adaptive_distillation_loss=adaptive_distillation_loss,
+                            s_loss_bbox=s_loss_bbox,
+                            s_loss_centerness=s_loss_centerness,
+                            loss_iou_similiarity=loss_iou_similiarity)
                 else:
-                    return dict(    
-                        s_hard_loss_cls=s_hard_loss_cls,
-                        # s_soft_loss_cls=s_soft_loss_cls,
-                        adaptive_distillation_loss=adaptive_distillation_loss,
-                        s_loss_bbox=s_loss_bbox,
-                        s_loss_centerness=s_loss_centerness,
-                        loss_s_t_reg=loss_s_t_reg)
+                    if self.apply_feature_alignment:
+                        return dict(    
+                            s_hard_loss_cls=s_hard_loss_cls,
+                            # s_soft_loss_cls=s_soft_loss_cls,
+                            adaptive_distillation_loss=adaptive_distillation_loss,
+                            s_loss_bbox=s_loss_bbox,
+                            s_loss_centerness=s_loss_centerness,
+                            loss_s_t_reg=loss_s_t_reg)
+                    else:
+                        return dict(    
+                            s_hard_loss_cls=s_hard_loss_cls,
+                            # s_soft_loss_cls=s_soft_loss_cls,
+                            adaptive_distillation_loss=adaptive_distillation_loss,
+                            s_loss_bbox=s_loss_bbox,
+                            s_loss_centerness=s_loss_centerness)
+                            
             elif self.fix_student_train_teacher:
                 return dict(    
                     loss_cls=loss_cls,
