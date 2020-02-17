@@ -49,6 +49,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  temperature=1,
                  apply_feature_alignment=False,
                  fix_student_train_teacher=False,
+                 train_student_only=False,
                  align_level=1,
                  beta = 1,
                  gamma = 1,
@@ -94,6 +95,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.temperature = temperature
         self.apply_feature_alignment = apply_feature_alignment
         self.fix_student_train_teacher = fix_student_train_teacher
+        self.train_student_only= train_student_only
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -356,7 +358,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             adaptive_distillation_loss=adaptive_distillation_loss,
                             s_loss_bbox=s_loss_bbox,
                             s_loss_centerness=s_loss_centerness)
-                            
+
             elif self.fix_student_train_teacher:
                 return dict(    
                     loss_cls=loss_cls,
@@ -373,16 +375,11 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_centerness=loss_centerness,
                     s_loss_centerness=s_loss_centerness,
                     loss_s_t_reg=loss_s_t_reg)
-        else:
+        elif self.train_student_only:
             return dict(    
-                loss_cls=loss_cls,
                 s_hard_loss_cls=s_hard_loss_cls,
-                # s_soft_loss_cls=s_soft_loss_cls,
-                adaptive_distillation_loss=adaptive_distillation_loss,
-                loss_bbox=loss_bbox,
                 s_loss_bbox=s_loss_bbox,
-                loss_centerness=loss_centerness,
-                s_loss_centerness=s_loss_centerness)
+                s_loss_centerness=s_loss_centerness)            
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def loss_single(self,
