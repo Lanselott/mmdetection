@@ -441,6 +441,7 @@ class ResTSNet(nn.Module):
         self.s_res_layers = []
         self.align_layers = nn.ModuleList()
         # teacher net
+        teacher_block_output_channel = []
         for i, num_blocks in enumerate(self.stage_blocks):
             stride = strides[i]
             dilation = dilations[i]
@@ -462,13 +463,17 @@ class ResTSNet(nn.Module):
                 gcb=gcb,
                 gen_attention=gen_attention,
                 gen_attention_blocks=stage_with_gen_attention[i])
+            teacher_block_output_channel.append(planes)
             self.inplanes = planes * self.block.expansion
             layer_name = 'layer{}'.format(i + 1)
             self.add_module(layer_name, res_layer)
             self.res_layers.append(layer_name)
         self._freeze_stages()
         # student net
-        self.inplanes = 64
+        # TODO: rewrite student layers; 
+        # current block1[0] layer input channel not fully pruned in same way
+        self.inplanes = 64 # it should be self.inplanes // self.t_s_ratio
+        student_block_output_channel = []
         for j, num_blocks in enumerate(self.stage_blocks):
             stride = strides[j]
             dilation = dilations[j]
@@ -490,6 +495,7 @@ class ResTSNet(nn.Module):
                 gcb=gcb,
                 gen_attention=gen_attention,
                 gen_attention_blocks=stage_with_gen_attention[j])
+            student_block_output_channel.append(planes)
             self.inplanes = planes * self.block.expansion
             s_layer_name = 's_layer{}'.format(j + 1)
             self.add_module(s_layer_name, s_res_layer)
@@ -498,12 +504,14 @@ class ResTSNet(nn.Module):
             len(self.stage_blocks) - 1)
         # hint knowlege, align teacher and student
         self.inplanes = 64
+        # TODO: Add to config file
+        self.align_layers_output_channel_size = [256, 512, 1024, 2048]
         if self.apply_block_wise_alignment:
-            for k in range(self.num_stages):
-                planes = 64 * 2**k  # Prune the channel
+            for out_channel in self.align_layers_output_channel_size:
+                input_channel = out_channel // self.t_s_ratio
                 self.align_layers.append(ConvModule(
-                    planes,
-                    planes * self.t_s_ratio,
+                    input_channel,
+                    out_channel,
                     3,
                     stride=1,
                     padding=1,
@@ -511,7 +519,7 @@ class ResTSNet(nn.Module):
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
                 # print("self.inplanes:{}".format(self.inplanes))
-
+        embed()
     @property
     def norm1(self):
         return getattr(self, self.norm1_name)
