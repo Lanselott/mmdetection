@@ -9,7 +9,8 @@ from torch.nn.modules.batchnorm import _BatchNorm
 from mmdet.models.plugins import GeneralizedAttention
 from mmdet.ops import ContextBlock, DeformConv, ModulatedDeformConv
 from ..registry import BACKBONES
-from ..utils import build_conv_layer, build_norm_layer
+from ..utils import build_conv_layer, build_norm_layer, ConvModule
+from ..builder import build_loss
 from IPython import embed
 
 class BasicBlock(nn.Module):
@@ -386,6 +387,8 @@ class ResTSNet(nn.Module):
                  dilations=(1, 1, 1, 1),
                  out_indices=(0, 1, 2, 3),
                  style='pytorch',
+                 t_hint_loss=dict(type='MSELoss', loss_weight=1),
+                 apply_block_wise_alignment=False,
                  frozen_stages=-1,
                  conv_cfg=None,
                  norm_cfg=dict(type='BN', requires_grad=True),
@@ -411,6 +414,8 @@ class ResTSNet(nn.Module):
         self.out_indices = out_indices
         assert max(out_indices) < num_stages
         self.style = style
+        self.t_hint_loss = build_loss(t_hint_loss)
+        self.apply_block_wise_alignment = apply_block_wise_alignment
         self.frozen_stages = frozen_stages
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
@@ -434,6 +439,7 @@ class ResTSNet(nn.Module):
 
         self.res_layers = []
         self.s_res_layers = []
+        self.align_layers = nn.ModuleList()
         # teacher net
         for i, num_blocks in enumerate(self.stage_blocks):
             stride = strides[i]
@@ -490,6 +496,21 @@ class ResTSNet(nn.Module):
             self.s_res_layers.append(s_layer_name)
         self.feat_dim = self.block.expansion * 64 * 2**(
             len(self.stage_blocks) - 1)
+        # hint knowlege, align teacher and student
+        self.inplanes = 64
+        if self.apply_block_wise_alignment:
+            for k in range(self.num_stages):
+                planes = 64 * 2**k  # Prune the channel
+                self.align_layers.append(ConvModule(
+                    planes,
+                    planes * self.t_s_ratio,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=self.norm_cfg is None))
+                # print("self.inplanes:{}".format(self.inplanes))
 
     @property
     def norm1(self):
@@ -556,18 +577,28 @@ class ResTSNet(nn.Module):
         s_x = x
         outs = []
         s_outs = []
+        hint_losses = []
+
         for i, layer_name in enumerate(self.res_layers):
             res_layer = getattr(self, layer_name)
             x = res_layer(x)
             if i in self.out_indices:
                 outs.append(x)
-        # student net
+        # student net 
         for j, s_layer_name in enumerate(self.s_res_layers):
             s_res_layer = getattr(self, s_layer_name)
             s_x = s_res_layer(s_x)
+            # align to teacher network and get the loss
+            if self.apply_block_wise_alignment:
+               aligned_s_feature = self.align_layers[j](s_x)
+               hint_losses.append(self.t_hint_loss(aligned_s_feature, outs[j].detach()))
             if j in self.out_indices:
                 s_outs.append(s_x)
-        return tuple(outs), tuple(s_outs)
+        if self.apply_block_wise_alignment:    
+            return tuple(outs), tuple(s_outs), tuple(hint_losses)
+        else:
+            return tuple(outs), tuple(s_outs)
+        
 
     def train(self, mode=True):
         super(ResTSNet, self).train(mode)

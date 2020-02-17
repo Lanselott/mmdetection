@@ -58,7 +58,7 @@ class FCOSTSFullHead(nn.Module):
                      type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
                  loss_s_t_reg=dict(
                      type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-                 loss_s_soft_cls = dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+                 loss_s_soft_cls=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
                  loss_centerness=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -191,9 +191,10 @@ class FCOSTSFullHead(nn.Module):
     def forward(self, feats):
         t_feats = feats[0]
         s_feats = feats[1]
+        hint_losses = feats[2]
+       
         return multi_apply(self.forward_single, t_feats, s_feats, self.scales)
-
-    def forward_single(self, t_x, s_x, scale):
+    def forward_single(self, t_x, s_x, scale, hint_losses=None):
         t_cls_feat = t_x
         t_reg_feat = t_x
         # only update student head model

@@ -46,14 +46,16 @@ class FCOSTSFullMaskHead(nn.Module):
                  learn_when_train=False,
                  fix_teacher_finetune_student=False,
                  apply_iou_similarity=False,
+                 apply_adaptive_distillation=False,
                  temperature=1,
                  apply_feature_alignment=False,
                  fix_student_train_teacher=False,
                  train_student_only=False,
                  align_level=1,
-                 beta = 1,
-                 gamma = 1,
-                 adap_distill_loss_weight = 0.5,
+                 apply_block_wise_alignment=False,
+                 beta=1,
+                 gamma=1,
+                 adap_distill_loss_weight=0.5,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -62,11 +64,21 @@ class FCOSTSFullMaskHead(nn.Module):
                      loss_weight=1.0),
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
                  loss_s_t_cls=dict(
-                     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+                     type='CrossEntropyLoss',
+                     use_sigmoid=True,
+                     loss_weight=1.0),
                  loss_s_t_reg=dict(
-                     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-                 t_s_distance = dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-                 loss_iou_similiarity = dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+                     type='CrossEntropyLoss',
+                     use_sigmoid=True,
+                     loss_weight=1.0),
+                 t_s_distance=dict(
+                     type='CrossEntropyLoss',
+                     use_sigmoid=True,
+                     loss_weight=1.0),
+                 loss_iou_similiarity=dict(
+                     type='CrossEntropyLoss',
+                     use_sigmoid=True,
+                     loss_weight=1.0),
                  loss_centerness=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -86,6 +98,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.regress_ranges = regress_ranges
         self.t_s_ratio = t_s_ratio
         self.align_level = align_level
+        self.apply_block_wise_alignment = apply_block_wise_alignment
         self.beta = beta
         self.gamma = gamma
         self.adap_distill_loss_weight = adap_distill_loss_weight
@@ -94,17 +107,19 @@ class FCOSTSFullMaskHead(nn.Module):
         self.learn_when_train = learn_when_train
         self.fix_teacher_finetune_student = fix_teacher_finetune_student
         self.apply_iou_similarity = apply_iou_similarity
+        self.apply_adaptive_distillation = apply_adaptive_distillation
         self.temperature = temperature
         self.apply_feature_alignment = apply_feature_alignment
         self.fix_student_train_teacher = fix_student_train_teacher
-        self.train_student_only= train_student_only
+        self.train_student_only = train_student_only
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
         self.loss_s_t_cls = build_loss(loss_s_t_cls)
         self.loss_s_t_reg = build_loss(loss_s_t_reg)
         self.t_s_distance = build_loss(t_s_distance)
-        self.loss_iou_similiarity = nn.BCELoss() #build_loss(loss_iou_similiarity)
+        self.loss_iou_similiarity = nn.BCELoss(
+        )  #build_loss(loss_iou_similiarity)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
@@ -142,7 +157,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
-    
+
     def _init_student_layers(self):
         self.s_cls_convs = nn.ModuleList()
         self.s_reg_convs = nn.ModuleList()
@@ -177,11 +192,12 @@ class FCOSTSFullMaskHead(nn.Module):
             self.s_feat_channels, self.feat_channels, 3, padding=1)
         self.t_s_reg_align = nn.Conv2d(
             self.s_feat_channels, self.feat_channels, 3, padding=1)
-        
+
         self.fcos_s_cls = nn.Conv2d(
             self.s_feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_s_reg = nn.Conv2d(self.s_feat_channels, 4, 3, padding=1)
-        self.fcos_s_centerness = nn.Conv2d(self.s_feat_channels, 1, 3, padding=1)
+        self.fcos_s_centerness = nn.Conv2d(
+            self.s_feat_channels, 1, 3, padding=1)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
@@ -209,9 +225,15 @@ class FCOSTSFullMaskHead(nn.Module):
     def forward(self, feats):
         t_feats = feats[0]
         s_feats = feats[1]
-        return multi_apply(self.forward_single, t_feats, s_feats, self.scales)
+        if self.apply_block_wise_alignment:
+            hint_losses = feats[2] + tuple('N')
+            return multi_apply(self.forward_single, t_feats, s_feats,
+                               self.scales, hint_losses)
+        else:
+            return multi_apply(self.forward_single, t_feats, s_feats,
+                               self.scales)
 
-    def forward_single(self, t_x, s_x, scale):
+    def forward_single(self, t_x, s_x, scale, hint_losses=None):
         t_cls_feat = t_x
         t_reg_feat = t_x
         # student head model
@@ -254,46 +276,49 @@ class FCOSTSFullMaskHead(nn.Module):
         s_align_cls_feat = self.t_s_cls_align(s_align_cls_feat)
 
         if self.training:
-            return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat
-        else: 
+            return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_losses
+        else:
             if self.eval_student:
                 return s_cls_score, s_bbox_pred, s_centerness
-            else: 
+            else:
                 return cls_score, bbox_pred, centerness
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
-    def loss(self, cls_scores, bbox_preds, centernesses,
-            s_cls_scores, s_bbox_preds, s_centernesses,
-            cls_feats, s_cls_feats, reg_feats, s_reg_feats,
-            gt_bboxes, gt_labels, img_metas, cfg,
-            gt_bboxes_ignore=None):
-        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, t_iou_maps, _ = self.loss_single(cls_scores,
+    def loss(self,
+             cls_scores,
              bbox_preds,
              centernesses,
-             gt_bboxes,
-             gt_labels,
-             img_metas,
-             cfg,
-             gt_bboxes_ignore=None)
-        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, s_iou_maps, pos_inds = self.loss_single(s_cls_scores,
+             s_cls_scores,
              s_bbox_preds,
              s_centernesses,
+             cls_feats,
+             s_cls_feats,
+             reg_feats,
+             s_reg_feats,
+             hint_losses,
              gt_bboxes,
              gt_labels,
              img_metas,
              cfg,
-             gt_bboxes_ignore=None)
-        '''
-        # Tempered Softmax for student classification
-        '''
-        s_tempered_cls_scores = s_cls_scores / self.temperature
-        s_gt_labels = (t_flatten_cls_scores.detach() / self.temperature).sigmoid()
-        # CE(KL distance) between teacher and student
-        t_s_distribution_distance = self.t_s_distance(s_tempered_cls_scores, s_gt_labels) 
-        #
-        t_entropy = - (s_gt_labels * s_gt_labels.log() + (1 - s_gt_labels) * (1 - s_gt_labels).log())
-        adaptive_distillation_weight = (1 - (-t_s_distribution_distance - self.beta * t_entropy).exp()) ** self.gamma
-        adaptive_distillation_loss = self.adap_distill_loss_weight * (adaptive_distillation_weight * t_s_distribution_distance).sum() / (len(pos_inds) + cls_scores[0].size(0))
+             gt_bboxes_ignore=None):
+        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, t_iou_maps, _ = self.loss_single(
+            cls_scores,
+            bbox_preds,
+            centernesses,
+            gt_bboxes,
+            gt_labels,
+            img_metas,
+            cfg,
+            gt_bboxes_ignore=None)
+        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, s_iou_maps, pos_inds = self.loss_single(
+            s_cls_scores,
+            s_bbox_preds,
+            s_centernesses,
+            gt_bboxes,
+            gt_labels,
+            img_metas,
+            cfg,
+            gt_bboxes_ignore=None)
 
         flatten_s_cls_feat = [
             s_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
@@ -315,84 +340,83 @@ class FCOSTSFullMaskHead(nn.Module):
         flatten_cls_feat = torch.cat(flatten_cls_feat)
         flatten_s_reg_feat = torch.cat(flatten_s_reg_feat)
         flatten_reg_feat = torch.cat(flatten_reg_feat)
-        
+
+        loss_dict = {}
+        assert self.fix_student_train_teacher != self.learn_when_train
+
         if self.learn_when_train:
+            loss_dict.update(s_hard_loss_cls=s_hard_loss_cls)
+            if self.apply_block_wise_alignment:
+                hint_losses = hint_losses[:4]  # Remove placeholder
+                for j, hint_loss in enumerate(hint_losses):
+                    loss_dict.update(
+                        {'hint_loss_block_{}'.format(j): hint_loss})
             if self.apply_feature_alignment:
                 if str(self.loss_s_t_cls) == 'MSELoss()':
-                    # loss_s_t_cls = self.loss_s_t_cls(flatten_s_cls_feat, flatten_cls_feat.detach())
-                    loss_s_t_reg = self.loss_s_t_reg(flatten_s_reg_feat[pos_inds], flatten_reg_feat[pos_inds].detach())
+                    loss_s_t_reg = self.loss_s_t_reg(
+                        flatten_s_reg_feat[pos_inds],
+                        flatten_reg_feat[pos_inds].detach())
                 elif str(self.loss_s_t_cls) == 'CrossEntropyLoss()':
-                    # loss_s_t_cls = self.loss_s_t_cls(flatten_s_cls_feat, flatten_cls_feat.detach().sigmoid())
-                    loss_s_t_reg = self.loss_s_t_reg(flatten_s_reg_feat[pos_inds], flatten_reg_feat[pos_inds].detach().sigmoid())
+                    loss_s_t_reg = self.loss_s_t_reg(
+                        flatten_s_reg_feat[pos_inds],
+                        flatten_reg_feat[pos_inds].detach().sigmoid())
+                loss_dict.update(loss_s_t_reg=loss_s_t_reg)
             if self.fix_teacher_finetune_student:
-                if self.apply_iou_similarity:
-                    loss_iou_similiarity = self.loss_iou_similiarity(s_iou_maps, t_iou_maps.detach())
-                    if self.apply_feature_alignment:
-                        return dict(    
-                            s_hard_loss_cls=s_hard_loss_cls,
-                            # s_soft_loss_cls=s_soft_loss_cls,
-                            adaptive_distillation_loss=adaptive_distillation_loss,
-                            s_loss_bbox=s_loss_bbox,
-                            s_loss_centerness=s_loss_centerness,
-                            loss_iou_similiarity=loss_iou_similiarity,
-                            loss_s_t_reg=loss_s_t_reg)
-                    else:
-                        return dict(    
-                            s_hard_loss_cls=s_hard_loss_cls,
-                            # s_soft_loss_cls=s_soft_loss_cls,
-                            adaptive_distillation_loss=adaptive_distillation_loss,
-                            s_loss_bbox=s_loss_bbox,
-                            s_loss_centerness=s_loss_centerness,
-                            loss_iou_similiarity=loss_iou_similiarity)
-                else:
-                    if self.apply_feature_alignment:
-                        return dict(    
-                            s_hard_loss_cls=s_hard_loss_cls,
-                            # s_soft_loss_cls=s_soft_loss_cls,
-                            adaptive_distillation_loss=adaptive_distillation_loss,
-                            s_loss_bbox=s_loss_bbox,
-                            s_loss_centerness=s_loss_centerness,
-                            loss_s_t_reg=loss_s_t_reg)
-                    else:
-                        return dict(    
-                            s_hard_loss_cls=s_hard_loss_cls,
-                            # s_soft_loss_cls=s_soft_loss_cls,
-                            adaptive_distillation_loss=adaptive_distillation_loss,
-                            s_loss_bbox=s_loss_bbox,
-                            s_loss_centerness=s_loss_centerness)
-
-            elif self.fix_student_train_teacher:
-                return dict(    
-                    loss_cls=loss_cls,
-                    loss_bbox=loss_bbox,
-                    loss_centerness=loss_centerness)
-            else:
-                return dict(    
-                    loss_cls=loss_cls,
-                    s_hard_loss_cls=s_hard_loss_cls,
-                    # s_soft_loss_cls=s_soft_loss_cls,
-                    adaptive_distillation_loss=adaptive_distillation_loss,
-                    loss_bbox=loss_bbox,
+                loss_dict.update(
                     s_loss_bbox=s_loss_bbox,
-                    loss_centerness=loss_centerness,
                     s_loss_centerness=s_loss_centerness,
-                    loss_s_t_reg=loss_s_t_reg)
-        elif self.train_student_only:
-            return dict(    
+                    s_hard_loss_cls=s_hard_loss_cls)
+                if self.apply_iou_similarity:
+                    loss_iou_similiarity = self.loss_iou_similiarity(
+                        s_iou_maps, t_iou_maps.detach())
+                    loss_dict.update(loss_iou_similiarity=loss_iou_similiarity)
+                if self.apply_adaptive_distillation:
+                    s_tempered_cls_scores = s_cls_scores / self.temperature
+                    s_gt_labels = (t_flatten_cls_scores.detach() /
+                                   self.temperature).sigmoid()
+                    # CE(KL distance) between teacher and student
+                    t_s_distribution_distance = self.t_s_distance(
+                        s_tempered_cls_scores, s_gt_labels)
+                    t_entropy = -(
+                        s_gt_labels * s_gt_labels.log() + (1 - s_gt_labels) *
+                        (1 - s_gt_labels).log())
+                    adaptive_distillation_weight = (
+                        1 - (-t_s_distribution_distance -
+                             self.beta * t_entropy).exp())**self.gamma
+                    adaptive_distillation_loss = self.adap_distill_loss_weight * (
+                        adaptive_distillation_weight *
+                        t_s_distribution_distance).sum() / (
+                            len(pos_inds) + cls_scores[0].size(0))
+                    loss_dict.update(
+                        adaptive_distillation_loss=adaptive_distillation_loss)
+        elif self.fix_student_train_teacher:
+            loss_dict.update(
+                loss_cls=loss_cls,
+                loss_bbox=loss_bbox,
+                loss_centerness=loss_centerness)
+        else:
+            loss_dict.update(
+                loss_cls=loss_cls,
                 s_hard_loss_cls=s_hard_loss_cls,
+                adaptive_distillation_loss=adaptive_distillation_loss,
+                loss_bbox=loss_bbox,
                 s_loss_bbox=s_loss_bbox,
-                s_loss_centerness=s_loss_centerness)            
+                loss_centerness=loss_centerness,
+                s_loss_centerness=s_loss_centerness,
+                loss_s_t_reg=loss_s_t_reg)
+
+        return loss_dict
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def loss_single(self,
-             cls_scores,
-             bbox_preds,
-             centernesses,
-             gt_bboxes,
-             gt_labels,
-             img_metas,
-             cfg,
-             gt_bboxes_ignore=None):
+                    cls_scores,
+                    bbox_preds,
+                    centernesses,
+                    gt_bboxes,
+                    gt_labels,
+                    img_metas,
+                    cfg,
+                    gt_bboxes_ignore=None):
         assert len(cls_scores) == len(bbox_preds) == len(centernesses)
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         all_level_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
@@ -443,8 +467,10 @@ class FCOSTSFullMaskHead(nn.Module):
             '''
             Generate IoU map of Teacher and Student model
             '''
-            pos_iou_maps = bbox_overlaps(pos_decoded_bbox_preds.clone().detach(), 
-                                            pos_decoded_target_preds, is_aligned=True)
+            pos_iou_maps = bbox_overlaps(
+                pos_decoded_bbox_preds.clone().detach(),
+                pos_decoded_target_preds,
+                is_aligned=True)
             # centerness weighted iou loss
             loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds,
@@ -458,7 +484,6 @@ class FCOSTSFullMaskHead(nn.Module):
             loss_centerness = pos_centerness.sum()
 
         return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, pos_iou_maps, pos_inds
-
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,

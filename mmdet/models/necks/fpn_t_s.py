@@ -22,6 +22,7 @@ class FPNTS(nn.Module):
                  add_extra_convs=False,
                  extra_convs_on_inputs=True,
                  relu_before_extra_convs=False,
+                 apply_block_wise_alignment=False,
                  no_norm_on_lateral=False,
                  conv_cfg=None,
                  norm_cfg=None,
@@ -35,6 +36,7 @@ class FPNTS(nn.Module):
         self.num_outs = num_outs
         self.activation = activation
         self.relu_before_extra_convs = relu_before_extra_convs
+        self.apply_block_wise_alignment = apply_block_wise_alignment
         self.no_norm_on_lateral = no_norm_on_lateral
         self.fp16_enabled = False
 
@@ -74,7 +76,6 @@ class FPNTS(nn.Module):
 
             self.lateral_convs.append(l_conv)
             self.fpn_convs.append(fpn_conv)
-
         # add extra conv layers (e.g., RetinaNet)
         extra_levels = num_outs - self.backbone_end_level + self.start_level
         if add_extra_convs and extra_levels >= 1:
@@ -94,7 +95,7 @@ class FPNTS(nn.Module):
                     activation=self.activation,
                     inplace=False)
                 self.fpn_convs.append(extra_fpn_conv)
-        # Student Net
+        # student Net
         self.s_lateral_convs = nn.ModuleList()
         self.s_fpn_convs = nn.ModuleList()
 
@@ -152,8 +153,11 @@ class FPNTS(nn.Module):
         t_outs = self.single_forward(inputs[0], self.fpn_convs, self.lateral_convs)
         # Student Net
         s_outs = self.single_forward(inputs[1], self.s_fpn_convs, self.s_lateral_convs)
-
-        return tuple(t_outs), tuple(s_outs)
+        if self.apply_block_wise_alignment:
+            # push hint loss to head
+            return tuple(t_outs), tuple(s_outs), tuple(inputs[2])
+        else:
+            return tuple(t_outs), tuple(s_outs)
 
     @auto_fp16()
     def single_forward(self, single_input, fpn_convs, lateral_convs):
