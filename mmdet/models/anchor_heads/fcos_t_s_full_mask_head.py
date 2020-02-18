@@ -46,6 +46,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  learn_when_train=False,
                  fix_teacher_finetune_student=False,
                  apply_iou_similarity=False,
+                 apply_soft_regression_distill=True,
                  apply_adaptive_distillation=False,
                  temperature=1,
                  apply_feature_alignment=False,
@@ -75,6 +76,7 @@ class FCOSTSFullMaskHead(nn.Module):
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
                      loss_weight=1.0),
+                 loss_regression_distill=dict(type='MSELoss', loss_weight=1),
                  loss_iou_similiarity=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -107,6 +109,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.learn_when_train = learn_when_train
         self.fix_teacher_finetune_student = fix_teacher_finetune_student
         self.apply_iou_similarity = apply_iou_similarity
+        self.apply_soft_regression_distill = apply_soft_regression_distill
         self.apply_adaptive_distillation = apply_adaptive_distillation
         self.temperature = temperature
         self.apply_feature_alignment = apply_feature_alignment
@@ -118,6 +121,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.loss_s_t_cls = build_loss(loss_s_t_cls)
         self.loss_s_t_reg = build_loss(loss_s_t_reg)
         self.t_s_distance = build_loss(t_s_distance)
+        self.loss_regression_distill = build_loss(loss_regression_distill)
         self.loss_iou_similiarity = nn.BCELoss(
         )  #build_loss(loss_iou_similiarity)
         self.conv_cfg = conv_cfg
@@ -291,7 +295,7 @@ class FCOSTSFullMaskHead(nn.Module):
              s_cls_scores,
              s_bbox_preds,
              s_centernesses,
-             cls_feats,
+             t_cls_feats,
              s_cls_feats,
              reg_feats,
              s_reg_feats,
@@ -324,22 +328,22 @@ class FCOSTSFullMaskHead(nn.Module):
             s_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
             for s_cls_feat in s_cls_feats
         ]
-        flatten_cls_feat = [
+        flatten_t_cls_feat = [
             t_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
-            for t_cls_feat in cls_feats
+            for t_cls_feat in t_cls_feats
         ]
         flatten_s_reg_feat = [
             s_reg_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
             for s_reg_feat in s_reg_feats
         ]
-        flatten_reg_feat = [
+        flatten_t_reg_feat = [
             t_reg_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
             for t_reg_feat in reg_feats
         ]
         flatten_s_cls_feat = torch.cat(flatten_s_cls_feat)
-        flatten_cls_feat = torch.cat(flatten_cls_feat)
+        flatten_t_cls_feat = torch.cat(flatten_t_cls_feat)
         flatten_s_reg_feat = torch.cat(flatten_s_reg_feat)
-        flatten_reg_feat = torch.cat(flatten_reg_feat)
+        flatten_t_reg_feat = torch.cat(flatten_t_reg_feat)
 
         loss_dict = {}
         assert self.fix_student_train_teacher != self.learn_when_train
@@ -355,11 +359,11 @@ class FCOSTSFullMaskHead(nn.Module):
                 if str(self.loss_s_t_cls) == 'MSELoss()':
                     loss_s_t_reg = self.loss_s_t_reg(
                         flatten_s_reg_feat[pos_inds],
-                        flatten_reg_feat[pos_inds].detach())
+                        flatten_t_reg_feat[pos_inds].detach())
                 elif str(self.loss_s_t_cls) == 'CrossEntropyLoss()':
                     loss_s_t_reg = self.loss_s_t_reg(
                         flatten_s_reg_feat[pos_inds],
-                        flatten_reg_feat[pos_inds].detach().sigmoid())
+                        flatten_t_reg_feat[pos_inds].detach().sigmoid())
                 loss_dict.update(loss_s_t_reg=loss_s_t_reg)
             if self.fix_teacher_finetune_student:
                 loss_dict.update(
@@ -370,6 +374,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_iou_similiarity = self.loss_iou_similiarity(
                         s_iou_maps, t_iou_maps.detach())
                     loss_dict.update(loss_iou_similiarity=loss_iou_similiarity)
+                if self.apply_soft_regression_distill:
+                    loss_regression_distill = self.loss_regression_distill(s_loss_bbox, loss_bbox.detach())
+                    loss_dict.update(loss_regression_distill=loss_regression_distill)
                 if self.apply_adaptive_distillation:
                     s_tempered_cls_scores = s_cls_scores / self.temperature
                     s_gt_labels = (t_flatten_cls_scores.detach() /
