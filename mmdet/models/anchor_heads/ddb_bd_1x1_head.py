@@ -540,7 +540,7 @@ class DDBBD1x1Head(nn.Module):
             mlvl_scores,
             mlvl_bd_scores,
             cfg.score_thr,
-            cfg.nms,
+            dict(type='nms_v2', iou_thr=0.5, c_thr=0.95),
             cfg.max_per_img,
             score_factors=mlvl_centerness)
         
@@ -549,7 +549,7 @@ class DDBBD1x1Head(nn.Module):
             mlvl_bboxes,
             mlvl_scores,
             cfg.score_thr,
-            cfg.nms,
+            dict(type='nms', iou_thr=0.5),
             cfg.max_per_img,
             score_factors=mlvl_centerness)
         '''

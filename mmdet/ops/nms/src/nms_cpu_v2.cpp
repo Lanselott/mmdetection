@@ -2,10 +2,12 @@
 #include <torch/extension.h>
 
 template <typename scalar_t>
-at::Tensor nms_cpu_kernel(const at::Tensor& dets, const float threshold, const float c_thres) {
+at::Tensor nms_cpu_kernel(const at::Tensor &dets, const float threshold, const float c_thres)
+{
   AT_ASSERTM(!dets.type().is_cuda(), "dets must be a CPU tensor");
 
-  if (dets.numel() == 0) {
+  if (dets.numel() == 0)
+  {
     return at::empty({0}, dets.options().dtype(at::kLong).device(at::kCPU));
   }
 
@@ -19,7 +21,6 @@ at::Tensor nms_cpu_kernel(const at::Tensor& dets, const float threshold, const f
   auto y1_c_t = dets.select(1, 6).contiguous();
   auto x2_c_t = dets.select(1, 7).contiguous();
   auto y2_c_t = dets.select(1, 8).contiguous();
-  
 
   at::Tensor areas_t = (x2_t - x1_t + 1) * (y2_t - y1_t + 1);
 
@@ -46,16 +47,24 @@ at::Tensor nms_cpu_kernel(const at::Tensor& dets, const float threshold, const f
 
   auto areas = areas_t.data<scalar_t>();
 
-  for (int64_t _i = 0; _i < ndets; _i++) {
+  for (int64_t _i = 0; _i < ndets; _i++)
+  {
     auto i = order[_i];
+    conf[i * 5 + 0] = i + 1;
+    conf[i * 5 + 1] = i + 1;
+    conf[i * 5 + 2] = i + 1;
+    conf[i * 5 + 3] = i + 1;
+    conf[i * 5 + 4] = i + 1;
     // std::cout<<"i:"<<i<<std::endl;
-    if (suppressed[i] == 1) continue;
-
-    // conf[i*5 + 0] = i + 1;
-    // conf[i*5 + 1] = i + 1;
-    // conf[i*5 + 2] = i + 1;
-    // conf[i*5 + 3] = i + 1;
-    // conf[i*5 + 4] = i + 1;
+    if (suppressed[i] == 1)
+    {
+      conf[i * 5 + 0] = 0;
+      conf[i * 5 + 1] = 0;
+      conf[i * 5 + 2] = 0;
+      conf[i * 5 + 3] = 0;
+      conf[i * 5 + 4] = 0;
+      continue;
+    }
 
     auto ix1 = x1[i];
     auto iy1 = y1[i];
@@ -69,16 +78,23 @@ at::Tensor nms_cpu_kernel(const at::Tensor& dets, const float threshold, const f
 
     auto iarea = areas[i];
 
-    for (int64_t _j = _i + 1; _j < ndets; _j++) {
+    for (int64_t _j = _i + 1; _j < ndets; _j++)
+    {
       auto j = order[_j];
-      if (suppressed[j] == 1) continue;
-
-      // conf[j*5 + 0] = j + 1;
-      // conf[j*5 + 1] = j + 1;
-      // conf[j*5 + 2] = j + 1;
-      // conf[j*5 + 3] = j + 1;
-      // conf[j*5 + 4] = j + 1;
-
+      conf[j * 5 + 0] = j + 1;
+      conf[j * 5 + 1] = j + 1;
+      conf[j * 5 + 2] = j + 1;
+      conf[j * 5 + 3] = j + 1;
+      conf[j * 5 + 4] = j + 1;
+      if (suppressed[j] == 1)
+      {
+        conf[j * 5 + 0] = 0;
+        conf[j * 5 + 1] = 0;
+        conf[j * 5 + 2] = 0;
+        conf[j * 5 + 3] = 0;
+        conf[j * 5 + 4] = 0;
+        continue;
+      }
       auto xx1 = std::max(ix1, x1[j]);
       auto yy1 = std::max(iy1, y1[j]);
       auto xx2 = std::min(ix2, x2[j]);
@@ -94,71 +110,84 @@ at::Tensor nms_cpu_kernel(const at::Tensor& dets, const float threshold, const f
       auto inter = w * h;
       auto ovr = inter / (iarea + areas[j] - inter);
 
-      if (ovr >= threshold) {
+      if (ovr >= threshold)
+      {
         suppressed[j] = 1;
-        
-        // conf[j*5 + 0] = 0;
-        // conf[j*5 + 1] = 0;
-        // conf[j*5 + 2] = 0;
-        // conf[j*5 + 3] = 0;
-        // conf[j*5 + 4] = 0;
+
+        conf[j * 5 + 0] = 0;
+        conf[j * 5 + 1] = 0;
+        conf[j * 5 + 2] = 0;
+        conf[j * 5 + 3] = 0;
+        conf[j * 5 + 4] = 0;
 
         // hard coded
-        if (ovr >= c_thres) {
-          if (ixc1 >= jxc1) {
-            conf[i*5 + 0] = i + 1;
+        if (ovr >= c_thres)
+        {
+          if (ixc1 >= jxc1)
+          {
+            conf[i * 5 + 0] = i + 1;
           }
-          else {
-            conf[i*5 + 0] = j + 1;
+          else
+          {
+            conf[i * 5 + 0] = j + 1;
             x1_c[i] = jxc1;
           }
 
-          if (iyc1 >= jyc1) {
-            conf[i*5 + 1] = i + 1;
+          if (iyc1 >= jyc1)
+          {
+            conf[i * 5 + 1] = i + 1;
           }
-          else { 
-            conf[i*5 + 1] = j + 1;
+          else
+          {
+            conf[i * 5 + 1] = j + 1;
             y1_c[i] = jyc1;
           }
-          
-          if (ixc2 >= jxc2) {
-            conf[i*5 + 2] = i + 1;
+
+          if (ixc2 >= jxc2)
+          {
+            conf[i * 5 + 2] = i + 1;
           }
-          else {
-            conf[i*5 + 2] = j + 1;
+          else
+          {
+            conf[i * 5 + 2] = j + 1;
             x2_c[i] = jxc2;
           }
 
-          if (iyc2 >= jyc2) {
-            conf[i*5 + 3] = i + 1;
+          if (iyc2 >= jyc2)
+          {
+            conf[i * 5 + 3] = i + 1;
           }
-          else {
-            conf[i*5 + 3] = j + 1;
+          else
+          {
+            conf[i * 5 + 3] = j + 1;
             y2_c[i] = jyc2;
           }
         }
-        else {
-          conf[i*5 + 0] = i + 1;
-          conf[i*5 + 1] = i + 1;
-          conf[i*5 + 2] = i + 1;
-          conf[i*5 + 3] = i + 1;
+        else
+        {
+          conf[i * 5 + 0] = i + 1;
+          conf[i * 5 + 1] = i + 1;
+          conf[i * 5 + 2] = i + 1;
+          conf[i * 5 + 3] = i + 1;
         }
       }
-      else {
-        conf[i*5 + 0] = i + 1;
-        conf[i*5 + 1] = i + 1;
-        conf[i*5 + 2] = i + 1;
-        conf[i*5 + 3] = i + 1;
+      else
+      {
+        conf[i * 5 + 0] = i + 1;
+        conf[i * 5 + 1] = i + 1;
+        conf[i * 5 + 2] = i + 1;
+        conf[i * 5 + 3] = i + 1;
       }
       // score should not be changed
-      conf[i*5 + 4] = i + 1;
+      conf[i * 5 + 4] = i + 1;
     }
   }
   return conf_t;
   // return at::nonzero(suppressed_t == 0).squeeze(1);//, conf_t;
 }
 
-at::Tensor nms_v2(const at::Tensor& dets, const float threshold, const float c_thres) {
+at::Tensor nms_v2(const at::Tensor &dets, const float threshold, const float c_thres)
+{
   at::Tensor result;
   AT_DISPATCH_FLOATING_TYPES(dets.type(), "nms_v2", [&] {
     result = nms_cpu_kernel<scalar_t>(dets, threshold, c_thres);
@@ -166,6 +195,7 @@ at::Tensor nms_v2(const at::Tensor& dets, const float threshold, const float c_t
   return result;
 }
 
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
+{
   m.def("nms_v2", &nms_v2, "non-maximum suppression");
 }

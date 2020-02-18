@@ -12,7 +12,7 @@ CPUS_PER_TASK=${CPUS_PER_TASK:-5}
 SRUN_ARGS=${SRUN_ARGS:-""}
 PY_ARGS=${PY_ARGS:-"--validate"}
 # NOTE: first stage train 12 epoches
-# CHECKPOINT_FILE=./work/dirs/ddb_multi_bd_no_detach/latest.pth
+CHECKPOINT_FILE=./work/dirs/ddb_multi_bd_no_detach/latest.pth
 
 srun -p ${PARTITION} \
     --job-name=${JOB_NAME} \

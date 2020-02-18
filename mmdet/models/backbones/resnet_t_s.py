@@ -519,7 +519,6 @@ class ResTSNet(nn.Module):
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
                 # print("self.inplanes:{}".format(self.inplanes))
-        embed()
     @property
     def norm1(self):
         return getattr(self, self.norm1_name)
