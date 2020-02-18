@@ -13,7 +13,7 @@ model = dict(
         frozen_stages=1,
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe',
-        t_hint_loss=dict(type='MSELoss', loss_weight=1),
+        t_hint_loss=dict(type='MSELoss', loss_weight=5),
         apply_block_wise_alignment=ALIGN),
     neck=dict(
         type='FPNTS',
