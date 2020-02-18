@@ -59,7 +59,8 @@ model = dict(
         loss_s_t_cls=dict(type='MSELoss', loss_weight=5),
         loss_s_t_reg=dict(type='MSELoss', loss_weight=5),
         t_s_distance = dict(type='CrossEntropyLoss', use_sigmoid=True, reduction='none', loss_weight=1.0),
-        loss_regression_distill = dict(type='MSELoss', loss_weight=1),
+        loss_regression_distill = dict(type='GIoULoss', loss_weight=1),
+        reg_distill_threshold = 0.5,
         loss_iou_similiarity = dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
@@ -157,6 +158,6 @@ total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
-load_from = None #'work/dirs/fcos_t_s_finetune_from_scratch/fcos_t_s_finetune_student_from_scratch_5w_epoch_12.pth'
+load_from = 'work/dirs/fcos_t_s_scratch_model/fcos_t_s_finetune_halved_student_from_scratch_epoch_12.pth'
 resume_from = None
 workflow = [('train', 1)]

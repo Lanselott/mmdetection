@@ -77,6 +77,7 @@ class FCOSTSFullMaskHead(nn.Module):
                      use_sigmoid=True,
                      loss_weight=1.0),
                  loss_regression_distill=dict(type='MSELoss', loss_weight=1),
+                 reg_distill_threshold=0.5,
                  loss_iou_similiarity=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -122,6 +123,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.loss_s_t_reg = build_loss(loss_s_t_reg)
         self.t_s_distance = build_loss(t_s_distance)
         self.loss_regression_distill = build_loss(loss_regression_distill)
+        self.reg_distill_threshold = reg_distill_threshold
         self.loss_iou_similiarity = nn.BCELoss(
         )  #build_loss(loss_iou_similiarity)
         self.conv_cfg = conv_cfg
@@ -305,7 +307,7 @@ class FCOSTSFullMaskHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, t_iou_maps, _ = self.loss_single(
+        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, t_iou_maps, _, t_pred_bboxes = self.loss_single(
             cls_scores,
             bbox_preds,
             centernesses,
@@ -314,7 +316,7 @@ class FCOSTSFullMaskHead(nn.Module):
             img_metas,
             cfg,
             gt_bboxes_ignore=None)
-        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, s_iou_maps, pos_inds = self.loss_single(
+        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, s_iou_maps, pos_inds, s_pred_bboxes = self.loss_single(
             s_cls_scores,
             s_bbox_preds,
             s_centernesses,
@@ -375,8 +377,15 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_iou_maps, t_iou_maps.detach())
                     loss_dict.update(loss_iou_similiarity=loss_iou_similiarity)
                 if self.apply_soft_regression_distill:
-                    loss_regression_distill = self.loss_regression_distill(s_loss_bbox, loss_bbox.detach())
-                    loss_dict.update(loss_regression_distill=loss_regression_distill)
+                    t_s_ious = bbox_overlaps(
+                        s_pred_bboxes, t_pred_bboxes, is_aligned=True)
+                    regress_mask_inds = (t_s_ious >= self.reg_distill_threshold).nonzero().reshape(-1)
+                    if len(regress_mask_inds) != 0:
+                        loss_regression_distill = self.loss_regression_distill(
+                            s_pred_bboxes[regress_mask_inds],
+                            t_pred_bboxes[regress_mask_inds].detach())
+                        loss_dict.update(
+                            loss_regression_distill=loss_regression_distill)
                 if self.apply_adaptive_distillation:
                     s_tempered_cls_scores = s_cls_scores / self.temperature
                     s_gt_labels = (t_flatten_cls_scores.detach() /
@@ -490,7 +499,7 @@ class FCOSTSFullMaskHead(nn.Module):
             loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
 
-        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, pos_iou_maps, pos_inds
+        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, pos_iou_maps, pos_inds, pos_decoded_bbox_preds
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,

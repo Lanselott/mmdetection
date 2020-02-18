@@ -66,7 +66,8 @@ model = dict(
         loss_s_t_cls=dict(type='MSELoss', loss_weight=5),
         loss_s_t_reg=dict(type='MSELoss', loss_weight=5),
         t_s_distance = dict(type='CrossEntropyLoss', use_sigmoid=True, reduction='none', loss_weight=1.0),
-        loss_regression_distill = dict(type='MSELoss', loss_weight=1),
+        loss_regression_distill = dict(type='GIoULoss', loss_weight=1),
+        reg_distill_threshold = 0.5,
         loss_iou_similiarity = dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
