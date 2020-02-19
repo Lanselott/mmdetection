@@ -1,16 +1,20 @@
 # model settings
+ALIGN=True
+RATIO=2
 model = dict(
     type='FCOSTS',
     pretrained='open-mmlab://resnet50_caffe',
     backbone=dict(
         type='ResTSNet',
         depth=50,
-        t_s_ratio=2,
+        t_s_ratio=RATIO,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
         frozen_stages=1,
         norm_cfg=dict(type='BN', requires_grad=False),
-        style='caffe'),
+        style='caffe',
+        t_hint_loss=dict(type='MSELoss', loss_weight=1),
+        apply_block_wise_alignment=ALIGN),
     neck=dict(
         type='FPNTS',
         in_channels=[256, 512, 1024, 2048],
@@ -18,11 +22,12 @@ model = dict(
         s_in_channels=[128, 256, 512, 1024],
         s_out_channels=128,
         start_level=1,
-        t_s_ratio=4,
+        t_s_ratio=RATIO,
         add_extra_convs=True,
         extra_convs_on_inputs=False,  # use P5
         num_outs=5,
-        relu_before_extra_convs=True),
+        relu_before_extra_convs=True, 
+        apply_block_wise_alignment=ALIGN),
     bbox_head=dict(
         type='FCOSTSFullMaskHead',
         num_classes=81,
@@ -31,15 +36,16 @@ model = dict(
         stacked_convs=4,
         feat_channels=256,
         s_feat_channels=128,
-        t_s_ratio=4,
-        training=True,
-        eval_student=False,
+        t_s_ratio=RATIO,
+        training=False,
+        eval_student=True,
         learn_when_train=True,
         fix_teacher_finetune_student=True,
         apply_iou_similarity=True,
         apply_soft_regression_distill=True,
         temperature=1,
         align_level=0,
+        apply_block_wise_alignment=ALIGN,
         # student distillation params
         beta = 1.5,
         gamma = 2,
@@ -112,7 +118,7 @@ test_pipeline = [
         ])
 ]
 data = dict(
-    imgs_per_gpu=4,
+    imgs_per_gpu=2,
     workers_per_gpu=4,
     train=dict(
         type=dataset_type,

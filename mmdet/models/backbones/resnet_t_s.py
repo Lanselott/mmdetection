@@ -601,6 +601,7 @@ class ResTSNet(nn.Module):
                hint_losses.append(self.t_hint_loss(aligned_s_feature, outs[j].detach()))
             if j in self.out_indices:
                 s_outs.append(s_x)
+
         if self.apply_block_wise_alignment:    
             return tuple(outs), tuple(s_outs), tuple(hint_losses)
         else:

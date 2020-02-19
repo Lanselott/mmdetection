@@ -484,7 +484,7 @@ class FCOSTSFullMaskHead(nn.Module):
             Generate IoU map of Teacher and Student model
             '''
             pos_iou_maps = bbox_overlaps(
-                pos_decoded_bbox_preds.clone().detach(),
+                pos_decoded_bbox_preds,
                 pos_decoded_target_preds,
                 is_aligned=True)
             # centerness weighted iou loss
