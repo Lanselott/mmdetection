@@ -581,7 +581,7 @@ class ResTSNet(nn.Module):
         x = self.norm1(x)
         x = self.relu(x)
         x = self.maxpool(x)
-        s_x = x
+        s_x = x.detach()
         outs = []
         s_outs = []
         hint_losses = []
