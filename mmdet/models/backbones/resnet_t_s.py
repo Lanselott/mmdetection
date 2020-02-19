@@ -581,7 +581,7 @@ class ResTSNet(nn.Module):
         x = self.norm1(x)
         x = self.relu(x)
         x = self.maxpool(x)
-        s_x = x
+        s_x = x.detach()
         outs = []
         s_outs = []
         hint_losses = []
@@ -601,7 +601,6 @@ class ResTSNet(nn.Module):
                hint_losses.append(self.t_hint_loss(aligned_s_feature, outs[j].detach()))
             if j in self.out_indices:
                 s_outs.append(s_x)
-
         if self.apply_block_wise_alignment:    
             return tuple(outs), tuple(s_outs), tuple(hint_losses)
         else:
