@@ -26,6 +26,8 @@ model = dict(
         stacked_convs=4,
         feat_channels=256,
         strides=[8, 16, 32, 64, 128],
+        multi_bd_kernel_size=[9, 7, 5, 3, 3],
+        bd_threshold=0.9,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
@@ -33,7 +35,8 @@ model = dict(
             alpha=0.25,
             loss_weight=1.0),
         loss_bbox=dict(type='GIoULoss', loss_weight=1.0),
-        loss_sorted_bbox=dict(type='GIoULoss', loss_weight=2.0),
+        loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
+        bd_detach=False,
         loss_dist_scores=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_centerness=dict(
