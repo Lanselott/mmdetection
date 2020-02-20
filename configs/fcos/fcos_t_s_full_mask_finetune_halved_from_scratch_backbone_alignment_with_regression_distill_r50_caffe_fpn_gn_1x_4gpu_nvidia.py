@@ -1,6 +1,6 @@
 # model settings
-ALIGN=True
-RATIO=2
+ALIGN = True
+RATIO = 2
 model = dict(
     type='FCOSTS',
     pretrained='open-mmlab://resnet50_caffe',
@@ -48,9 +48,9 @@ model = dict(
         align_level=0,
         apply_block_wise_alignment=ALIGN,
         # student distillation params
-        beta = 1.5,
-        gamma = 2,
-        adap_distill_loss_weight = 0.3,
+        beta=1.5,
+        gamma=2,
+        adap_distill_loss_weight=0.3,
         strides=[8, 16, 32, 64, 128],
         loss_cls=dict(
             type='FocalLoss',
@@ -65,10 +65,15 @@ model = dict(
         #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_s_t_cls=dict(type='MSELoss', loss_weight=5),
         loss_s_t_reg=dict(type='MSELoss', loss_weight=5),
-        t_s_distance = dict(type='CrossEntropyLoss', use_sigmoid=True, reduction='none', loss_weight=1.0),
-        loss_regression_distill = dict(type='GIoULoss', loss_weight=1),
-        reg_distill_threshold = 0.5,
-        loss_iou_similiarity = dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
+        t_s_distance=dict(
+            type='CrossEntropyLoss',
+            use_sigmoid=True,
+            reduction='none',
+            loss_weight=1.0),
+        loss_regression_distill=dict(type='IoULoss', loss_weight=1),
+        reg_distill_threshold=0.5,
+        loss_iou_similiarity=dict(
+            type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings
