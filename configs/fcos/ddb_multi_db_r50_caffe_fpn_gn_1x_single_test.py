@@ -36,6 +36,7 @@ model = dict(
             loss_weight=1.0),
         loss_bbox=dict(type='IoULoss', loss_weight=1.0),
         loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
+        bd_detach=False,
         loss_dist_scores=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_centerness=dict(
@@ -55,8 +56,8 @@ test_cfg = dict(
     nms_pre=1000,
     min_bbox_size=0,
     score_thr=0.05,
-    # nms=dict(type='nms', iou_thr=0.5),
-    nms=dict(type='nms_v2', iou_thr=0.5, c_thr=0.90),
+    nms=dict(type='nms', iou_thr=0.5),
+    # nms=dict(type='nms_v2', iou_thr=0.5, c_thr=0.90),
     max_per_img=100)
 # dataset settings
 dataset_type = 'CocoDataset'
