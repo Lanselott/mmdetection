@@ -24,6 +24,7 @@ class FPNTS(nn.Module):
                  relu_before_extra_convs=False,
                  apply_block_wise_alignment=False,
                  no_norm_on_lateral=False,
+                 freeze_teacher=False,
                  conv_cfg=None,
                  norm_cfg=None,
                  activation=None):
@@ -38,6 +39,7 @@ class FPNTS(nn.Module):
         self.relu_before_extra_convs = relu_before_extra_convs
         self.apply_block_wise_alignment = apply_block_wise_alignment
         self.no_norm_on_lateral = no_norm_on_lateral
+        self.freeze_teacher = freeze_teacher
         self.fp16_enabled = False
 
         if end_level == -1:
@@ -146,6 +148,20 @@ class FPNTS(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 xavier_init(m, distribution='uniform')
+        
+        if self.freeze_teacher:
+            self._freeze_teacher_layers()
+
+    def _freeze_teacher_layers(self):
+        for fpn_conv in self.fpn_convs:
+            fpn_conv.eval()
+            for param in fpn_conv.parameters():
+                param.requires_grad = False
+
+        for lateral_conv in self.lateral_convs:
+            lateral_conv.eval()
+            for param in lateral_conv.parameters():
+                param.requires_grad = False
 
     @auto_fp16()
     def forward(self, inputs):
@@ -153,6 +169,7 @@ class FPNTS(nn.Module):
         t_outs = self.single_forward(inputs[0], self.fpn_convs, self.lateral_convs)
         # Student Net
         s_outs = self.single_forward(inputs[1], self.s_fpn_convs, self.s_lateral_convs)
+
         if self.apply_block_wise_alignment:
             # push hint loss to head
             return tuple(t_outs), tuple(s_outs), tuple(inputs[2])

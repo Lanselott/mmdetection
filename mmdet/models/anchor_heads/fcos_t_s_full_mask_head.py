@@ -54,6 +54,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  train_student_only=False,
                  align_level=1,
                  apply_block_wise_alignment=False,
+                 freeze_teacher=False,
                  beta=1,
                  gamma=1,
                  adap_distill_loss_weight=0.5,
@@ -102,6 +103,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.t_s_ratio = t_s_ratio
         self.align_level = align_level
         self.apply_block_wise_alignment = apply_block_wise_alignment
+        self.freeze_teacher = freeze_teacher
         self.beta = beta
         self.gamma = gamma
         self.adap_distill_loss_weight = adap_distill_loss_weight
@@ -206,6 +208,8 @@ class FCOSTSFullMaskHead(nn.Module):
             self.s_feat_channels, 1, 3, padding=1)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
+        # teacher and student scales should be different
+        self.s_scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
     def init_weights(self):
         for m in self.cls_convs:
@@ -228,24 +232,43 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_reg, std=0.01)
         normal_init(self.fcos_s_centerness, std=0.01)
 
+        if self.freeze_teacher:
+            self.freeze_teacher_layers()
+
+    def freeze_teacher_layers(self):
+        for m in [self.cls_convs, self.reg_convs]:
+            m.eval()
+            for param in m.parameters():
+                param.requires_grad = False
+        self.fcos_cls.eval()
+        self.fcos_cls.requires_grad = False
+        self.fcos_reg.eval()
+        self.fcos_reg.requires_grad = False
+        self.fcos_centerness.eval()
+        self.fcos_centerness.requires_grad = False
+        
+        for scale in self.scales:
+            scale.eval()
+            for m in scale.parameters():
+                m.requires_grad = False
+
     def forward(self, feats):
         t_feats = feats[0]
         s_feats = feats[1]
         if self.apply_block_wise_alignment:
             hint_losses = feats[2] + tuple('N')
             return multi_apply(self.forward_single, t_feats, s_feats,
-                               self.scales, hint_losses)
+                               self.scales, self.s_scales, hint_losses)
         else:
             return multi_apply(self.forward_single, t_feats, s_feats,
-                               self.scales)
+                               self.scales, self.s_scales)
 
-    def forward_single(self, t_x, s_x, scale, hint_losses=None):
+    def forward_single(self, t_x, s_x, scale, s_scale, hint_losses=None):
         t_cls_feat = t_x
         t_reg_feat = t_x
         # student head model
         s_cls_feat = s_x
         s_reg_feat = s_x
-
         for i in range(len(self.cls_convs)):
             cls_layer = self.cls_convs[i]
             cls_s_layer = self.s_cls_convs[i]
@@ -274,13 +297,12 @@ class FCOSTSFullMaskHead(nn.Module):
         # scale the bbox_pred of different level
         # float to avoid overflow when enabling FP16
         bbox_pred = scale(self.fcos_reg(t_reg_feat)).float().exp()
-        s_bbox_pred = scale(self.fcos_s_reg(s_reg_feat)).float().exp()
+        s_bbox_pred = s_scale(self.fcos_s_reg(s_reg_feat)).float().exp()
         '''
         # feature align to teacher
         '''
         s_align_reg_feat = self.t_s_reg_align(s_align_reg_feat)
         s_align_cls_feat = self.t_s_cls_align(s_align_cls_feat)
-
         if self.training:
             return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_losses
         else:
@@ -379,7 +401,8 @@ class FCOSTSFullMaskHead(nn.Module):
                 if self.apply_soft_regression_distill:
                     t_s_ious = bbox_overlaps(
                         s_pred_bboxes, t_pred_bboxes, is_aligned=True)
-                    regress_mask_inds = (t_s_ious >= self.reg_distill_threshold).nonzero().reshape(-1)
+                    regress_mask_inds = (t_s_ious >= self.reg_distill_threshold
+                                         ).nonzero().reshape(-1)
                     if len(regress_mask_inds) != 0:
                         loss_regression_distill = self.loss_regression_distill(
                             s_pred_bboxes[regress_mask_inds],
