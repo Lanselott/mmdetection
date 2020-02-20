@@ -509,7 +509,7 @@ class FCOSTSFullMaskHead(nn.Module):
             pos_iou_maps = bbox_overlaps(
                 pos_decoded_bbox_preds,
                 pos_decoded_target_preds,
-                is_aligned=True)
+                is_aligned=False)
             # centerness weighted iou loss
             loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds,
