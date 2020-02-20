@@ -509,8 +509,8 @@ class DDBMultiBDRHead(nn.Module):
             flatten_bd_rank_list = (self.bd_rank_num - 1) - flatten_bd_rank_list
             removed_bd_inds = (flatten_bd_rank_list != -1).nonzero()
             flatten_bd_rank_list = flatten_bd_rank_list / (self.bd_rank_num - 1)
-            loss_dist_scores = self.loss_dist_scores(pos_bd_scores_preds[removed_bd_inds],
-                                                     flatten_bd_rank_list[removed_bd_inds].float())
+            loss_dist_scores = self.loss_dist_scores(pos_bd_scores_preds[removed_bd_inds].reshape(-1),
+                                                     flatten_bd_rank_list[removed_bd_inds].reshape(-1).float())
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
 

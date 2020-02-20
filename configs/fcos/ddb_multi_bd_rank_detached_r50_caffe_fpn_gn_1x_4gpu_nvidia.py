@@ -38,9 +38,9 @@ model = dict(
         loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
         bd_detach=True,
         bd_rank_num=10,
-        # loss_dist_scores=dict(
-        #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-        loss_dist_scores=dict(type='MSELoss', loss_weight=1),
+        loss_dist_scores=dict(
+            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        # loss_dist_scores=dict(type='MSELoss', loss_weight=1),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings
