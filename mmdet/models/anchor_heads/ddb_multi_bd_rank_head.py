@@ -15,7 +15,7 @@ MIN = 1e-8
 
 
 @HEADS.register_module
-class DDBMultiBDHead(nn.Module):
+class DDBMultiBDRHead(nn.Module):
 
     def __init__(self,
                  num_classes,
@@ -36,6 +36,7 @@ class DDBMultiBDHead(nn.Module):
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
                  loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),
                  bd_detach=False,
+                 bd_rank_num=10,
                  loss_centerness=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -44,7 +45,7 @@ class DDBMultiBDHead(nn.Module):
                      type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
-        super(DDBMultiBDHead, self).__init__()
+        super(DDBMultiBDRHead, self).__init__()
 
         self.num_classes = num_classes
         self.cls_out_channels = num_classes - 1
@@ -58,6 +59,7 @@ class DDBMultiBDHead(nn.Module):
         self.loss_centerness = build_loss(loss_centerness)
         self.loss_sorted_bbox = build_loss(loss_sorted_bbox)
         self.bd_detach = bd_detach
+        self.bd_rank_num = bd_rank_num
         self.loss_dist_scores = build_loss(loss_dist_scores)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
@@ -111,6 +113,7 @@ class DDBMultiBDHead(nn.Module):
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
+
         for bd_kernel_size in self.multi_bd:
             self.fcos_bd_scores.append(
                 nn.Conv2d(
@@ -316,6 +319,7 @@ class DDBMultiBDHead(nn.Module):
             '''
             pos_scores = flatten_cls_scores[pos_inds]
             pos_scores, _ = pos_scores.sigmoid().max(1)
+
             for dist_conf_mask in dist_conf_mask_list:
                 obj_mask_inds = dist_conf_mask.nonzero().reshape(-1)
                 pos_centerness_obj = pos_centerness_targets[obj_mask_inds]
@@ -469,7 +473,6 @@ class DDBMultiBDHead(nn.Module):
                 lambda grad: grad * sort_gradient_mask)
             pos_decoded_bbox_preds.register_hook(
                 lambda grad: grad * origin_gradient_mask)
-            # print(sort_gradient_mask.sum() / 4 /sort_gradient_mask.shape[0])
             # sorted bboxes
             loss_sorted_bbox = self.loss_sorted_bbox(
                 pos_decoded_sort_bbox_preds, pos_decoded_target_preds)
@@ -486,21 +489,28 @@ class DDBMultiBDHead(nn.Module):
             # boundary scores
             updated_selected_pos_dist_scores_sorted = torch.max(
                 _bd_iou, _bd_sort_iou)
-            '''    
-            dist_scores_weights = torch.zeros_like(updated_selected_pos_dist_scores_sorted)
-            for dist_conf_mask in dist_conf_mask_list:
-                obj_mask_inds = ((dist_conf_mask[saved_target_mask] + masks_for_all[saved_target_mask]) == 2).nonzero()
-                obj_dist_mean = updated_selected_pos_dist_scores_sorted[obj_mask_inds].mean(0)
-                # print("obj_dist_mean:{}".format(obj_dist_mean))
-                dist_scores_weights[obj_mask_inds] =  (updated_selected_pos_dist_scores_sorted[obj_mask_inds] >= obj_dist_mean).float()
-            '''
-            dist_scores_weights = (updated_selected_pos_dist_scores_sorted >=
-                                   self.bd_threshold).float()
-            loss_dist_scores = self.loss_dist_scores(
-                pos_bd_scores_preds,
-                updated_selected_pos_dist_scores_sorted,
-                weight=dist_scores_weights)
 
+            # generate ground truth
+            # larger means higher iou value
+            bd_rank_gt_list = []
+            for dist_conf_mask in dist_conf_mask_list:
+                obj_mask_inds = (
+                    (dist_conf_mask[saved_target_mask] +
+                     masks_for_all[saved_target_mask]) == 2).nonzero()
+                topk_num = len(obj_mask_inds)
+                _, obj_bd_ranks = updated_selected_pos_dist_scores_sorted[
+                    obj_mask_inds].reshape(-1, 4).topk(
+                        k=topk_num, dim=0, largest=True)
+                bd_rank_gt_list.append(obj_bd_ranks)
+
+            flatten_bd_rank_list = torch.cat(bd_rank_gt_list).reshape(-1)
+            pos_bd_scores_preds = pos_bd_scores_preds.reshape(-1)
+            flatten_bd_rank_list[flatten_bd_rank_list > (self.bd_rank_num - 1)] = self.bd_rank_num
+            flatten_bd_rank_list = (self.bd_rank_num - 1) - flatten_bd_rank_list
+            removed_bd_inds = (flatten_bd_rank_list != -1).nonzero()
+            flatten_bd_rank_list = flatten_bd_rank_list / (self.bd_rank_num - 1)
+            loss_dist_scores = self.loss_dist_scores(pos_bd_scores_preds[removed_bd_inds],
+                                                     flatten_bd_rank_list[removed_bd_inds].float())
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
 
@@ -625,7 +635,6 @@ class DDBMultiBDHead(nn.Module):
             cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
-
         '''
         det_bboxes, det_labels = multiclass_nms(
             mlvl_bboxes,
