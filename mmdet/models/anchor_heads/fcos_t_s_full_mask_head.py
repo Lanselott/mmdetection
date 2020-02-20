@@ -46,7 +46,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  learn_when_train=False,
                  fix_teacher_finetune_student=False,
                  apply_iou_similarity=False,
-                 apply_soft_regression_distill=True,
+                 apply_soft_regression_distill=False,
                  apply_adaptive_distillation=False,
                  temperature=1,
                  apply_feature_alignment=False,
@@ -77,7 +77,7 @@ class FCOSTSFullMaskHead(nn.Module):
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
                      loss_weight=1.0),
-                 loss_regression_distill=dict(type='MSELoss', loss_weight=1),
+                 loss_regression_distill=dict(type='IoULoss', loss_weight=1),
                  reg_distill_threshold=0.5,
                  loss_iou_similiarity=dict(
                      type='CrossEntropyLoss',
