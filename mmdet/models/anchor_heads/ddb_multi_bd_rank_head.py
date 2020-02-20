@@ -507,10 +507,16 @@ class DDBMultiBDRHead(nn.Module):
             pos_bd_scores_preds = pos_bd_scores_preds.reshape(-1)
             flatten_bd_rank_list[flatten_bd_rank_list > (self.bd_rank_num - 1)] = self.bd_rank_num
             flatten_bd_rank_list = (self.bd_rank_num - 1) - flatten_bd_rank_list
-            removed_bd_inds = (flatten_bd_rank_list != -1).nonzero()
+            saved_bd_inds = (flatten_bd_rank_list != -1).nonzero()
             flatten_bd_rank_list = flatten_bd_rank_list / (self.bd_rank_num - 1)
-            loss_dist_scores = self.loss_dist_scores(pos_bd_scores_preds[removed_bd_inds].reshape(-1),
-                                                     flatten_bd_rank_list[removed_bd_inds].reshape(-1).float())
+
+            if str(self.loss_dist_scores) == "CrossEntropyLoss()":
+                loss_dist_scores = self.loss_dist_scores(pos_bd_scores_preds[saved_bd_inds].reshape(-1),
+                                                        flatten_bd_rank_list[saved_bd_inds].reshape(-1).float())
+            else:
+                loss_dist_scores = torch.abs(pos_bd_scores_preds[saved_bd_inds].reshape(-1) -
+                                                        flatten_bd_rank_list[saved_bd_inds].reshape(-1).float()).sum() / len(saved_bd_inds)
+
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
 
