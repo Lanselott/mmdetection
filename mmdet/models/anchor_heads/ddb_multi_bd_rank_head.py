@@ -35,6 +35,8 @@ class DDBMultiBDRHead(nn.Module):
                      loss_weight=1.0),
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
                  loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),
+                 bd_iou_mask_model=False,
+                 bd_iou_threshold=0.9,
                  bd_detach=False,
                  bd_rank_num=10,
                  loss_centerness=dict(
@@ -58,6 +60,8 @@ class DDBMultiBDRHead(nn.Module):
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
         self.loss_sorted_bbox = build_loss(loss_sorted_bbox)
+        self.bd_iou_mask_model = bd_iou_mask_model
+        self.bd_iou_threshold = bd_iou_threshold
         self.bd_detach = bd_detach
         self.bd_rank_num = bd_rank_num
         self.loss_dist_scores = build_loss(loss_dist_scores)
@@ -489,33 +493,48 @@ class DDBMultiBDRHead(nn.Module):
             # boundary scores
             updated_selected_pos_dist_scores_sorted = torch.max(
                 _bd_iou, _bd_sort_iou)
+            if self.bd_iou_mask_model:
+                saved_bd_inds = (
+                    updated_selected_pos_dist_scores_sorted.reshape(-1) >=
+                    self.bd_iou_threshold).nonzero().reshape(-1)
 
-            # generate ground truth
-            # larger means higher iou value
-            bd_rank_gt_list = []
-            for dist_conf_mask in dist_conf_mask_list:
-                obj_mask_inds = (
-                    (dist_conf_mask[saved_target_mask] +
-                     masks_for_all[saved_target_mask]) == 2).nonzero()
-                topk_num = len(obj_mask_inds)
-                _, obj_bd_ranks = updated_selected_pos_dist_scores_sorted[
-                    obj_mask_inds].reshape(-1, 4).topk(
-                        k=topk_num, dim=0, largest=True)
-                bd_rank_gt_list.append(obj_bd_ranks)
-
-            flatten_bd_rank_list = torch.cat(bd_rank_gt_list).reshape(-1)
-            pos_bd_scores_preds = pos_bd_scores_preds.reshape(-1)
-            flatten_bd_rank_list[flatten_bd_rank_list > (self.bd_rank_num - 1)] = self.bd_rank_num
-            flatten_bd_rank_list = (self.bd_rank_num - 1) - flatten_bd_rank_list
-            saved_bd_inds = (flatten_bd_rank_list != -1).nonzero()
-            flatten_bd_rank_list = flatten_bd_rank_list / (self.bd_rank_num - 1)
-
-            if str(self.loss_dist_scores) == "CrossEntropyLoss()":
-                loss_dist_scores = self.loss_dist_scores(pos_bd_scores_preds[saved_bd_inds].reshape(-1),
-                                                        flatten_bd_rank_list[saved_bd_inds].reshape(-1).float())
+            if len(saved_bd_inds) == 0:
+                loss_dist_scores = pos_bd_scores_preds[saved_bd_inds].sum()
             else:
-                loss_dist_scores = torch.abs(pos_bd_scores_preds[saved_bd_inds].reshape(-1) -
-                                                        flatten_bd_rank_list[saved_bd_inds].reshape(-1).float()).sum() / len(saved_bd_inds)
+                # generate ground truth
+                # larger means higher iou value
+                bd_rank_gt_list = []
+                for dist_conf_mask in dist_conf_mask_list:
+                    obj_mask_inds = (
+                        (dist_conf_mask[saved_target_mask] +
+                         masks_for_all[saved_target_mask]) == 2).nonzero()
+                    topk_num = len(obj_mask_inds)
+                    _, obj_bd_ranks = updated_selected_pos_dist_scores_sorted[
+                        obj_mask_inds].reshape(-1, 4).topk(
+                            k=topk_num, dim=0, largest=True)
+                    bd_rank_gt_list.append(obj_bd_ranks)
+
+                flatten_bd_rank_list = torch.cat(bd_rank_gt_list).reshape(-1)
+                pos_bd_scores_preds = pos_bd_scores_preds.reshape(-1)
+                flatten_bd_rank_list[flatten_bd_rank_list > (
+                    self.bd_rank_num - 1)] = self.bd_rank_num
+                flatten_bd_rank_list = (self.bd_rank_num -
+                                        1) - flatten_bd_rank_list
+                if not self.bd_iou_mask_model:
+                    saved_bd_inds = (flatten_bd_rank_list !=
+                                     -1).nonzero().reshape(-1)
+
+                flatten_bd_rank_list = flatten_bd_rank_list / (
+                    self.bd_rank_num - 1)
+                if str(self.loss_dist_scores) == "CrossEntropyLoss()":
+                    loss_dist_scores = self.loss_dist_scores(
+                        pos_bd_scores_preds[saved_bd_inds],
+                        flatten_bd_rank_list[saved_bd_inds].float())
+                else:
+                    loss_dist_scores = torch.abs(
+                        pos_bd_scores_preds[saved_bd_inds] -
+                        flatten_bd_rank_list[saved_bd_inds].float()).sum(
+                        ) / len(saved_bd_inds)
 
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
