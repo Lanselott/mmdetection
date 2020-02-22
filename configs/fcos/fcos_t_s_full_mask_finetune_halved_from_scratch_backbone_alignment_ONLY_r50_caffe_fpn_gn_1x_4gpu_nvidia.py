@@ -49,6 +49,8 @@ model = dict(
         align_level=0,
         apply_block_wise_alignment=ALIGN,
         freeze_teacher=FREEZE_TEACHER,
+        block_teacher_attention=True,
+        attention_threshold=0.5,
         # student distillation params
         beta = 1.5,
         gamma = 2,

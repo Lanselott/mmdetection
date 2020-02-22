@@ -54,7 +54,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  train_student_only=False,
                  align_level=1,
                  apply_block_wise_alignment=False,
-                 block_teacher_attention=True,
+                 block_teacher_attention=False,
                  attention_threshold=0.5,
                  freeze_teacher=False,
                  beta=1,
