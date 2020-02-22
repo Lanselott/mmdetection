@@ -54,10 +54,13 @@ class FCOSTSFullMaskHead(nn.Module):
                  train_student_only=False,
                  align_level=1,
                  apply_block_wise_alignment=False,
+                 block_teacher_attention=True,
+                 attention_threshold=0.5,
                  freeze_teacher=False,
                  beta=1,
                  gamma=1,
                  adap_distill_loss_weight=0.5,
+                 t_hint_loss=dict(type='MSELoss', loss_weight=1),
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -103,6 +106,8 @@ class FCOSTSFullMaskHead(nn.Module):
         self.t_s_ratio = t_s_ratio
         self.align_level = align_level
         self.apply_block_wise_alignment = apply_block_wise_alignment
+        self.block_teacher_attention = block_teacher_attention
+        self.attention_threshold = attention_threshold
         self.freeze_teacher = freeze_teacher
         self.beta = beta
         self.gamma = gamma
@@ -118,6 +123,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_feature_alignment = apply_feature_alignment
         self.fix_student_train_teacher = fix_student_train_teacher
         self.train_student_only = train_student_only
+        self.t_hint_loss = build_loss(t_hint_loss)
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -246,7 +252,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.fcos_reg.requires_grad = False
         self.fcos_centerness.eval()
         self.fcos_centerness.requires_grad = False
-        
+
         for scale in self.scales:
             scale.eval()
             for m in scale.parameters():
@@ -255,15 +261,24 @@ class FCOSTSFullMaskHead(nn.Module):
     def forward(self, feats):
         t_feats = feats[0]
         s_feats = feats[1]
+        hint_pairs = feats[2]
+        # hint_losses_list = []
         if self.apply_block_wise_alignment:
-            hint_losses = feats[2] + tuple('N')
+
+            # for block_pair in feats[2]:
+            #     aligned_s_feature = block_pair[0]
+            #     t_block_feature = block_pair[1]
+            #     hint_losses_list.append(self.t_hint_loss(aligned_s_feature, t_block_feature.detach()))
+            # hint_losses = tuple(hint_losses_list)
+            # hint_losses += (tuple('N'))
+            hint_pairs += tuple('N')
             return multi_apply(self.forward_single, t_feats, s_feats,
-                               self.scales, self.s_scales, hint_losses)
+                               self.scales, self.s_scales, hint_pairs)
         else:
             return multi_apply(self.forward_single, t_feats, s_feats,
                                self.scales, self.s_scales)
 
-    def forward_single(self, t_x, s_x, scale, s_scale, hint_losses=None):
+    def forward_single(self, t_x, s_x, scale, s_scale, hint_pairs=None):
         t_cls_feat = t_x
         t_reg_feat = t_x
         # student head model
@@ -304,7 +319,7 @@ class FCOSTSFullMaskHead(nn.Module):
         s_align_reg_feat = self.t_s_reg_align(s_align_reg_feat)
         s_align_cls_feat = self.t_s_cls_align(s_align_cls_feat)
         if self.training:
-            return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_losses
+            return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs
         else:
             if self.eval_student:
                 return s_cls_score, s_bbox_pred, s_centerness
@@ -323,7 +338,7 @@ class FCOSTSFullMaskHead(nn.Module):
              s_cls_feats,
              reg_feats,
              s_reg_feats,
-             hint_losses,
+             hint_pairs,
              gt_bboxes,
              gt_labels,
              img_metas,
@@ -375,8 +390,23 @@ class FCOSTSFullMaskHead(nn.Module):
         if self.learn_when_train:
             loss_dict.update(s_hard_loss_cls=s_hard_loss_cls)
             if self.apply_block_wise_alignment:
-                hint_losses = hint_losses[:4]  # Remove placeholder
-                for j, hint_loss in enumerate(hint_losses):
+                hint_pairs = hint_pairs[:4]  # Remove placeholder
+                for j, hint_feature in enumerate(hint_pairs):
+                    s_block_feature = hint_feature[0]
+                    t_block_feature = hint_feature[1].detach()
+                    if self.block_teacher_attention:
+                        # Apply method to partially update hint losses
+                        t_s_block_distance = torch.abs(s_block_feature -
+                                                       t_block_feature)
+                        attention_weight = (t_s_block_distance <=
+                                            t_s_block_distance.mean()).float()
+                        hint_loss = self.t_hint_loss(
+                            s_block_feature,
+                            t_block_feature,
+                            weight=attention_weight)
+                    else:
+                        hint_loss = self.t_hint_loss(s_block_feature,
+                                                     t_block_feature)
                     loss_dict.update(
                         {'hint_loss_block_{}'.format(j): hint_loss})
             if self.apply_feature_alignment:

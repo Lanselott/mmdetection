@@ -46,11 +46,14 @@ model = dict(
         temperature=1,
         align_level=0,
         apply_block_wise_alignment=ALIGN,
+        block_teacher_attention=True,
+        attention_threshold=0.5,
         # student distillation params
         beta = 1.5,
         gamma = 2,
         adap_distill_loss_weight = 0.3,
         strides=[8, 16, 32, 64, 128],
+        t_hint_loss=dict(type='MSELoss', loss_weight=1),
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,

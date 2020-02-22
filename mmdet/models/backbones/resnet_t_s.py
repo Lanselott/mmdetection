@@ -13,6 +13,7 @@ from ..utils import build_conv_layer, build_norm_layer, ConvModule
 from ..builder import build_loss
 from IPython import embed
 
+
 class BasicBlock(nn.Module):
     expansion = 1
 
@@ -268,19 +269,19 @@ class Bottleneck(nn.Module):
 
 
 def make_rests_layer(block,
-                   inplanes,
-                   planes,
-                   blocks,
-                   stride=1,
-                   dilation=1,
-                   style='pytorch',
-                   with_cp=False,
-                   conv_cfg=None,
-                   norm_cfg=dict(type='BN'),
-                   dcn=None,
-                   gcb=None,
-                   gen_attention=None,
-                   gen_attention_blocks=[]):
+                     inplanes,
+                     planes,
+                     blocks,
+                     stride=1,
+                     dilation=1,
+                     style='pytorch',
+                     with_cp=False,
+                     conv_cfg=None,
+                     norm_cfg=dict(type='BN'),
+                     dcn=None,
+                     gcb=None,
+                     gen_attention=None,
+                     gen_attention_blocks=[]):
     downsample = None
     if stride != 1 or inplanes != planes * block.expansion:
         downsample = nn.Sequential(
@@ -470,16 +471,16 @@ class ResTSNet(nn.Module):
             self.res_layers.append(layer_name)
         self._freeze_stages()
         # student net
-        # TODO: rewrite student layers; 
+        # TODO: rewrite student layers;
         # current block1[0] layer input channel not fully pruned in same way
-        self.inplanes = 64 # it should be self.inplanes // self.t_s_ratio
+        self.inplanes = 64  # it should be self.inplanes // self.t_s_ratio
         student_block_output_channel = []
         for j, num_blocks in enumerate(self.stage_blocks):
             stride = strides[j]
             dilation = dilations[j]
             dcn = self.dcn if self.stage_with_dcn[j] else None
             gcb = self.gcb if self.stage_with_gcb[j] else None
-            planes = 64 * 2**j // self.t_s_ratio # Prune the channel
+            planes = 64 * 2**j // self.t_s_ratio  # Prune the channel
             s_res_layer = make_rests_layer(
                 self.block,
                 self.inplanes,
@@ -509,15 +510,16 @@ class ResTSNet(nn.Module):
         if self.apply_block_wise_alignment:
             for out_channel in self.align_layers_output_channel_size:
                 input_channel = out_channel // self.t_s_ratio
-                self.align_layers.append(ConvModule(
-                    input_channel,
-                    out_channel,
-                    3,
-                    stride=1,
-                    padding=1,
-                    conv_cfg=self.conv_cfg,
-                    norm_cfg=self.norm_cfg,
-                    bias=self.norm_cfg is None))
+                self.align_layers.append(
+                    ConvModule(
+                        input_channel,
+                        out_channel,
+                        3,
+                        stride=1,
+                        padding=1,
+                        conv_cfg=self.conv_cfg,
+                        norm_cfg=self.norm_cfg,
+                        bias=self.norm_cfg is None))
                 # print("self.inplanes:{}".format(self.inplanes))
     @property
     def norm1(self):
@@ -584,28 +586,30 @@ class ResTSNet(nn.Module):
         s_x = x
         outs = []
         s_outs = []
-        hint_losses = []
+        # hint_losses = []
+        block_distill_pairs = []
 
         for i, layer_name in enumerate(self.res_layers):
             res_layer = getattr(self, layer_name)
             x = res_layer(x)
             if i in self.out_indices:
                 outs.append(x)
-        # student net 
+        # student net
         for j, s_layer_name in enumerate(self.s_res_layers):
             s_res_layer = getattr(self, s_layer_name)
             s_x = s_res_layer(s_x)
             # align to teacher network and get the loss
             if self.apply_block_wise_alignment:
-               aligned_s_feature = self.align_layers[j](s_x)
-               hint_losses.append(self.t_hint_loss(aligned_s_feature, outs[j].detach()))
+                aligned_s_feature = self.align_layers[j](s_x)
+                # hint_losses.append(
+                #     self.t_hint_loss(aligned_s_feature, outs[j].detach()))
+                block_distill_pairs.append([aligned_s_feature, outs[j]])
             if j in self.out_indices:
                 s_outs.append(s_x)
-        if self.apply_block_wise_alignment:    
-            return tuple(outs), tuple(s_outs), tuple(hint_losses)
+        if self.apply_block_wise_alignment:
+            return tuple(outs), tuple(s_outs), tuple(block_distill_pairs)
         else:
             return tuple(outs), tuple(s_outs)
-        
 
     def train(self, mode=True):
         super(ResTSNet, self).train(mode)

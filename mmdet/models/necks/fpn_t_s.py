@@ -169,7 +169,6 @@ class FPNTS(nn.Module):
         t_outs = self.single_forward(inputs[0], self.fpn_convs, self.lateral_convs)
         # Student Net
         s_outs = self.single_forward(inputs[1], self.s_fpn_convs, self.s_lateral_convs)
-
         if self.apply_block_wise_alignment:
             # push hint loss to head
             return tuple(t_outs), tuple(s_outs), tuple(inputs[2])
