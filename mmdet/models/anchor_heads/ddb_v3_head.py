@@ -34,6 +34,7 @@ class DDBV3Head(nn.Module):
                  loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),     
                  loss_centerness=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
                  loss_dist_scores=dict(type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
+                 bd_threshold=0.0,
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
         super(DDBV3Head, self).__init__()
@@ -50,6 +51,7 @@ class DDBV3Head(nn.Module):
         self.loss_centerness = build_loss(loss_centerness)
         self.loss_sorted_bbox = build_loss(loss_sorted_bbox)
         self.loss_dist_scores = build_loss(loss_dist_scores)
+        self.bd_threshold = bd_threshold
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
 
@@ -409,7 +411,7 @@ class DDBV3Head(nn.Module):
             # boundary scores
             updated_selected_pos_dist_scores_sorted = torch.max(_bd_iou, _bd_sort_iou)
 
-            dist_scores_weights = (updated_selected_pos_dist_scores_sorted > 0.75).float()
+            dist_scores_weights = (updated_selected_pos_dist_scores_sorted >= self.bd_threshold).float()
 
             loss_dist_scores = self.loss_dist_scores(
                 pos_bd_scores_preds,
@@ -529,6 +531,7 @@ class DDBV3Head(nn.Module):
         mlvl_bd_scores = torch.cat(mlvl_bd_scores)
         mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
         
+        '''
         det_bboxes, det_labels = multiclass_nms_sorting(
             mlvl_bboxes,
             mlvl_scores,
@@ -546,7 +549,6 @@ class DDBV3Head(nn.Module):
             cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
-        '''
             
         return det_bboxes, det_labels
 

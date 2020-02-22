@@ -619,8 +619,8 @@ class DDBMultiBDRHead(nn.Module):
             bd_scores_pred = bd_scores_pred.permute(1, 2,
                                                     0).reshape(-1,
                                                                4).sigmoid()
-
-            bd_score_factors = bd_scores_pred.sum(1) / 4
+            bd_score_factors = bd_scores_pred[:, 0] * bd_scores_pred[:, 1] * bd_scores_pred[:, 2] * bd_scores_pred[:, 3]
+            bd_score_factors = bd_score_factors / bd_score_factors.max()
 
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
@@ -652,6 +652,7 @@ class DDBMultiBDRHead(nn.Module):
         mlvl_centerness = torch.cat(mlvl_centerness)
         mlvl_bd_scores = torch.cat(mlvl_bd_scores)
         mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
+        '''
         det_bboxes, det_labels = multiclass_nms_sorting(
             mlvl_bboxes,
             mlvl_scores,
@@ -667,8 +668,8 @@ class DDBMultiBDRHead(nn.Module):
             cfg.score_thr,
             cfg.nms,
             cfg.max_per_img,
+            # score_factors=mlvl_bd_score_factors)
             score_factors=mlvl_centerness)
-        '''
 
         return det_bboxes, det_labels
 

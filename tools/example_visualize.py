@@ -3,8 +3,8 @@ from mmdet.datasets.coco import CocoDataset
 import numpy as np
 from IPython import embed
 
-config_file = './configs/fcos/fcos_t_s_r50_caffe_fpn_gn_1x_single_test.py'
-checkpoint_file = 'work/dirs/fcos_t_s_ce/fcos_t_s_ce_epoch_12.pth'
+config_file = './configs/fcos/ddb_multi_db_rank_r50_caffe_fpn_gn_1x_single_test.py'
+checkpoint_file = 'work/dirs/ddb_multi_bd_rank_no_detach_l1loss/ddb_multi_bd_rank_nodetach_l1loss_epoch_12.pth'
 
 # build the model from a config file and a checkpoint file
 
