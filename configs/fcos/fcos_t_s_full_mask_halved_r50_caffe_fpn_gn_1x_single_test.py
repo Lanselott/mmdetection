@@ -48,6 +48,7 @@ model = dict(
         temperature=1,
         align_level=0,
         apply_block_wise_alignment=ALIGN,
+        block_teacher_attention=True,
         freeze_teacher=FREEZE_TEACHER,
         # student distillation params
         beta = 1.5,

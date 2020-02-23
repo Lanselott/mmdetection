@@ -344,7 +344,7 @@ class FCOSTSFullMaskHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, t_iou_maps, _, t_pred_bboxes = self.loss_single(
+        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, t_iou_maps, _, t_pred_bboxes, block_distill_masks = self.loss_single(
             cls_scores,
             bbox_preds,
             centernesses,
@@ -353,7 +353,7 @@ class FCOSTSFullMaskHead(nn.Module):
             img_metas,
             cfg,
             gt_bboxes_ignore=None)
-        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, s_iou_maps, pos_inds, s_pred_bboxes = self.loss_single(
+        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, s_iou_maps, pos_inds, s_pred_bboxes, _ = self.loss_single(
             s_cls_scores,
             s_bbox_preds,
             s_centernesses,
@@ -396,10 +396,11 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_block_feature = hint_feature[1].detach()
                     if self.block_teacher_attention:
                         # Apply method to partially update hint losses
-                        t_s_block_distance = torch.abs(s_block_feature -
-                                                       t_block_feature)
-                        attention_weight = (t_s_block_distance <=
-                                            t_s_block_distance.mean()).float()
+                        block_distill_masks = torch.nn.functional.upsample(
+                            block_distill_masks,
+                            size=t_block_feature.shape[2:])
+                        attention_weight = block_distill_masks.expand(
+                            -1, t_block_feature.shape[1], -1, -1)
                         hint_loss = self.t_hint_loss(
                             s_block_feature,
                             t_block_feature,
@@ -515,6 +516,18 @@ class FCOSTSFullMaskHead(nn.Module):
         # repeat points to align with bbox_preds
         flatten_points = torch.cat(
             [points.repeat(num_imgs, 1) for points in all_level_points])
+        if self.block_teacher_attention:
+            block_distill_masks = []
+            for i, label in enumerate(labels):
+                distill_masks = (label.reshape(
+                    num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
+                                 0).float()
+                block_distill_masks.append(
+                    torch.nn.functional.upsample(
+                        distill_masks, size=featmap_sizes[0]))
+            block_distill_masks = torch.cat(block_distill_masks,
+                                            1).sum(1).unsqueeze(1)
+            block_distill_masks = (block_distill_masks > 0).float()
 
         pos_inds = flatten_labels.nonzero().reshape(-1)
         num_pos = len(pos_inds)
@@ -552,7 +565,7 @@ class FCOSTSFullMaskHead(nn.Module):
             loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
 
-        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, pos_iou_maps, pos_inds, pos_decoded_bbox_preds
+        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, pos_iou_maps, pos_inds, pos_decoded_bbox_preds, block_distill_masks
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,
