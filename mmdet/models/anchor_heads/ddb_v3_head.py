@@ -191,10 +191,6 @@ class DDBV3Head(nn.Module):
             bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
             for bbox_pred in bbox_preds
         ]
-        flatten_bd_scores_preds = [
-            bd_scores_pred.permute(0, 2, 3, 1).reshape(-1, 4)
-            for bd_scores_pred in bd_scores_preds
-        ]
 
         flatten_centerness = [
             centerness.permute(0, 2, 3, 1).reshape(-1)
@@ -203,7 +199,6 @@ class DDBV3Head(nn.Module):
 
         flatten_cls_scores = torch.cat(flatten_cls_scores)
         flatten_bbox_preds = torch.cat(flatten_bbox_preds)
-        flatten_bd_scores_preds = torch.cat(flatten_bd_scores_preds)
         flatten_centerness = torch.cat(flatten_centerness)
         flatten_labels = torch.cat(labels)
         
@@ -223,9 +218,7 @@ class DDBV3Head(nn.Module):
         pos_bbox_strides = flatten_bbox_strides[pos_inds]
 
         pos_centerness = flatten_centerness[pos_inds]
-        pos_labels = flatten_labels[pos_inds]
-        pos_bd_scores_preds = flatten_bd_scores_preds[pos_inds]
-        
+        pos_labels = flatten_labels[pos_inds]        
 
         '''
         # BUG: do not use
@@ -309,7 +302,6 @@ class DDBV3Head(nn.Module):
             flatten_labels[pos_inds[reduced_mask]] = 0 # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
             saved_target_mask = masks_for_all.nonzero().reshape(-1)
             pos_centerness = pos_centerness[saved_target_mask].reshape(-1)
-            pos_bd_scores_preds = pos_bd_scores_preds[saved_target_mask].reshape(-1, 4)
             
             '''
             consistency between regression and classification
@@ -407,17 +399,6 @@ class DDBV3Head(nn.Module):
                 flatten_cls_scores, flatten_labels,
                 avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
 
-            
-            # boundary scores
-            updated_selected_pos_dist_scores_sorted = torch.max(_bd_iou, _bd_sort_iou)
-
-            dist_scores_weights = (updated_selected_pos_dist_scores_sorted >= self.bd_threshold).float()
-
-            loss_dist_scores = self.loss_dist_scores(
-                pos_bd_scores_preds,
-                updated_selected_pos_dist_scores_sorted,
-                weight=dist_scores_weights)
-
             loss_centerness = self.loss_centerness(pos_centerness, 
                                                     pos_centerness_targets)
                                                     
@@ -425,14 +406,12 @@ class DDBV3Head(nn.Module):
             loss_sorted_bbox = pos_bbox_preds.sum()
             loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
-            loss_dist_scores = pos_bd_scores_preds.sum()
 
         return dict(
             loss_cls=loss_cls,
             loss_bbox=loss_bbox,
             loss_sorted_bbox=loss_sorted_bbox,
-            loss_centerness=loss_centerness,
-            loss_dist_scores=loss_dist_scores)
+            loss_centerness=loss_centerness)
 
     def get_bboxes(self,
                    cls_scores,
@@ -497,14 +476,15 @@ class DDBV3Head(nn.Module):
             bbox_pred = bbox_pred * stride
             
             bd_scores_pred = bd_scores_pred.permute(1, 2, 0).reshape(-1, 4).sigmoid()
+            # bd_score_factors = bd_scores_pred.sum(1) / 4
+            bd_score_factors = bd_scores_pred[:, 0] * bd_scores_pred[:, 1] * bd_scores_pred[:, 2] * bd_scores_pred[:, 3]
+            bd_score_factors = bd_score_factors / bd_score_factors.max()
 
-            bd_score_factors = bd_scores_pred.sum(1) / 4
-            
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
                 # max_scores, _ = scores.max(dim=1)
-                max_scores, _ = (scores * centerness[:, None]).max(dim=1)
-                # max_scores, _ = (scores * bd_score_factors[:, None]).max(dim=1)
+                # max_scores, _ = (scores * centerness[:, None]).max(dim=1)
+                max_scores, _ = (scores * bd_score_factors[:, None]).max(dim=1)
 
                 _, topk_inds = max_scores.topk(nms_pre)
                 points = points[topk_inds, :]
@@ -531,24 +511,26 @@ class DDBV3Head(nn.Module):
         mlvl_bd_scores = torch.cat(mlvl_bd_scores)
         mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
         
-        '''
         det_bboxes, det_labels = multiclass_nms_sorting(
             mlvl_bboxes,
             mlvl_scores,
             mlvl_bd_scores,
             cfg.score_thr,
             cfg.nms,
-            cfg.max_per_img,
-            score_factors=mlvl_centerness)
-        
+            cfg.max_per_img)
+            # score_factors=mlvl_bd_score_factors)
+            # score_factors=mlvl_centerness)
+        # embed()
         '''
         det_bboxes, det_labels = multiclass_nms(
             mlvl_bboxes,
             mlvl_scores,
             cfg.score_thr,
             cfg.nms,
-            cfg.max_per_img,
-            score_factors=mlvl_centerness)
+            cfg.max_per_img)
+            # score_factors=mlvl_bd_score_factors)
+            # score_factors=mlvl_centerness)
+        '''
             
         return det_bboxes, det_labels
 
