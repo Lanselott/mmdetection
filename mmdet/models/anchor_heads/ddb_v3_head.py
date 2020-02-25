@@ -24,6 +24,7 @@ class DDBV3Head(nn.Module):
                  strides=(4, 8, 16, 32, 64),
                  regress_ranges=((-1, 64), (64, 128), (128, 256), (256, 512),
                                  (512, INF)),
+                 mask_origin_bbox_loss=False,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -46,6 +47,7 @@ class DDBV3Head(nn.Module):
         self.stacked_convs = stacked_convs
         self.strides = strides
         self.regress_ranges = regress_ranges
+        self.mask_origin_bbox_loss = mask_origin_bbox_loss
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -389,11 +391,12 @@ class DDBV3Head(nn.Module):
             loss_sorted_bbox = self.loss_sorted_bbox(
                 pos_decoded_sort_bbox_preds,
                 pos_decoded_target_preds)
-                
-            # origin boxes
-            loss_bbox = self.loss_bbox(
-                pos_decoded_bbox_preds,
-                pos_decoded_target_preds)
+
+            if not self.mask_origin_bbox_loss:    
+                # origin boxes
+                loss_bbox = self.loss_bbox(
+                    pos_decoded_bbox_preds,
+                    pos_decoded_target_preds)
             
             loss_cls = self.loss_cls(
                 flatten_cls_scores, flatten_labels,
@@ -404,14 +407,21 @@ class DDBV3Head(nn.Module):
                                                     
         else:
             loss_sorted_bbox = pos_bbox_preds.sum()
-            loss_bbox = pos_bbox_preds.sum()
-            loss_centerness = pos_centerness.sum()
+            if not self.mask_origin_bbox_loss:    
+                loss_bbox = pos_bbox_preds.sum()
 
-        return dict(
-            loss_cls=loss_cls,
-            loss_bbox=loss_bbox,
-            loss_sorted_bbox=loss_sorted_bbox,
-            loss_centerness=loss_centerness)
+            loss_centerness = pos_centerness.sum()
+        if not self.mask_origin_bbox_loss:    
+            return dict(
+                loss_cls=loss_cls,
+                loss_bbox=loss_bbox,
+                loss_sorted_bbox=loss_sorted_bbox,
+                loss_centerness=loss_centerness)
+        else:
+            return dict(
+                loss_cls=loss_cls,
+                loss_sorted_bbox=loss_sorted_bbox,
+                loss_centerness=loss_centerness)
 
     def get_bboxes(self,
                    cls_scores,
