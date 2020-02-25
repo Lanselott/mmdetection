@@ -26,6 +26,7 @@ class DDBV3Head(nn.Module):
                                  (512, INF)),
                  mask_origin_bbox_loss=False,
                  iou_delta=0.0,
+                 apply_iou_cache=False,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -50,6 +51,7 @@ class DDBV3Head(nn.Module):
         self.regress_ranges = regress_ranges
         self.mask_origin_bbox_loss = mask_origin_bbox_loss
         self.iou_delta = iou_delta
+        self.apply_iou_cache = apply_iou_cache
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -377,13 +379,18 @@ class DDBV3Head(nn.Module):
             '''
             # NOTE: the grad of sorted branch is in sort order, diff from origin
             '''
-            sort_gradient_mask = (_bd_sort_iou > (_bd_iou + self.iou_delta)).float()
+            if self.apply_iou_cache:
+                sort_gradient_mask = (_bd_sort_iou > (_bd_iou - self.iou_delta)).float()
+            else:
+                sort_gradient_mask = (_bd_sort_iou > (_bd_iou + self.iou_delta)).float()
             sort_gradient_mask[..., 0] = sort_gradient_mask[pos_gradient_update_mapping[..., 0], 0] 
             sort_gradient_mask[..., 1] = sort_gradient_mask[pos_gradient_update_mapping[..., 1], 1] 
             sort_gradient_mask[..., 2] = sort_gradient_mask[pos_gradient_update_mapping[..., 2], 2] 
             sort_gradient_mask[..., 3] = sort_gradient_mask[pos_gradient_update_mapping[..., 3], 3] 
-            
-            origin_gradient_mask = (_bd_sort_iou <= (_bd_iou + self.iou_delta)).float()
+            if self.apply_iou_cache:
+                origin_gradient_mask = ((_bd_sort_iou - self.iou_delta) <= _bd_iou).float()
+            else:
+                origin_gradient_mask = (_bd_sort_iou <= (_bd_iou + self.iou_delta)).float()
             
             # apply hook to mask origin/sort gradients 
             pos_decoded_sort_bbox_preds.register_hook(lambda grad: grad * sort_gradient_mask)
