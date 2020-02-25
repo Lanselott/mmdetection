@@ -54,7 +54,9 @@ class FCOSTSFullMaskHead(nn.Module):
                  train_student_only=False,
                  align_level=1,
                  apply_block_wise_alignment=False,
+                 apply_pyramid_wise_alignment=False,
                  block_teacher_attention=False,
+                 pyramid_teacher_attention=True,
                  attention_threshold=0.5,
                  freeze_teacher=False,
                  beta=1,
@@ -106,7 +108,9 @@ class FCOSTSFullMaskHead(nn.Module):
         self.t_s_ratio = t_s_ratio
         self.align_level = align_level
         self.apply_block_wise_alignment = apply_block_wise_alignment
+        self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
         self.block_teacher_attention = block_teacher_attention
+        self.pyramid_teacher_attention = pyramid_teacher_attention
         self.attention_threshold = attention_threshold
         self.freeze_teacher = freeze_teacher
         self.beta = beta
@@ -207,6 +211,10 @@ class FCOSTSFullMaskHead(nn.Module):
         self.t_s_reg_align = nn.Conv2d(
             self.s_feat_channels, self.feat_channels, 3, padding=1)
 
+        if self.apply_pyramid_wise_alignment:
+            self.t_s_pyramid_align = nn.Conv2d(
+                self.s_feat_channels, self.feat_channels, 3, padding=1)
+
         self.fcos_s_cls = nn.Conv2d(
             self.s_feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_s_reg = nn.Conv2d(self.s_feat_channels, 4, 3, padding=1)
@@ -237,7 +245,8 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_cls, std=0.01, bias=bias_s_cls)
         normal_init(self.fcos_s_reg, std=0.01)
         normal_init(self.fcos_s_centerness, std=0.01)
-
+        if self.apply_pyramid_wise_alignment:
+            normal_init(self.t_s_pyramid_align, std=0.01)
         if self.freeze_teacher:
             self.freeze_teacher_layers()
 
@@ -261,10 +270,9 @@ class FCOSTSFullMaskHead(nn.Module):
     def forward(self, feats):
         t_feats = feats[0]
         s_feats = feats[1]
-        hint_pairs = feats[2]
         # hint_losses_list = []
         if self.apply_block_wise_alignment:
-
+            hint_pairs = feats[2]
             # for block_pair in feats[2]:
             #     aligned_s_feature = block_pair[0]
             #     t_block_feature = block_pair[1]
@@ -284,6 +292,11 @@ class FCOSTSFullMaskHead(nn.Module):
         # student head model
         s_cls_feat = s_x
         s_reg_feat = s_x
+        if self.apply_pyramid_wise_alignment:
+            pyramid_hint_pairs = []
+            pyramid_hint_pairs.append(s_x)
+            pyramid_hint_pairs.append(t_x)
+
         for i in range(len(self.cls_convs)):
             cls_layer = self.cls_convs[i]
             cls_s_layer = self.s_cls_convs[i]
@@ -319,7 +332,10 @@ class FCOSTSFullMaskHead(nn.Module):
         s_align_reg_feat = self.t_s_reg_align(s_align_reg_feat)
         s_align_cls_feat = self.t_s_cls_align(s_align_cls_feat)
         if self.training:
-            return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs
+            if self.apply_pyramid_wise_alignment:
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, pyramid_hint_pairs
+            else:
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, None
         else:
             if self.eval_student:
                 return s_cls_score, s_bbox_pred, s_centerness
@@ -339,6 +355,7 @@ class FCOSTSFullMaskHead(nn.Module):
              reg_feats,
              s_reg_feats,
              hint_pairs,
+             pyramid_hint_pairs,
              gt_bboxes,
              gt_labels,
              img_metas,
@@ -362,7 +379,6 @@ class FCOSTSFullMaskHead(nn.Module):
             img_metas,
             cfg,
             gt_bboxes_ignore=None)
-
         flatten_s_cls_feat = [
             s_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
             for s_cls_feat in s_cls_feats
@@ -410,6 +426,20 @@ class FCOSTSFullMaskHead(nn.Module):
                                                      t_block_feature)
                     loss_dict.update(
                         {'hint_loss_block_{}'.format(j): hint_loss})
+            if self.apply_pyramid_wise_alignment:
+                for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
+                    s_pyramid_feature = self.t_s_pyramid_align(pyramid_hint_pair[0])
+                    t_pyramid_feature = pyramid_hint_pair[1].detach()
+                    if self.pyramid_teacher_attention:
+                        pass
+                    else:
+                        pyramid_hint_loss = self.t_hint_loss(
+                            s_pyramid_feature, t_pyramid_feature)
+                    loss_dict.update({
+                        'pyramid_hint_loss_block_{}'.format(j):
+                        pyramid_hint_loss
+                    })
+
             if self.apply_feature_alignment:
                 if str(self.loss_s_t_cls) == 'MSELoss()':
                     loss_s_t_reg = self.loss_s_t_reg(
