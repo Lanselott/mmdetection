@@ -59,7 +59,7 @@ model = dict(
         gamma = 2,
         adap_distill_loss_weight = 0.3,
         strides=[8, 16, 32, 64, 128],
-        t_hint_loss=dict(type='MSELoss', loss_weight=1),
+        t_hint_loss=dict(type='MSELoss', loss_weight=10),
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
