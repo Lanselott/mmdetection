@@ -546,8 +546,8 @@ class FCOSTSFullMaskHead(nn.Module):
         # repeat points to align with bbox_preds
         flatten_points = torch.cat(
             [points.repeat(num_imgs, 1) for points in all_level_points])
+        block_distill_masks = []
         if self.block_teacher_attention:
-            block_distill_masks = []
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
