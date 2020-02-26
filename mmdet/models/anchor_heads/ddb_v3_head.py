@@ -502,8 +502,8 @@ class DDBV3Head(nn.Module):
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
                 # max_scores, _ = scores.max(dim=1)
-                # max_scores, _ = (scores * centerness[:, None]).max(dim=1)
-                max_scores, _ = (scores * bd_score_factors[:, None]).max(dim=1)
+                max_scores, _ = (scores * centerness[:, None]).max(dim=1)
+                # max_scores, _ = (scores * bd_score_factors[:, None]).max(dim=1)
 
                 _, topk_inds = max_scores.topk(nms_pre)
                 points = points[topk_inds, :]
