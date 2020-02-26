@@ -428,10 +428,16 @@ class FCOSTSFullMaskHead(nn.Module):
                         {'hint_loss_block_{}'.format(j): hint_loss})
             if self.apply_pyramid_wise_alignment:
                 for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
-                    s_pyramid_feature = self.t_s_pyramid_align(pyramid_hint_pair[0])
+                    s_pyramid_feature = self.t_s_pyramid_align(
+                        pyramid_hint_pair[0])
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
                     if self.pyramid_teacher_attention:
-                        pass
+                        attention_weight = block_distill_masks[j].expand(
+                            -1, t_pyramid_feature.shape[1], -1, -1)
+                        pyramid_hint_loss = self.t_hint_loss(
+                            s_pyramid_feature,
+                            t_pyramid_feature,
+                            weight=attention_weight)
                     else:
                         pyramid_hint_loss = self.t_hint_loss(
                             s_pyramid_feature, t_pyramid_feature)
@@ -546,6 +552,8 @@ class FCOSTSFullMaskHead(nn.Module):
         # repeat points to align with bbox_preds
         flatten_points = torch.cat(
             [points.repeat(num_imgs, 1) for points in all_level_points])
+
+        assert self.block_teacher_attention != self.pyramid_teacher_attention
         block_distill_masks = []
         if self.block_teacher_attention:
             for i, label in enumerate(labels):
@@ -558,6 +566,13 @@ class FCOSTSFullMaskHead(nn.Module):
             block_distill_masks = torch.cat(block_distill_masks,
                                             1).sum(1).unsqueeze(1)
             block_distill_masks = (block_distill_masks > 0).float()
+
+        if self.pyramid_teacher_attention:
+            for i, label in enumerate(labels):
+                distill_masks = (label.reshape(
+                    num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
+                                 0).float()
+                block_distill_masks.append(distill_masks)
 
         pos_inds = flatten_labels.nonzero().reshape(-1)
         num_pos = len(pos_inds)
