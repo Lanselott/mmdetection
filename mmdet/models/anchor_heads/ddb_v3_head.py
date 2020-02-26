@@ -391,7 +391,7 @@ class DDBV3Head(nn.Module):
                 origin_gradient_mask = ((_bd_sort_iou - self.iou_delta) <= _bd_iou).float()
             else:
                 origin_gradient_mask = (_bd_sort_iou <= (_bd_iou + self.iou_delta)).float()
-            
+
             # apply hook to mask origin/sort gradients 
             pos_decoded_sort_bbox_preds.register_hook(lambda grad: grad * sort_gradient_mask)
             pos_decoded_bbox_preds.register_hook(lambda grad: grad * origin_gradient_mask)
