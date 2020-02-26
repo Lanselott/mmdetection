@@ -52,7 +52,7 @@ model = dict(
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         freeze_teacher=FREEZE_TEACHER,
         block_teacher_attention=False,
-        pyramid_teacher_attention=True,
+        pyramid_teacher_attention=False,
         teacher_iou_attention=True,
         attention_threshold=0.5, # duplicate
         # student distillation params
