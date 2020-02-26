@@ -57,6 +57,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_pyramid_wise_alignment=False,
                  block_teacher_attention=False,
                  pyramid_teacher_attention=False,
+                 teacher_iou_attention=False,
                  attention_threshold=0.5,
                  freeze_teacher=False,
                  beta=1,
@@ -111,6 +112,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
         self.block_teacher_attention = block_teacher_attention
         self.pyramid_teacher_attention = pyramid_teacher_attention
+        self.teacher_iou_attention = teacher_iou_attention
         self.attention_threshold = attention_threshold
         self.freeze_teacher = freeze_teacher
         self.beta = beta
@@ -427,10 +429,15 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update(
                         {'hint_loss_block_{}'.format(j): hint_loss})
             if self.apply_pyramid_wise_alignment:
+                if self.teacher_iou_attention:
+                    flatten_t_pyramid_feature_list = []
+                    flatten_s_pyramid_feature_list = []
                 for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
                     s_pyramid_feature = self.t_s_pyramid_align(
                         pyramid_hint_pair[0])
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
+
+                    assert self.pyramid_teacher_attention != self.teacher_iou_attention
                     if self.pyramid_teacher_attention:
                         attention_weight = block_distill_masks[j].expand(
                             -1, t_pyramid_feature.shape[1], -1, -1)
@@ -438,13 +445,40 @@ class FCOSTSFullMaskHead(nn.Module):
                             s_pyramid_feature,
                             t_pyramid_feature,
                             weight=attention_weight)
+                    elif self.teacher_iou_attention:
+                        flatten_t_pyramid_feature_list.append(
+                            t_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                                -1, self.feat_channels))
+                        flatten_s_pyramid_feature_list.append(
+                            s_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                                -1, self.feat_channels))
                     else:
                         pyramid_hint_loss = self.t_hint_loss(
                             s_pyramid_feature, t_pyramid_feature)
-                    loss_dict.update({
-                        'pyramid_hint_loss_block_{}'.format(j):
-                        pyramid_hint_loss
-                    })
+                    if not self.teacher_iou_attention:
+                        loss_dict.update({
+                            'pyramid_hint_loss_block_{}'.format(j):
+                            pyramid_hint_loss
+                        })
+                if self.teacher_iou_attention:
+                    flatten_t_pyramid_feature = torch.cat(
+                        flatten_t_pyramid_feature_list)
+                    flatten_s_pyramid_feature = torch.cat(
+                        flatten_s_pyramid_feature_list)
+                    pos_t_pyramid_feature = flatten_t_pyramid_feature[pos_inds]
+                    pos_s_pyramid_feature = flatten_s_pyramid_feature[pos_inds]
+                    # update teacher iou > threshold
+                    iou_pos_inds = (t_iou_maps >= self.attention_threshold)
+                    pos_t_pyramid_feature = pos_t_pyramid_feature[iou_pos_inds]
+                    pos_s_pyramid_feature = pos_s_pyramid_feature[iou_pos_inds]
+                    
+                    if len(pos_s_pyramid_feature) != 0:
+                        pyramid_hint_loss = self.t_hint_loss(
+                                pos_s_pyramid_feature, pos_t_pyramid_feature)
+                        loss_dict.update({
+                                'pyramid_iou_hint_loss_all':
+                                pyramid_hint_loss
+                            })
 
             if self.apply_feature_alignment:
                 if str(self.loss_s_t_cls) == 'MSELoss()':
@@ -553,7 +587,6 @@ class FCOSTSFullMaskHead(nn.Module):
         flatten_points = torch.cat(
             [points.repeat(num_imgs, 1) for points in all_level_points])
 
-        assert self.block_teacher_attention != self.pyramid_teacher_attention
         block_distill_masks = []
         if self.block_teacher_attention:
             for i, label in enumerate(labels):
@@ -568,11 +601,16 @@ class FCOSTSFullMaskHead(nn.Module):
             block_distill_masks = (block_distill_masks > 0).float()
 
         if self.pyramid_teacher_attention:
-            for i, label in enumerate(labels):
-                distill_masks = (label.reshape(
-                    num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                                 0).float()
-                block_distill_masks.append(distill_masks)
+            if self.teacher_iou_attention:
+                # get iou masks in pos_iou_maps
+                pass
+            else:
+                # use gt box masks as superversion
+                for i, label in enumerate(labels):
+                    distill_masks = (label.reshape(
+                        num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1])
+                                     > 0).float()
+                    block_distill_masks.append(distill_masks)
 
         pos_inds = flatten_labels.nonzero().reshape(-1)
         num_pos = len(pos_inds)
@@ -597,7 +635,7 @@ class FCOSTSFullMaskHead(nn.Module):
             pos_iou_maps = bbox_overlaps(
                 pos_decoded_bbox_preds,
                 pos_decoded_target_preds,
-                is_aligned=False)
+                is_aligned=True)
             # centerness weighted iou loss
             loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds,
