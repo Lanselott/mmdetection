@@ -438,13 +438,20 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
 
                     assert self.pyramid_teacher_attention != self.teacher_iou_attention
-                    if self.pyramid_teacher_attention:
+                    if self.pyramid_teacher_attention:  # box mask wise
                         attention_weight = block_distill_masks[j].expand(
                             -1, t_pyramid_feature.shape[1], -1, -1)
-                        pyramid_hint_loss = self.t_hint_loss(
-                            s_pyramid_feature,
-                            t_pyramid_feature,
-                            weight=attention_weight)
+                        pos_mask_inds = (attention_weight.reshape(-1) >
+                                         0).nonzero().reshape(-1)
+                        s_pyramid_feature = s_pyramid_feature.reshape(
+                            -1)[pos_mask_inds]
+                        t_pyramid_feature = t_pyramid_feature.reshape(
+                            -1)[pos_mask_inds]
+                        if len(pos_mask_inds) != 0:
+                            pyramid_hint_loss = self.t_hint_loss(
+                                s_pyramid_feature, t_pyramid_feature)
+                        else:
+                            pyramid_hint_loss = t_pyramid_feature.sum()
                     elif self.teacher_iou_attention:
                         flatten_t_pyramid_feature_list.append(
                             t_pyramid_feature.permute(0, 2, 3, 1).reshape(
@@ -471,14 +478,12 @@ class FCOSTSFullMaskHead(nn.Module):
                     iou_pos_inds = (t_iou_maps >= self.attention_threshold)
                     pos_t_pyramid_feature = pos_t_pyramid_feature[iou_pos_inds]
                     pos_s_pyramid_feature = pos_s_pyramid_feature[iou_pos_inds]
-                    
+
                     if len(pos_s_pyramid_feature) != 0:
                         pyramid_hint_loss = self.t_hint_loss(
-                                pos_s_pyramid_feature, pos_t_pyramid_feature)
-                        loss_dict.update({
-                                'pyramid_iou_hint_loss_all':
-                                pyramid_hint_loss
-                            })
+                            pos_s_pyramid_feature, pos_t_pyramid_feature)
+                        loss_dict.update(
+                            {'pyramid_iou_hint_loss_all': pyramid_hint_loss})
 
             if self.apply_feature_alignment:
                 if str(self.loss_s_t_cls) == 'MSELoss()':

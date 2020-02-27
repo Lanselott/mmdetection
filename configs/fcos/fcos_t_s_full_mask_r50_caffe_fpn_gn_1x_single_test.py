@@ -49,8 +49,8 @@ model = dict(
         apply_block_wise_alignment=BLOCK_ALIGN,
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         block_teacher_attention=False,
-        pyramid_teacher_attention=False,
-        teacher_iou_attention=True,
+        pyramid_teacher_attention=True,
+        teacher_iou_attention=False,
         attention_threshold=0.5,
         # student distillation params
         beta = 1.5,

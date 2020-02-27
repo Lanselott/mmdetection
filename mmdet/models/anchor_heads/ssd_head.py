@@ -9,7 +9,7 @@ from ..losses import smooth_l1_loss
 from ..registry import HEADS
 from .anchor_head import AnchorHead
 
-
+from IPython import embed
 # TODO: add loss evaluator for SSD
 @HEADS.register_module
 class SSDHead(AnchorHead):
