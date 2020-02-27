@@ -1,6 +1,7 @@
 # model settings
 BLOCK_ALIGN=False
 PYRAMID_ALIGN=True
+FREEZE_TEACHER=True
 RATIO=2
 DOWNSAMPLE_RATIO=2
 model = dict(
@@ -13,10 +14,10 @@ model = dict(
         spatial_ratio=DOWNSAMPLE_RATIO,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
-        frozen_stages=1,
+        frozen_stages=4,
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe',
-        t_hint_loss=dict(type='MSELoss', loss_weight=1),
+        t_hint_loss=dict(type='MSELoss', loss_weight=10),
         apply_block_wise_alignment=BLOCK_ALIGN),
     neck=dict(
         type='FPNTS',
@@ -30,7 +31,8 @@ model = dict(
         extra_convs_on_inputs=False,  # use P5
         num_outs=5,
         relu_before_extra_convs=True,
-        apply_block_wise_alignment=BLOCK_ALIGN),
+        apply_block_wise_alignment=BLOCK_ALIGN,
+        freeze_teacher=FREEZE_TEACHER),
     bbox_head=dict(
         type='FCOSTSFullMaskHead',
         num_classes=81,
@@ -42,7 +44,7 @@ model = dict(
         t_s_ratio=RATIO,
         spatial_ratio=DOWNSAMPLE_RATIO,
         training=True,
-        eval_student=True,
+        eval_student=False,
         learn_when_train=True,
         fix_teacher_finetune_student=True,
         apply_iou_similarity=False,
@@ -51,15 +53,16 @@ model = dict(
         align_level=0,
         apply_block_wise_alignment=BLOCK_ALIGN,
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
+        freeze_teacher=FREEZE_TEACHER,
         block_teacher_attention=False,
-        teacher_iou_attention=True,
-        attention_threshold=0.5,
+        pyramid_teacher_attention=False,
+        attention_threshold=0.5, # duplicate
         # student distillation params
         beta = 1.5,
         gamma = 2,
         adap_distill_loss_weight = 0.3,
         strides=[8, 16, 32, 64, 128],
-        t_hint_loss=dict(type='MSELoss', loss_weight=1),
+        t_hint_loss=dict(type='MSELoss', loss_weight=10),
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
@@ -96,14 +99,13 @@ test_cfg = dict(
     max_per_img=100)
 # dataset settings
 dataset_type = 'CocoDataset'
-data_root = 'data/2017/'
+data_root = '/coco/data/2017/'
 img_norm_cfg = dict(
     mean=[102.9801, 115.9465, 122.7717], std=[1.0, 1.0, 1.0], to_rgb=False)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
     dict(type='Resize', img_scale=(1333, 800), keep_ratio=True),
-    # dict(type='Resize', img_scale=(667, 400), keep_ratio=True),
     dict(type='RandomFlip', flip_ratio=0.5),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
@@ -126,27 +128,27 @@ test_pipeline = [
         ])
 ]
 data = dict(
-    imgs_per_gpu=2,
+    imgs_per_gpu=4,
     workers_per_gpu=4,
     train=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_train2017.json',
-        img_prefix=data_root + 'train2017/',
+        img_prefix=data_root + 'images/train2017/',
         pipeline=train_pipeline),
     val=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'val2017/',
+        img_prefix=data_root + 'images/val2017/',
         pipeline=test_pipeline),
     test=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'val2017/',
+        img_prefix=data_root + 'images/val2017/',
         pipeline=test_pipeline))
 # optimizer
 optimizer = dict(
     type='SGD',
-    lr=0.0025,
+    lr=0.01,
     momentum=0.9,
     weight_decay=0.0001,
     paramwise_options=dict(bias_lr_mult=2., bias_decay_mult=0.))
@@ -172,6 +174,6 @@ total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
-load_from = None#'work/dirs/fcos_t_s_finetune_from_scratch/fcos_t_s_finetune_student_from_scratch_5w_epoch_12.pth'
+load_from = './fcos_t_s_finetune_halved_student_from_scratch_epoch_12.pth'
 resume_from = None
 workflow = [('train', 1)]

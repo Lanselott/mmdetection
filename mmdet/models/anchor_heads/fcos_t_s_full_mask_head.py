@@ -40,7 +40,8 @@ class FCOSTSFullMaskHead(nn.Module):
                  strides=(4, 8, 16, 32, 64),
                  regress_ranges=((-1, 64), (64, 128), (128, 256), (256, 512),
                                  (512, INF)),
-                 t_s_ratio=4,
+                 t_s_ratio=1,
+                 spatial_ratio=1,
                  eval_student=True,
                  training=True,
                  learn_when_train=False,
@@ -106,6 +107,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.strides = strides
         self.regress_ranges = regress_ranges
         self.t_s_ratio = t_s_ratio
+        self.spatial_ratio = spatial_ratio
         self.align_level = align_level
         self.apply_block_wise_alignment = apply_block_wise_alignment
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
@@ -221,7 +223,6 @@ class FCOSTSFullMaskHead(nn.Module):
         self.fcos_s_centerness = nn.Conv2d(
             self.s_feat_channels, 1, 3, padding=1)
 
-        self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
         # teacher and student scales should be different
         self.s_scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
@@ -270,6 +271,7 @@ class FCOSTSFullMaskHead(nn.Module):
     def forward(self, feats):
         t_feats = feats[0]
         s_feats = feats[1]
+
         # hint_losses_list = []
         if self.apply_block_wise_alignment:
             hint_pairs = feats[2]
@@ -329,8 +331,21 @@ class FCOSTSFullMaskHead(nn.Module):
         '''
         # feature align to teacher
         '''
-        s_align_reg_feat = self.t_s_reg_align(s_align_reg_feat)
-        s_align_cls_feat = self.t_s_cls_align(s_align_cls_feat)
+        if self.spatial_ratio == 1:
+            s_align_reg_feat = self.t_s_reg_align(s_align_reg_feat)
+            s_align_cls_feat = self.t_s_cls_align(s_align_cls_feat)
+        else:
+            # upsample + conv
+            s_align_reg_feat = self.t_s_reg_align(
+                F.interpolate(
+                    s_align_reg_feat,
+                    size=t_aligned_reg_feat.shape[2:],
+                    mode='nearest'))
+            s_align_cls_feat = self.t_s_cls_align(
+                F.interpolate(
+                    s_align_cls_feat,
+                    size=t_aligned_reg_feat.shape[2:],
+                    mode='nearest'))
         if self.training:
             if self.apply_pyramid_wise_alignment:
                 return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, pyramid_hint_pairs
@@ -361,7 +376,7 @@ class FCOSTSFullMaskHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, t_iou_maps, _, t_pred_bboxes, block_distill_masks = self.loss_single(
+        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, t_iou_maps, t_pos_inds, t_pred_bboxes, block_distill_masks = self.loss_single(
             cls_scores,
             bbox_preds,
             centernesses,
@@ -370,7 +385,7 @@ class FCOSTSFullMaskHead(nn.Module):
             img_metas,
             cfg,
             gt_bboxes_ignore=None)
-        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, s_iou_maps, pos_inds, s_pred_bboxes, _ = self.loss_single(
+        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, s_iou_maps, _, s_pred_bboxes, _ = self.loss_single(
             s_cls_scores,
             s_bbox_preds,
             s_centernesses,
@@ -378,7 +393,9 @@ class FCOSTSFullMaskHead(nn.Module):
             gt_labels,
             img_metas,
             cfg,
-            gt_bboxes_ignore=None)
+            gt_bboxes_ignore=None,
+            spatial_ratio=self.spatial_ratio)
+
         flatten_s_cls_feat = [
             s_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
             for s_cls_feat in s_cls_feats
@@ -431,8 +448,15 @@ class FCOSTSFullMaskHead(nn.Module):
                     flatten_t_pyramid_feature_list = []
                     flatten_s_pyramid_feature_list = []
                 for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
-                    s_pyramid_feature = self.t_s_pyramid_align(
-                        pyramid_hint_pair[0])
+                    if self.spatial_ratio > 1:
+                        s_pyramid_feature = self.t_s_pyramid_align(
+                            F.interpolate(
+                                pyramid_hint_pair[0],
+                                size=pyramid_hint_pair[1].shape[2:],
+                                mode='nearest'))
+                    else:
+                        s_pyramid_feature = self.t_s_pyramid_align(
+                            pyramid_hint_pair[0])
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
 
                     if self.teacher_iou_attention:
@@ -455,8 +479,8 @@ class FCOSTSFullMaskHead(nn.Module):
                         flatten_t_pyramid_feature_list)
                     flatten_s_pyramid_feature = torch.cat(
                         flatten_s_pyramid_feature_list)
-                    pos_t_pyramid_feature = flatten_t_pyramid_feature[pos_inds]
-                    pos_s_pyramid_feature = flatten_s_pyramid_feature[pos_inds]
+                    pos_t_pyramid_feature = flatten_t_pyramid_feature[t_pos_inds]
+                    pos_s_pyramid_feature = flatten_s_pyramid_feature[t_pos_inds]
                     # update teacher iou > threshold
                     iou_pos_inds = (t_iou_maps >= self.attention_threshold)
                     pos_t_pyramid_feature = pos_t_pyramid_feature[iou_pos_inds]
@@ -471,12 +495,12 @@ class FCOSTSFullMaskHead(nn.Module):
             if self.apply_feature_alignment:
                 if str(self.loss_s_t_cls) == 'MSELoss()':
                     loss_s_t_reg = self.loss_s_t_reg(
-                        flatten_s_reg_feat[pos_inds],
-                        flatten_t_reg_feat[pos_inds].detach())
+                        flatten_s_reg_feat[t_pos_inds],
+                        flatten_t_reg_feat[t_pos_inds].detach())
                 elif str(self.loss_s_t_cls) == 'CrossEntropyLoss()':
                     loss_s_t_reg = self.loss_s_t_reg(
-                        flatten_s_reg_feat[pos_inds],
-                        flatten_t_reg_feat[pos_inds].detach().sigmoid())
+                        flatten_s_reg_feat[t_pos_inds],
+                        flatten_t_reg_feat[t_pos_inds].detach().sigmoid())
                 loss_dict.update(loss_s_t_reg=loss_s_t_reg)
             if self.fix_teacher_finetune_student:
                 loss_dict.update(
@@ -484,6 +508,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     s_loss_centerness=s_loss_centerness,
                     s_hard_loss_cls=s_hard_loss_cls)
                 if self.apply_iou_similarity:
+                    assert self.spatial_ratio == 1
                     loss_iou_similiarity = self.loss_iou_similiarity(
                         s_iou_maps, t_iou_maps.detach())
                     loss_dict.update(loss_iou_similiarity=loss_iou_similiarity)
@@ -499,6 +524,10 @@ class FCOSTSFullMaskHead(nn.Module):
                         loss_dict.update(
                             loss_regression_distill=loss_regression_distill)
                 if self.apply_adaptive_distillation:
+                    if self.spatial_ratio > 1:
+                        # upsample student to match the size
+                        # TODO: currently not use
+                        assert True
                     s_tempered_cls_scores = s_cls_scores / self.temperature
                     s_gt_labels = (t_flatten_cls_scores.detach() /
                                    self.temperature).sigmoid()
@@ -514,7 +543,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     adaptive_distillation_loss = self.adap_distill_loss_weight * (
                         adaptive_distillation_weight *
                         t_s_distribution_distance).sum() / (
-                            len(pos_inds) + cls_scores[0].size(0))
+                            len(t_pos_inds) + cls_scores[0].size(0))
                     loss_dict.update(
                         adaptive_distillation_loss=adaptive_distillation_loss)
         elif self.fix_student_train_teacher:
@@ -544,14 +573,16 @@ class FCOSTSFullMaskHead(nn.Module):
                     gt_labels,
                     img_metas,
                     cfg,
-                    gt_bboxes_ignore=None):
+                    gt_bboxes_ignore=None,
+                    spatial_ratio=1):
         assert len(cls_scores) == len(bbox_preds) == len(centernesses)
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
+
+        # Handle down sampled spatial size of student model
         all_level_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
-                                           bbox_preds[0].device)
+                                           bbox_preds[0].device, spatial_ratio)
         labels, bbox_targets = self.fcos_target(all_level_points, gt_bboxes,
                                                 gt_labels)
-
         num_imgs = cls_scores[0].size(0)
         # flatten cls_scores, bbox_preds and centerness
         flatten_cls_scores = [
@@ -709,7 +740,7 @@ class FCOSTSFullMaskHead(nn.Module):
             score_factors=mlvl_centerness)
         return det_bboxes, det_labels
 
-    def get_points(self, featmap_sizes, dtype, device):
+    def get_points(self, featmap_sizes, dtype, device, spatio_ratio):
         """Get points according to feature map sizes.
 
         Args:
@@ -723,8 +754,9 @@ class FCOSTSFullMaskHead(nn.Module):
         mlvl_points = []
         for i in range(len(featmap_sizes)):
             mlvl_points.append(
-                self.get_points_single(featmap_sizes[i], self.strides[i],
-                                       dtype, device))
+                self.get_points_single(featmap_sizes[i],
+                                       self.strides[i] * spatio_ratio, dtype,
+                                       device))
         return mlvl_points
 
     def get_points_single(self, featmap_size, stride, dtype, device):

@@ -5,6 +5,8 @@ import torch.utils.checkpoint as cp
 from mmcv.cnn import constant_init, kaiming_init
 from mmcv.runner import load_checkpoint
 from torch.nn.modules.batchnorm import _BatchNorm
+import torch.nn.functional as F
+
 
 from mmdet.models.plugins import GeneralizedAttention
 from mmdet.ops import ContextBlock, DeformConv, ModulatedDeformConv
@@ -383,6 +385,7 @@ class ResTSNet(nn.Module):
                  depth,
                  in_channels=3,
                  t_s_ratio=1,
+                 spatial_ratio=1,
                  num_stages=4,
                  strides=(1, 2, 2, 2),
                  dilations=(1, 1, 1, 1),
@@ -407,6 +410,7 @@ class ResTSNet(nn.Module):
             raise KeyError('invalid depth {} for resnet'.format(depth))
         self.depth = depth
         self.t_s_ratio = t_s_ratio
+        self.spatial_ratio = spatial_ratio
         self.num_stages = num_stages
         assert num_stages >= 1 and num_stages <= 4
         self.strides = strides
@@ -583,7 +587,10 @@ class ResTSNet(nn.Module):
         x = self.norm1(x)
         x = self.relu(x)
         x = self.maxpool(x)
-        s_x = x
+        if self.spatial_ratio != 1:
+            s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
+        else:
+            s_x = x
         outs = []
         s_outs = []
         # hint_losses = []
