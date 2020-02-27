@@ -56,7 +56,6 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_block_wise_alignment=False,
                  apply_pyramid_wise_alignment=False,
                  block_teacher_attention=False,
-                 pyramid_teacher_attention=False,
                  teacher_iou_attention=False,
                  attention_threshold=0.5,
                  freeze_teacher=False,
@@ -111,7 +110,6 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_block_wise_alignment = apply_block_wise_alignment
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
         self.block_teacher_attention = block_teacher_attention
-        self.pyramid_teacher_attention = pyramid_teacher_attention
         self.teacher_iou_attention = teacher_iou_attention
         self.attention_threshold = attention_threshold
         self.freeze_teacher = freeze_teacher
@@ -437,22 +435,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         pyramid_hint_pair[0])
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
 
-                    assert self.pyramid_teacher_attention != self.teacher_iou_attention
-                    if self.pyramid_teacher_attention:  # box mask wise
-                        attention_weight = block_distill_masks[j].expand(
-                            -1, t_pyramid_feature.shape[1], -1, -1)
-                        pos_mask_inds = (attention_weight.reshape(-1) >
-                                         0).nonzero().reshape(-1)
-                        s_pyramid_feature = s_pyramid_feature.reshape(
-                            -1)[pos_mask_inds]
-                        t_pyramid_feature = t_pyramid_feature.reshape(
-                            -1)[pos_mask_inds]
-                        if len(pos_mask_inds) != 0:
-                            pyramid_hint_loss = self.t_hint_loss(
-                                s_pyramid_feature, t_pyramid_feature)
-                        else:
-                            pyramid_hint_loss = t_pyramid_feature.sum()
-                    elif self.teacher_iou_attention:
+                    if self.teacher_iou_attention:
                         flatten_t_pyramid_feature_list.append(
                             t_pyramid_feature.permute(0, 2, 3, 1).reshape(
                                 -1, self.feat_channels))
@@ -604,18 +587,6 @@ class FCOSTSFullMaskHead(nn.Module):
             block_distill_masks = torch.cat(block_distill_masks,
                                             1).sum(1).unsqueeze(1)
             block_distill_masks = (block_distill_masks > 0).float()
-
-        if self.pyramid_teacher_attention:
-            if self.teacher_iou_attention:
-                # get iou masks in pos_iou_maps
-                pass
-            else:
-                # use gt box masks as superversion
-                for i, label in enumerate(labels):
-                    distill_masks = (label.reshape(
-                        num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1])
-                                     > 0).float()
-                    block_distill_masks.append(distill_masks)
 
         pos_inds = flatten_labels.nonzero().reshape(-1)
         num_pos = len(pos_inds)
