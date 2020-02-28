@@ -46,6 +46,7 @@ model = dict(
         fix_teacher_finetune_student=True,
         apply_iou_similarity=False,
         apply_adaptive_distillation=False,
+        apply_feature_alignment=False, # regression
         temperature=1,
         align_level=0,
         apply_block_wise_alignment=BLOCK_ALIGN,
