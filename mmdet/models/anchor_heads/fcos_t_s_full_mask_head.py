@@ -669,7 +669,12 @@ class FCOSTSFullMaskHead(nn.Module):
         num_levels = len(cls_scores)
 
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
-        mlvl_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
+        
+        if self.eval_student:
+            mlvl_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
+                                      bbox_preds[0].device, self.spatial_ratio)
+        else:
+            mlvl_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                       bbox_preds[0].device)
         result_list = []
         for img_id in range(len(img_metas)):
@@ -740,7 +745,7 @@ class FCOSTSFullMaskHead(nn.Module):
             score_factors=mlvl_centerness)
         return det_bboxes, det_labels
 
-    def get_points(self, featmap_sizes, dtype, device, spatio_ratio):
+    def get_points(self, featmap_sizes, dtype, device, spatio_ratio=1):
         """Get points according to feature map sizes.
 
         Args:
