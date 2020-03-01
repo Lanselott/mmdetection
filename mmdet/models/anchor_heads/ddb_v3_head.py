@@ -469,27 +469,30 @@ class DDBV3Head(nn.Module):
                     lambda grad: grad * sort_gradient_mask *
                     sort_gradient_mask_weight)
                 pos_decoded_bbox_preds.register_hook(
-                    lambda grad: grad * origin_gradient_mask * gradient_mask_weight)
+                    lambda grad: grad * origin_gradient_mask *
+                    gradient_mask_weight)
             else:
                 pos_decoded_sort_bbox_preds.register_hook(
                     lambda grad: grad * sort_gradient_mask)
                 pos_decoded_bbox_preds.register_hook(
                     lambda grad: grad * origin_gradient_mask)
 
-            if self.consistency_weight is True and pos_centerness_targets.mean(
-            ) >= 0.5:
+            if self.consistency_weight is True:
+                masked_pos_centerness_targets = torch.where(
+                    pos_centerness_targets > 0.5, pos_centerness_targets,
+                    torch.ones(1, device=pos_centerness_targets.device))
                 # sorted bboxes
                 loss_sorted_bbox = self.loss_sorted_bbox(
                     pos_decoded_sort_bbox_preds,
                     pos_decoded_target_preds,
-                    weight=pos_centerness_targets,
-                    avg_factor=pos_centerness_targets.sum())
+                    weight=masked_pos_centerness_targets,
+                    avg_factor=masked_pos_centerness_targets.sum())
                 # origin boxes
                 loss_bbox = self.loss_bbox(
                     pos_decoded_bbox_preds,
                     pos_decoded_target_preds,
-                    weight=pos_centerness_targets,
-                    avg_factor=pos_centerness_targets.sum())
+                    weight=masked_pos_centerness_targets,
+                    avg_factor=masked_pos_centerness_targets.sum())
             else:
                 # sorted bboxes
                 loss_sorted_bbox = self.loss_sorted_bbox(
