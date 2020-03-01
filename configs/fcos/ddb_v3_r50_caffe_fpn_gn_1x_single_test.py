@@ -27,7 +27,7 @@ model = dict(
         feat_channels=256,
         strides=[8, 16, 32, 64, 128],
         mask_origin_bbox_loss=False,
-        iou_delta=0.2,
+        iou_delta=0.0,
         apply_iou_cache=True,
         loss_cls=dict(
             type='FocalLoss',
@@ -56,7 +56,7 @@ test_cfg = dict(
     nms_pre=1000,
     min_bbox_size=0,
     score_thr=0.05,
-    nms=dict(type='nms', iou_thr=0.6),
+    nms=dict(type='nms', iou_thr=0.5),
     # nms=dict(type='nms_v2', iou_thr=0.5, c_thr=0.95),
     max_per_img=100)
 # dataset settings

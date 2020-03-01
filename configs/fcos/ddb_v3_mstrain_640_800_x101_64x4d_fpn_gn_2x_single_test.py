@@ -1,49 +1,31 @@
 # model settings
 model = dict(
-    type='FCOSTS',
-    pretrained='open-mmlab://resnet50_caffe',
+    type='FCOS',
+    pretrained='open-mmlab://resnext101_64x4d',
     backbone=dict(
-        type='ResTSNet',
-        depth=50,
-        t_s_ratio=2,
+        type='ResNeXt',
+        depth=101,
+        groups=64,
+        base_width=4,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
         frozen_stages=1,
-        norm_cfg=dict(type='BN', requires_grad=False),
-        style='caffe'),
+        style='pytorch'),
     neck=dict(
-        type='FPNTS',
+        type='FPN',
         in_channels=[256, 512, 1024, 2048],
         out_channels=256,
-        s_in_channels=[128, 256, 512, 1024],
-        s_out_channels=128,
         start_level=1,
-        t_s_ratio=4,
         add_extra_convs=True,
         extra_convs_on_inputs=False,  # use P5
         num_outs=5,
         relu_before_extra_convs=True),
     bbox_head=dict(
-        type='FCOSTSFullMaskHead',
+        type='DDBV3Head',
         num_classes=81,
         in_channels=256,
-        s_in_channels=128,
         stacked_convs=4,
         feat_channels=256,
-        s_feat_channels=128,
-        t_s_ratio=4,
-        training=True,
-        eval_student=False,
-        learn_when_train=False,
-        =False,
-        train_student_only=True,
-        apply_iou_similarity=False,
-        temperature=1,
-        align_level=0,
-        # student distillation params
-        beta = 1.5,
-        gamma = 2,
-        adap_distill_loss_weight = 0.5,
         strides=[8, 16, 32, 64, 128],
         loss_cls=dict(
             type='FocalLoss',
@@ -52,14 +34,9 @@ model = dict(
             alpha=0.25,
             loss_weight=1.0),
         loss_bbox=dict(type='IoULoss', loss_weight=1.0),
-        # loss_s_t_cls=dict(
-        #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-        # loss_s_t_reg=dict(
-        #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-        loss_s_t_cls=dict(type='MSELoss', loss_weight=5),
-        loss_s_t_reg=dict(type='MSELoss', loss_weight=5),
-        t_s_distance = dict(type='CrossEntropyLoss', use_sigmoid=True, reduction='none', loss_weight=1.0),
-        loss_iou_similiarity = dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
+        loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
+        loss_dist_scores=dict(
+            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings
@@ -77,17 +54,21 @@ test_cfg = dict(
     nms_pre=1000,
     min_bbox_size=0,
     score_thr=0.05,
-    nms=dict(type='nms', iou_thr=0.5),
+    nms=dict(type='nms', iou_thr=0.6),
     max_per_img=100)
 # dataset settings
 dataset_type = 'CocoDataset'
-data_root = '/coco/data/2017/'
+data_root = 'data/2017/'
 img_norm_cfg = dict(
-    mean=[102.9801, 115.9465, 122.7717], std=[1.0, 1.0, 1.0], to_rgb=False)
+    mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
-    dict(type='Resize', img_scale=(1333, 800), keep_ratio=True),
+    dict(
+        type='Resize',
+        img_scale=[(1333, 640), (1333, 800)],
+        multiscale_mode='value',
+        keep_ratio=True),
     dict(type='RandomFlip', flip_ratio=0.5),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
@@ -110,22 +91,22 @@ test_pipeline = [
         ])
 ]
 data = dict(
-    imgs_per_gpu=4,
-    workers_per_gpu=4,
+    imgs_per_gpu=2,
+    workers_per_gpu=2,
     train=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_train2017.json',
-        img_prefix=data_root + 'images/train2017/',
+        img_prefix=data_root + 'train2017/',
         pipeline=train_pipeline),
     val=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'images/val2017/',
+        img_prefix=data_root + 'val2017/',
         pipeline=test_pipeline),
     test=dict(
         type=dataset_type,
-        ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'images/val2017/',
+        ann_file=data_root + 'annotations/image_info_test-dev2017.json',
+        img_prefix=data_root + 'test2017/',
         pipeline=test_pipeline))
 # optimizer
 optimizer = dict(
@@ -141,7 +122,7 @@ lr_config = dict(
     warmup='constant',
     warmup_iters=500,
     warmup_ratio=1.0 / 3,
-    step=[8, 11])
+    step=[16, 22])
 checkpoint_config = dict(interval=1)
 # yapf:disable
 log_config = dict(
@@ -152,10 +133,10 @@ log_config = dict(
     ])
 # yapf:enable
 # runtime settings
-total_epochs = 12
+total_epochs = 24
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
-work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
-load_from = './fcos_t_s_finetune_halved_student_from_scratch_epoch_12.pth'
+work_dir = './work_dirs/fcos_mstrain_640_800_x101_64x4d_fpn_gn_2x'
+load_from = None
 resume_from = None
 workflow = [('train', 1)]

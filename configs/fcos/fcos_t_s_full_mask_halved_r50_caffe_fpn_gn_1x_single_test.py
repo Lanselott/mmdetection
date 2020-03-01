@@ -1,8 +1,9 @@
 # model settings
-ALIGN=True
-FREEZE_TEACHER=True
+ALIGN=False
+PYRAMID_ALIGN=True
+FREEZE_TEACHER=False
 RATIO=2
-DOWNSAMPLE_RATIO=2
+DOWNSAMPLE_RATIO=1
 model = dict(
     type='FCOSTS',
     pretrained='open-mmlab://resnet50_caffe',
@@ -45,13 +46,15 @@ model = dict(
         training=False,
         eval_student=True,
         learn_when_train=True,
-        fix_teacher_finetune_student=True,
-        apply_iou_similarity=True,
-        apply_soft_regression_distill=False,
+        finetune_student=True,
+        train_teacher=True, 
+        apply_iou_similarity=False,
+        apply_soft_regression_distill=True,
         temperature=1,
         align_level=0,
         apply_block_wise_alignment=ALIGN,
-        block_teacher_attention=True,
+        apply_pyramid_wise_alignment=PYRAMID_ALIGN,
+        block_teacher_attention=False,
         freeze_teacher=FREEZE_TEACHER,
         # student distillation params
         beta = 1.5,
@@ -72,7 +75,7 @@ model = dict(
         loss_s_t_cls=dict(type='MSELoss', loss_weight=5),
         loss_s_t_reg=dict(type='MSELoss', loss_weight=5),
         t_s_distance = dict(type='CrossEntropyLoss', use_sigmoid=True, reduction='none', loss_weight=1.0),
-        loss_regression_distill = dict(type='GIoULoss', loss_weight=1),
+        loss_regression_distill = dict(type='IoULoss', loss_weight=1.0),
         reg_distill_threshold = 0.5,
         loss_iou_similiarity = dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
         loss_centerness=dict(

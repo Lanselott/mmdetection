@@ -45,7 +45,8 @@ class FCOSTSFullMaskHead(nn.Module):
                  eval_student=True,
                  training=True,
                  learn_when_train=False,
-                 fix_teacher_finetune_student=False,
+                 finetune_student=False,
+                 train_teacher=False,
                  apply_iou_similarity=False,
                  apply_soft_regression_distill=False,
                  apply_adaptive_distillation=False,
@@ -121,7 +122,8 @@ class FCOSTSFullMaskHead(nn.Module):
         self.training = training
         self.eval_student = eval_student
         self.learn_when_train = learn_when_train
-        self.fix_teacher_finetune_student = fix_teacher_finetune_student
+        self.finetune_student = finetune_student
+        self.train_teacher = train_teacher
         self.apply_iou_similarity = apply_iou_similarity
         self.apply_soft_regression_distill = apply_soft_regression_distill
         self.apply_adaptive_distillation = apply_adaptive_distillation
@@ -376,7 +378,7 @@ class FCOSTSFullMaskHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, t_iou_maps, t_pos_inds, t_pred_bboxes, block_distill_masks = self.loss_single(
+        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, t_iou_maps, t_pos_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _ = self.loss_single(
             cls_scores,
             bbox_preds,
             centernesses,
@@ -385,7 +387,7 @@ class FCOSTSFullMaskHead(nn.Module):
             img_metas,
             cfg,
             gt_bboxes_ignore=None)
-        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, s_iou_maps, _, s_pred_bboxes, _ = self.loss_single(
+        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets = self.loss_single(
             s_cls_scores,
             s_bbox_preds,
             s_centernesses,
@@ -479,8 +481,10 @@ class FCOSTSFullMaskHead(nn.Module):
                         flatten_t_pyramid_feature_list)
                     flatten_s_pyramid_feature = torch.cat(
                         flatten_s_pyramid_feature_list)
-                    pos_t_pyramid_feature = flatten_t_pyramid_feature[t_pos_inds]
-                    pos_s_pyramid_feature = flatten_s_pyramid_feature[t_pos_inds]
+                    pos_t_pyramid_feature = flatten_t_pyramid_feature[
+                        t_pos_inds]
+                    pos_s_pyramid_feature = flatten_s_pyramid_feature[
+                        t_pos_inds]
                     # update teacher iou > threshold
                     iou_pos_inds = (t_iou_maps >= self.attention_threshold)
                     pos_t_pyramid_feature = pos_t_pyramid_feature[iou_pos_inds]
@@ -502,7 +506,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         flatten_s_reg_feat[t_pos_inds],
                         flatten_t_reg_feat[t_pos_inds].detach().sigmoid())
                 loss_dict.update(loss_s_t_reg=loss_s_t_reg)
-            if self.fix_teacher_finetune_student:
+            if self.finetune_student:
                 loss_dict.update(
                     s_loss_bbox=s_loss_bbox,
                     s_loss_centerness=s_loss_centerness,
@@ -513,16 +517,25 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_iou_maps, t_iou_maps.detach())
                     loss_dict.update(loss_iou_similiarity=loss_iou_similiarity)
                 if self.apply_soft_regression_distill:
+                    # calcuate iou of student boxes with teacher boxes and ground truths
+                    # choose the better iou as guidance
                     t_s_ious = bbox_overlaps(
-                        s_pred_bboxes, t_pred_bboxes, is_aligned=True)
-                    regress_mask_inds = (t_s_ious >= self.reg_distill_threshold
-                                         ).nonzero().reshape(-1)
-                    if len(regress_mask_inds) != 0:
-                        loss_regression_distill = self.loss_regression_distill(
-                            s_pred_bboxes[regress_mask_inds],
-                            t_pred_bboxes[regress_mask_inds].detach())
-                        loss_dict.update(
-                            loss_regression_distill=loss_regression_distill)
+                        s_pred_bboxes, t_pred_bboxes,
+                        is_aligned=True).reshape(-1, 1).expand(-1, 4)
+                    gt_s_ious = bbox_overlaps(
+                        s_pred_bboxes, s_gt_bboxes,
+                        is_aligned=True).reshape(-1, 1).expand(-1, 4)
+                    t_iou_inds = (t_s_ious > gt_s_ious).nonzero().reshape(-1)
+                    gt_iou_inds = (t_s_ious <= gt_s_ious).nonzero().reshape(-1)
+                    merged_gt_bboxes = torch.where(gt_s_ious >= t_s_ious,
+                                                   s_gt_bboxes, t_pred_bboxes).detach()
+                    s_loss_bbox = self.loss_bbox(
+                        s_pred_bboxes,
+                        merged_gt_bboxes,
+                        weight=pos_centerness_targets,
+                        avg_factor=pos_centerness_targets.sum())
+                    loss_dict.update(
+                        s_loss_bbox=s_loss_bbox)
                 if self.apply_adaptive_distillation:
                     if self.spatial_ratio > 1:
                         # upsample student to match the size
@@ -546,6 +559,13 @@ class FCOSTSFullMaskHead(nn.Module):
                             len(t_pos_inds) + cls_scores[0].size(0))
                     loss_dict.update(
                         adaptive_distillation_loss=adaptive_distillation_loss)
+                if self.train_teacher:
+                    # currently duplicate
+                    assert self.train_teacher != self.freeze_teacher
+                    loss_dict.update(
+                        loss_cls=loss_cls,
+                        loss_bbox=loss_bbox,
+                        loss_centerness=loss_centerness)
         elif self.fix_student_train_teacher:
             loss_dict.update(
                 loss_cls=loss_cls,
@@ -655,7 +675,7 @@ class FCOSTSFullMaskHead(nn.Module):
             loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
 
-        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, pos_iou_maps, pos_inds, pos_decoded_bbox_preds, block_distill_masks
+        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, pos_iou_maps, pos_inds, pos_decoded_bbox_preds, pos_decoded_target_preds, block_distill_masks, pos_centerness_targets
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,
@@ -669,13 +689,14 @@ class FCOSTSFullMaskHead(nn.Module):
         num_levels = len(cls_scores)
 
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
-        
+
         if self.eval_student:
             mlvl_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
-                                      bbox_preds[0].device, self.spatial_ratio)
+                                          bbox_preds[0].device,
+                                          self.spatial_ratio)
         else:
             mlvl_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
-                                      bbox_preds[0].device)
+                                          bbox_preds[0].device)
         result_list = []
         for img_id in range(len(img_metas)):
             cls_score_list = [

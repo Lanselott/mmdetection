@@ -148,7 +148,6 @@ class FPNTS(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 xavier_init(m, distribution='uniform')
-        
         if self.freeze_teacher:
             self._freeze_teacher_layers()
 
