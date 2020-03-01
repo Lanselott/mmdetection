@@ -403,29 +403,29 @@ class DDBV3Head(nn.Module):
             # apply hook to mask origin/sort gradients 
             pos_decoded_sort_bbox_preds.register_hook(lambda grad: grad * sort_gradient_mask)
             pos_decoded_bbox_preds.register_hook(lambda grad: grad * origin_gradient_mask)
-            
-            if self.consistency_weight is False:
+
+            if self.consistency_weight is True and pos_centerness_targets.mean() >= 0.5:
                 # sorted bboxes
                 loss_sorted_bbox = self.loss_sorted_bbox(
                     pos_decoded_sort_bbox_preds,
-                    pos_decoded_target_preds)
+                    pos_decoded_target_preds,
+                    weight=pos_centerness_targets,
+                    avg_factor=pos_centerness_targets.sum())
                 # origin boxes
                 loss_bbox = self.loss_bbox(
                     pos_decoded_bbox_preds,
-                    pos_decoded_target_preds)
+                    pos_decoded_target_preds,
+                    weight=pos_centerness_targets,
+                    avg_factor=pos_centerness_targets.sum())
             else:
                 # sorted bboxes
                 loss_sorted_bbox = self.loss_sorted_bbox(
                     pos_decoded_sort_bbox_preds,
-                    pos_decoded_target_preds,
-                    weight=pos_centerness_targets,
-                    avg_factor=pos_centerness_targets.sum())
+                    pos_decoded_target_preds)
                 # origin boxes
                 loss_bbox = self.loss_bbox(
                     pos_decoded_bbox_preds,
-                    pos_decoded_target_preds,
-                    weight=pos_centerness_targets,
-                    avg_factor=pos_centerness_targets.sum())
+                    pos_decoded_target_preds)
 
             loss_cls = self.loss_cls(
                 flatten_cls_scores, flatten_labels,
