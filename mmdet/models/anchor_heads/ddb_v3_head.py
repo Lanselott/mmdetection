@@ -27,7 +27,7 @@ class DDBV3Head(nn.Module):
                  mask_origin_bbox_loss=False,
                  iou_delta=0.0,
                  apply_iou_cache=False,
-                 consistency_weight=True,
+                 consistency_weight=False,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
