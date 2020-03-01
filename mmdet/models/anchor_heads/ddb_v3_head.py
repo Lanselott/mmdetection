@@ -27,6 +27,7 @@ class DDBV3Head(nn.Module):
                  mask_origin_bbox_loss=False,
                  iou_delta=0.0,
                  apply_iou_cache=False,
+                 consistency_weight=True,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -52,6 +53,7 @@ class DDBV3Head(nn.Module):
         self.mask_origin_bbox_loss = mask_origin_bbox_loss
         self.iou_delta = iou_delta
         self.apply_iou_cache = apply_iou_cache
+        self.consistency_weight = consistency_weight
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -375,7 +377,6 @@ class DDBV3Head(nn.Module):
                         sorted_ious_weights[pos_gradient_update_anti_mapping[..., 2]].reshape(-1, 1),
                         sorted_ious_weights[pos_gradient_update_anti_mapping[..., 3]].reshape(-1, 1)], 1)
             _bd_iou = ious_weights.reshape(-1, 1).repeat(1, 4)
-
             '''
             # NOTE: the grad of sorted branch is in sort order, diff from origin
             '''
@@ -383,6 +384,7 @@ class DDBV3Head(nn.Module):
                 sort_gradient_mask = (_bd_sort_iou > (_bd_iou - self.iou_delta)).float()
             else:
                 sort_gradient_mask = (_bd_sort_iou > (_bd_iou + self.iou_delta)).float()
+            # _sort_gradient_mask = sort_gradient_mask.clone().detach()
             sort_gradient_mask[..., 0] = sort_gradient_mask[pos_gradient_update_mapping[..., 0], 0] 
             sort_gradient_mask[..., 1] = sort_gradient_mask[pos_gradient_update_mapping[..., 1], 1] 
             sort_gradient_mask[..., 2] = sort_gradient_mask[pos_gradient_update_mapping[..., 2], 2] 
@@ -392,21 +394,39 @@ class DDBV3Head(nn.Module):
             else:
                 origin_gradient_mask = (_bd_sort_iou <= (_bd_iou + self.iou_delta)).float()
 
+            # dr_iou = _sort_gradient_mask * _bd_sort_iou + origin_gradient_mask * _bd_iou
+            # print("IoU mean with D&R:{}".format(dr_iou.mean()))
+            # print("IoU mean without D&R:{}".format(_bd_iou.mean()))
+            # print("IoU var with D&R:{}".format(dr_iou.var()))
+            # print("IoU var without D&R:{}".format(_bd_iou.var()))
+            # embed()
             # apply hook to mask origin/sort gradients 
             pos_decoded_sort_bbox_preds.register_hook(lambda grad: grad * sort_gradient_mask)
             pos_decoded_bbox_preds.register_hook(lambda grad: grad * origin_gradient_mask)
             
-            # sorted bboxes
-            loss_sorted_bbox = self.loss_sorted_bbox(
-                pos_decoded_sort_bbox_preds,
-                pos_decoded_target_preds)
-
-            if not self.mask_origin_bbox_loss:    
+            if self.consistency_weight is False:
+                # sorted bboxes
+                loss_sorted_bbox = self.loss_sorted_bbox(
+                    pos_decoded_sort_bbox_preds,
+                    pos_decoded_target_preds)
                 # origin boxes
                 loss_bbox = self.loss_bbox(
                     pos_decoded_bbox_preds,
                     pos_decoded_target_preds)
-            
+            else:
+                # sorted bboxes
+                loss_sorted_bbox = self.loss_sorted_bbox(
+                    pos_decoded_sort_bbox_preds,
+                    pos_decoded_target_preds,
+                    weight=pos_centerness_targets,
+                    avg_factor=pos_centerness_targets.sum())
+                # origin boxes
+                loss_bbox = self.loss_bbox(
+                    pos_decoded_bbox_preds,
+                    pos_decoded_target_preds,
+                    weight=pos_centerness_targets,
+                    avg_factor=pos_centerness_targets.sum())
+
             loss_cls = self.loss_cls(
                 flatten_cls_scores, flatten_labels,
                 avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
