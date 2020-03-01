@@ -29,7 +29,6 @@ model = dict(
         mask_origin_bbox_loss=False,
         iou_delta = 0.0,
         apply_iou_cache=False,
-        mask_sort=False,
         weighted_mask=True,
         consistency_weight=False,
         loss_cls=dict(
