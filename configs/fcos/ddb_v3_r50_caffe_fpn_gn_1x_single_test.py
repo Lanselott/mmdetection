@@ -61,7 +61,7 @@ test_cfg = dict(
     score_thr=0.05,
     nms=dict(type='nms', iou_thr=0.5),
     # nms=dict(type='nms_v2', iou_thr=0.5, c_thr=0.95),
-    max_per_img=100)
+    max_per_img=1000)
 # dataset settings
 dataset_type = 'CocoDataset'
 data_root = 'data/2017/'

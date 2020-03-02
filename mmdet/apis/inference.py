@@ -2,6 +2,7 @@ import warnings
 
 import matplotlib.pyplot as plt
 import mmcv
+import cv2
 import numpy as np
 import pycocotools.mask as maskUtils
 import torch
@@ -11,6 +12,8 @@ from mmcv.runner import load_checkpoint
 from mmdet.core import get_classes
 from mmdet.datasets.pipelines import Compose
 from mmdet.models import build_detector
+
+from IPython import embed
 
 
 def init_detector(config, checkpoint=None, device='cuda:0'):
@@ -84,7 +87,6 @@ def inference_detector(model, img):
     # forward the model
     with torch.no_grad():
         result = model(return_loss=False, rescale=True, **data)
-
     return result
 
 
@@ -144,6 +146,142 @@ def show_result(img,
         show=show,
         wait_time=wait_time,
         out_file=out_file)
+    if not (show or out_file):
+        return img
+
+
+def show_result_with_gt(img,
+                        result,
+                        class_names,
+                        annotations,
+                        bd_weight,
+                        score_thr=0.3,
+                        wait_time=0,
+                        show=True,
+                        top_k=-1,
+                        thickness=1,
+                        out_file=None):
+    """Visualize the detection results on the image.
+
+    Args:
+        img (str or np.ndarray): Image filename or loaded image.
+        result (tuple[list] or list): The detection result, can be either
+            (bbox, segm) or just bbox.
+        class_names (list[str] or tuple[str]): A list of class names.
+        score_thr (float): The threshold to visualize the bboxes and masks.
+        wait_time (int): Value of waitKey param.
+        show (bool, optional): Whether to show the image with opencv or not.
+        out_file (str, optional): If specified, the visualization result will
+            be written to the out file instead of shown in a window.
+
+    Returns:
+        np.ndarray or None: If neither `show` nor `out_file` is specified, the
+            visualized image is returned, otherwise None is returned.
+    """
+    # assert isinstance(class_names, (tuple, list))
+    img = mmcv.imread(img)
+    img = img.copy()
+    if isinstance(result, tuple):
+        bbox_result, segm_result = result
+    else:
+        bbox_result, segm_result = result, None
+    bboxes = np.vstack(bbox_result)
+    # draw segmentation masks
+    if segm_result is not None:
+        segms = mmcv.concat_list(segm_result)
+        inds = np.where(bboxes[:, -1] > score_thr)[0]
+        for i in inds:
+            color_mask = np.random.randint(0, 256, (1, 3), dtype=np.uint8)
+            mask = maskUtils.decode(segms[i]).astype(np.bool)
+            img[mask] = img[mask] * 0.5 + color_mask * 0.5
+    # draw bounding boxes
+    labels = [
+        np.full(bbox.shape[0], i, dtype=np.int32)
+        for i, bbox in enumerate(bbox_result)
+    ]
+    labels = np.concatenate(labels)
+    pred_colors = ['green' for box in bboxes]
+    gt_colors = ['red' for anno in annotations]
+    colors = pred_colors + gt_colors
+    # align annotations with
+    bboxes = np.concatenate((bboxes[:, :4], annotations), 0)
+    colors_val = [mmcv.color_val(c) for c in colors]
+    if isinstance(bboxes, np.ndarray):
+        bboxes = [bboxes]
+    for i, _bboxes in enumerate(bboxes):
+        _bboxes = _bboxes.astype(np.int32)
+        if top_k <= 0:
+            _top_k = _bboxes.shape[0]
+        else:
+            _top_k = min(top_k, _bboxes.shape[0])
+        for j in range(_top_k):
+            left_top = (_bboxes[j, 0], _bboxes[j, 1])
+            right_top = (_bboxes[j, 2], _bboxes[j, 1])
+            right_bottom = (_bboxes[j, 2], _bboxes[j, 3])
+            left_bottom = (_bboxes[j, 0], _bboxes[j, 3])
+
+            if colors[j] == 'red':
+                thickness = 2
+            if bd_weight is None:
+                cv2.rectangle(
+                    img,
+                    left_top,
+                    right_bottom,
+                    colors_val[j],
+                    thickness=thickness)
+            else:
+                if colors[j] != 'red':
+                    # left
+                    c_val = (colors_val[j][0] * bd_weight[j, 0].item(),
+                             colors_val[j][1] * bd_weight[j, 0].item(),
+                             colors_val[j][2] * bd_weight[j, 0].item())
+                    cv2.line(
+                        img,
+                        left_top,
+                        left_bottom,
+                        c_val,
+                        thickness=thickness)
+                    # top
+                    c_val = (colors_val[j][0] * bd_weight[j, 1].item(),
+                             colors_val[j][1] * bd_weight[j, 1].item(),
+                             colors_val[j][2] * bd_weight[j, 1].item())
+                    cv2.line(
+                        img,
+                        left_top,
+                        right_top,
+                        c_val,
+                        thickness=thickness)
+                    # right
+                    c_val = (colors_val[j][0] * bd_weight[j, 2].item(),
+                             colors_val[j][1] * bd_weight[j, 2].item(),
+                             colors_val[j][2] * bd_weight[j, 2].item())
+                    cv2.line(
+                        img,
+                        right_top,
+                        right_bottom,
+                        c_val,
+                        thickness=thickness)
+                    # bottom
+                    c_val = (colors_val[j][0] * bd_weight[j, 3].item(),
+                             colors_val[j][1] * bd_weight[j, 3].item(),
+                             colors_val[j][2] * bd_weight[j, 3].item())
+                    cv2.line(
+                        img,
+                        left_bottom,
+                        right_bottom,
+                        c_val,
+                        thickness=thickness)
+                else:
+                    cv2.rectangle(
+                        img,
+                        left_top,
+                        right_bottom,
+                        colors_val[j],
+                        thickness=thickness)
+    if show:
+        mmcv.imshow(img, 'win_name', wait_time)
+    if out_file is not None:
+        mmcv.imwrite(img, out_file)
     if not (show or out_file):
         return img
 

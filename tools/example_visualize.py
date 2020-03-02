@@ -3,8 +3,8 @@ from mmdet.datasets.coco import CocoDataset
 import numpy as np
 from IPython import embed
 
-config_file = './configs/fcos/ddb_multi_db_rank_r50_caffe_fpn_gn_1x_single_test.py'
-checkpoint_file = 'work/dirs/ddb_multi_bd_rank_no_detach_l1loss/ddb_multi_bd_rank_nodetach_l1loss_epoch_12.pth'
+config_file = './configs/fcos/ddb_v3_r50_caffe_fpn_gn_1x_single_test.py'
+checkpoint_file = 'work/dirs/ddb_v3_single/latest.pth'
 
 # build the model from a config file and a checkpoint file
 
@@ -19,6 +19,7 @@ model = init_detector(config_file, checkpoint_file, device='cuda:0')
 i = 0
 for img in imgs:
     result = inference_detector(model, img)
+    embed()
     # or save the visualization results to image files
     # embed()
     show_result(img, result, model.CLASSES, score_thr=0.3, show=False, out_file='result_{}.jpg'.format(i))

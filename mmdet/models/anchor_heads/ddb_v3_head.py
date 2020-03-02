@@ -459,10 +459,10 @@ class DDBV3Head(nn.Module):
                 sort_gradient_mask_weight = sorted_ious_weights.reshape(
                     -1, 1).expand(-1, 4)
                 sort_gradient_mask_weight = torch.where(
-                    sort_gradient_mask_weight > 0.5, sort_gradient_mask_weight,
+                    sort_gradient_mask_weight > 0.7, sort_gradient_mask_weight,
                     torch.ones(1, device=sort_gradient_mask_weight.device))
                 gradient_mask_weight = torch.where(
-                    _bd_iou > 0.5, _bd_iou,
+                    _bd_iou > 0.7, _bd_iou,
                     torch.ones(1, device=_bd_iou.device))
 
                 pos_decoded_sort_bbox_preds.register_hook(
@@ -479,7 +479,7 @@ class DDBV3Head(nn.Module):
 
             if self.consistency_weight is True:
                 masked_pos_centerness_targets = torch.where(
-                    pos_centerness_targets > 0.5, pos_centerness_targets,
+                    pos_centerness_targets > 0.7, pos_centerness_targets,
                     torch.ones(1, device=pos_centerness_targets.device))
                 # sorted bboxes
                 loss_sorted_bbox = self.loss_sorted_bbox(
