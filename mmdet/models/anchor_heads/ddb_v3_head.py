@@ -29,6 +29,7 @@ class DDBV3Head(nn.Module):
                  apply_iou_cache=False,
                  mask_sort=True,
                  weighted_mask=False,
+                 weight_balance=False,
                  consistency_weight=False,
                  loss_cls=dict(
                      type='FocalLoss',
@@ -61,6 +62,7 @@ class DDBV3Head(nn.Module):
         self.apply_iou_cache = apply_iou_cache
         self.mask_sort = mask_sort
         self.weighted_mask = weighted_mask
+        self.weight_balance = weight_balance
         self.consistency_weight = consistency_weight
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
@@ -354,7 +356,8 @@ class DDBV3Head(nn.Module):
             delta_x1, delta_y1, delta_x2, delta_y2 = gt - pred
             delta_x1 >= 0, delta_y1 >= 0, delta_x2 <= 0, delta_y2 <= 0
             '''
-            pos_dist_scores = torch.abs(pos_decoded_target_preds - pos_decoded_bbox_preds)
+            pos_dist_scores = torch.abs(pos_decoded_target_preds -
+                                        pos_decoded_bbox_preds)
             pos_dist_scores_sorted = torch.abs(
                 pos_decoded_target_preds -
                 pos_decoded_sort_bbox_preds).detach()
@@ -437,15 +440,15 @@ class DDBV3Head(nn.Module):
             else:
                 sort_gradient_mask = (_bd_sort_iou >
                                       (_bd_iou + self.iou_delta)).float()
-            if self.mask_sort:
-                sort_gradient_mask[..., 0] = sort_gradient_mask[
-                    pos_gradient_update_mapping[..., 0], 0]
-                sort_gradient_mask[..., 1] = sort_gradient_mask[
-                    pos_gradient_update_mapping[..., 1], 1]
-                sort_gradient_mask[..., 2] = sort_gradient_mask[
-                    pos_gradient_update_mapping[..., 2], 2]
-                sort_gradient_mask[..., 3] = sort_gradient_mask[
-                    pos_gradient_update_mapping[..., 3], 3]
+            sort_gradient_mask[..., 0] = sort_gradient_mask[
+                pos_gradient_update_mapping[..., 0], 0]
+            sort_gradient_mask[..., 1] = sort_gradient_mask[
+                pos_gradient_update_mapping[..., 1], 1]
+            sort_gradient_mask[..., 2] = sort_gradient_mask[
+                pos_gradient_update_mapping[..., 2], 2]
+            sort_gradient_mask[..., 3] = sort_gradient_mask[
+                pos_gradient_update_mapping[..., 3], 3]
+
             if self.apply_iou_cache:
                 origin_gradient_mask = ((_bd_sort_iou - self.iou_delta) <=
                                         _bd_iou).float()
@@ -492,6 +495,22 @@ class DDBV3Head(nn.Module):
                     weight=masked_pos_centerness_targets,
                     avg_factor=masked_pos_centerness_targets.sum())
             else:
+                if self.weight_balance:
+                    sorted_loss_weight = torch.where(
+                        _bd_sort_iou >= _bd_iou, _bd_sort_iou,
+                        torch.zeros_like(_bd_sort_iou))
+                    loss_weight = torch.where(_bd_sort_iou < _bd_iou, _bd_iou,
+                                              torch.zeros_like(_bd_iou))
+                    sorted_loss_weight = sorted_loss_weight.sum(
+                    ) / sorted_loss_weight.nonzero().shape[0]
+                    loss_weight = loss_weight.sum() / loss_weight.nonzero(
+                    ).shape[0]
+                    loss_weight_sum = loss_weight + sorted_loss_weight
+                    loss_weight = loss_weight / loss_weight_sum
+                    sorted_loss_weight = sorted_loss_weight / loss_weight_sum
+
+                    self.loss_bbox.loss_weight = loss_weight
+                    self.loss_sorted_bbox.loss_weight = sorted_loss_weight
                 # sorted bboxes
                 loss_sorted_bbox = self.loss_sorted_bbox(
                     pos_decoded_sort_bbox_preds, pos_decoded_target_preds)
