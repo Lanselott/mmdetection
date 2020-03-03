@@ -10,7 +10,7 @@ checkpoint_file = './work/dirs/ddb_v3_single/epoch_1.pth'
 
 # build the model from a config file and a checkpoint file
 model = init_detector(config_file, checkpoint_file, device='cuda:0')
-gt_iou_threshold = 0.3
+gt_iou_threshold = 0.1
 
 img_norm_cfg = dict(
     mean=[102.9801, 115.9465, 122.7717], std=[1.0, 1.0, 1.0], to_rgb=False)
@@ -52,7 +52,7 @@ for j in range(100):
     annotations = np.ones(
         [img_annotation_boxes.shape[0], img_annotation_boxes.shape[1] + 1])
     annotations[:, :4] = img_annotation_boxes
-    if len(annotations) > 4:
+    if len(annotations) > 2:
         j = j - 1
         continue
     result = inference_detector(model, imgs)
@@ -70,16 +70,15 @@ for j in range(100):
     selected_result = []
     selected_dr_result = []
     # sort
-    for i in range(len(img_annotation_labels)):
-        inds = img_annotation_labels[i]
+    for k in range(len(img_annotation_labels)):
+        inds = img_annotation_labels[k]
 
         _pred_boxes = _result[inds - 1][:, :4]
         if _pred_boxes.shape[0] == 0:
             continue
-
         ious = bbox_overlaps(
             torch.from_numpy(_pred_boxes).float(),
-            torch.from_numpy(annotations[i][:4]).reshape(-1, 4).float().expand(
+            torch.from_numpy(annotations[k][:4]).reshape(-1, 4).float().expand(
                 _pred_boxes.shape[0], 4),
             is_aligned=True)
 
@@ -89,15 +88,15 @@ for j in range(100):
         if _pred_boxes.shape[0] == 0:
             continue
 
-        delta = np.abs(_pred_boxes - annotations[i][:4])
+        delta = np.abs(_pred_boxes - annotations[k][:4])
         sort_max_inds = np.argsort(delta, axis=0).reshape(-1, 4)
         sort_max_inds_map_back = np.zeros_like(sort_max_inds)
 
-        for j in range(len(sort_max_inds_map_back)):
-            sort_max_inds_map_back[sort_max_inds[j, 0], 0] = j
-            sort_max_inds_map_back[sort_max_inds[j, 1], 1] = j
-            sort_max_inds_map_back[sort_max_inds[j, 2], 2] = j
-            sort_max_inds_map_back[sort_max_inds[j, 3], 3] = j
+        for l in range(len(sort_max_inds_map_back)):
+            sort_max_inds_map_back[sort_max_inds[l, 0], 0] = l
+            sort_max_inds_map_back[sort_max_inds[l, 1], 1] = l
+            sort_max_inds_map_back[sort_max_inds[l, 2], 2] = l
+            sort_max_inds_map_back[sort_max_inds[l, 3], 3] = l
 
         l = _pred_boxes[sort_max_inds[:, 0], 0].reshape(-1, 1)
         t = _pred_boxes[sort_max_inds[:, 1], 1].reshape(-1, 1)
@@ -108,21 +107,24 @@ for j in range(100):
         dr_box = np.concatenate([dr_box, scores], axis=1)
         dr_ious = bbox_overlaps(
             torch.from_numpy(dr_box[:, :4]).float(),
-            torch.from_numpy(annotations[i][:4]).reshape(-1, 4).float().expand(
+            torch.from_numpy(annotations[k][:4]).reshape(-1, 4).float().expand(
                 dr_box.shape[0], 4),
             is_aligned=True)
 
         dr_ious = dr_ious.reshape(-1, 1).expand(-1, 4)
         ious = ious.reshape(-1, 1).expand(-1, 4)
-        dr_ious_map_back = torch.zeros_like(dr_ious)
 
-        dr_ious_map_back[:, 0] = dr_ious[sort_max_inds_map_back[:, 0], 0]
-        dr_ious_map_back[:, 1] = dr_ious[sort_max_inds_map_back[:, 1], 1]
-        dr_ious_map_back[:, 2] = dr_ious[sort_max_inds_map_back[:, 2], 2]
-        dr_ious_map_back[:, 3] = dr_ious[sort_max_inds_map_back[:, 3], 3]
+        ious_map = torch.zeros_like(dr_ious)
 
-        dr_boundary_weight = torch.where(ious >= dr_ious_map_back, ious,
-                                         dr_ious_map_back)
+        ious_map[:, 0] = ious[sort_max_inds[:, 0], 0]
+        ious_map[:, 1] = ious[sort_max_inds[:, 1], 1]
+        ious_map[:, 2] = ious[sort_max_inds[:, 2], 2]
+        ious_map[:, 3] = ious[sort_max_inds[:, 3], 3]
+        dr_boundary_weight = dr_ious
+        # dr_boundary_weight = torch.where(dr_ious >= ious_map, dr_ious,
+        #                                  ious_map)
+
+        # dr_boundary_weight should be in sorted order
         origin_boundary_weight = ious
         origin_bd_weight.append(origin_boundary_weight)
         dr_bd_weight.append(dr_boundary_weight)
@@ -140,7 +142,7 @@ for j in range(100):
     # before dr
     show_result_with_gt(
         imgs,
-        selected_result, #result,
+        selected_result,  #result,
         None,  # model.CLASSES,
         img_annotation_boxes,
         origin_bd_weight,
@@ -151,7 +153,7 @@ for j in range(100):
     # TODO: visualize D&R module
     show_result_with_gt(
         imgs,
-        selected_dr_result,#_result,
+        selected_dr_result,  #_result,
         None,  # model.CLASSES,
         img_annotation_boxes,
         dr_bd_weight,

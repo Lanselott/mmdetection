@@ -49,19 +49,21 @@ from .ddb_bd_1x1_head import DDBBD1x1Head
 from .ddb_multi_bd_head import DDBMultiBDHead
 from .fcos_t_s_full_mask_head import FCOSTSFullMaskHead
 from .ddb_multi_bd_rank_head import DDBMultiBDRHead
+from .ddb_v3_no_improvement_head import DDBV3NPHead
 __all__ = [
     'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption', 'RPNHead',
     'GARPNHead', 'RetinaHead', 'GARetinaHead', 'SSDHead', 'FCOSHead',
-    'RepPointsHead', 'FoveaHead', 'FreeAnchorRetinaHead', 'FCOSRandomAssignHead', 
-    'FCOSGradientAssignHead', 'FairLossAssignHead', 'FCOSConventionAssignHead', 'FCOSDeeperFeedbackHead', 
-    'FCOSMergedHead', 'FCOSDeeperFeedbackHeadV2', 'FCOSDeeperFeedbackHeadV3', 'FCOSDeeperFeedbackHeadV1S', 
-    'FCOSDeeperFeedbackHeadV3S', 'MixupFCOSHead', 'BoxCodingHead', 
-    'BoxCodingHeadV2', 'BoxCodingIoUHead', 'BoxCodingIoUCoordRegHead',
-    'BoxCodingIoUCoordRegHeadV2', 'FCOSFCHead', 'FCOSFCV2Head',
-    'EmbeddingNNmsHead', 'EmbeddingNNmsHeadV2', 'EmbeddingNNmsHeadV2limited',
-    'FCOSFCV2PlusHead', 'ConsistencyHead', 'ConsistencyV2Head',
-    'FCOSLabelAssignHead', 'DDBHead', 'DDBV2Head', 'DDBV3Head', 'DDBV3CSHead',
-    'DDBV4Head', 'DDBV3PHead', 'DDBV4PHead', 'FCOSTSHead',
-    'DDBInceptionHead', 'FCOSTSFullHead', 'DDBBD1x1Head', 
-    'DDBMultiBDHead', 'FCOSTSFullMaskHead', 'DDBMultiBDRHead'
+    'RepPointsHead', 'FoveaHead', 'FreeAnchorRetinaHead',
+    'FCOSRandomAssignHead', 'FCOSGradientAssignHead', 'FairLossAssignHead',
+    'FCOSConventionAssignHead', 'FCOSDeeperFeedbackHead', 'FCOSMergedHead',
+    'FCOSDeeperFeedbackHeadV2', 'FCOSDeeperFeedbackHeadV3',
+    'FCOSDeeperFeedbackHeadV1S', 'FCOSDeeperFeedbackHeadV3S', 'MixupFCOSHead',
+    'BoxCodingHead', 'BoxCodingHeadV2', 'BoxCodingIoUHead',
+    'BoxCodingIoUCoordRegHead', 'BoxCodingIoUCoordRegHeadV2', 'FCOSFCHead',
+    'FCOSFCV2Head', 'EmbeddingNNmsHead', 'EmbeddingNNmsHeadV2',
+    'EmbeddingNNmsHeadV2limited', 'FCOSFCV2PlusHead', 'ConsistencyHead',
+    'ConsistencyV2Head', 'FCOSLabelAssignHead', 'DDBHead', 'DDBV2Head',
+    'DDBV3Head', 'DDBV3CSHead', 'DDBV4Head', 'DDBV3PHead', 'DDBV4PHead',
+    'FCOSTSHead', 'DDBInceptionHead', 'FCOSTSFullHead', 'DDBBD1x1Head',
+    'DDBMultiBDHead', 'FCOSTSFullMaskHead', 'DDBMultiBDRHead', 'DDBV3NPHead'
 ]

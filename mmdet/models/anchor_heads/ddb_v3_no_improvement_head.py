@@ -14,7 +14,7 @@ MIN = 1e-8
 
 
 @HEADS.register_module
-class DDBV3Head(nn.Module):
+class DDBV3NPHead(nn.Module):
 
     def __init__(self,
                  num_classes,
@@ -47,7 +47,7 @@ class DDBV3Head(nn.Module):
                  bd_threshold=0.0,
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
-        super(DDBV3Head, self).__init__()
+        super(DDBV3NPHead, self).__init__()
 
         self.num_classes = num_classes
         self.cls_out_channels = num_classes - 1
@@ -76,7 +76,6 @@ class DDBV3Head(nn.Module):
     def _init_layers(self):
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
-        self.bd_convs = nn.ModuleList()
 
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
@@ -101,25 +100,10 @@ class DDBV3Head(nn.Module):
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
 
-        for _ in range(2):
-            self.bd_convs.append(
-                ConvModule(
-                    chn,
-                    self.feat_channels,
-                    3,
-                    stride=1,
-                    padding=1,
-                    conv_cfg=self.conv_cfg,
-                    norm_cfg=self.norm_cfg,
-                    bias=self.norm_cfg is None))
-
         self.fcos_cls = nn.Conv2d(
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
-        self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
-
-        self.relu = nn.ReLU(inplace=True)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
@@ -128,14 +112,11 @@ class DDBV3Head(nn.Module):
             normal_init(m.conv, std=0.01)
         for m in self.reg_convs:
             normal_init(m.conv, std=0.01)
-        for m in self.bd_convs:
-            normal_init(m.conv, std=0.01)
 
         bias_cls = bias_init_with_prob(0.01)
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
         normal_init(self.fcos_centerness, std=0.01)
-        normal_init(self.fcos_bd_scores, std=0.01)
 
     def forward(self, feats):
         return multi_apply(self.forward_single, feats, self.scales)
@@ -154,29 +135,15 @@ class DDBV3Head(nn.Module):
 
         # trick: centerness to reg branch
         centerness = self.fcos_centerness(reg_feat)
-        '''
-        # scale the bbox_pred of different level
-        bbox_pred = scale(self.fcos_reg(reg_feat)).exp()
-        '''
-        '''
-        # tricks in https://github.com/tianzhi0549/FCOS/blob/4697f876b5aeead5f60423e0d04ea7e3e1282790/fcos_core/modeling/rpn/fcos/fcos.py
-        '''
-        bbox_pred = scale(self.fcos_reg(reg_feat))
-        bbox_pred = self.relu(bbox_pred)
+        bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
 
-        for bd_layer in self.bd_convs:
-            reg_feat = bd_layer(reg_feat.detach())
-
-        bd_scores_pred = self.fcos_bd_scores(reg_feat)
-
-        return cls_score, bbox_pred, bd_scores_pred, centerness
+        return cls_score, bbox_pred, centerness
 
     # def regression_hook()
 
     def loss(self,
              cls_scores,
              bbox_preds,
-             bd_scores_preds,
              centernesses,
              gt_bboxes,
              gt_labels,
@@ -184,8 +151,7 @@ class DDBV3Head(nn.Module):
              cfg,
              gt_bboxes_ignore=None):
 
-        assert len(cls_scores) == len(bbox_preds) == len(centernesses) == len(
-            bd_scores_preds)
+        assert len(cls_scores) == len(bbox_preds) == len(centernesses) 
         dist_conf_mask_list = []
 
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
@@ -252,18 +218,9 @@ class DDBV3Head(nn.Module):
             NOTE: 
             Strided box and Origin box
             '''
-            pos_decoded_bbox_preds = distance2bbox(
-                pos_points, pos_bbox_preds * pos_bbox_strides)
-            pos_decoded_bbox_strided_preds = distance2bbox(
-                pos_points, pos_bbox_preds)
-            pos_decoded_strided_targets = distance2bbox(
-                pos_points, pos_bbox_strided_targets)
+            pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
             pos_decoded_target_preds = distance2bbox(pos_points,
                                                      pos_bbox_targets)
-            # create centerness targets, iou based, NOTE: strided as FCOS implementation
-            '''
-            pos_centerness_targets = bbox_overlaps(pos_decoded_bbox_strided_preds.clone().detach(), pos_decoded_strided_targets, is_aligned=True)
-            '''
             pos_centerness_targets = bbox_overlaps(
                 pos_decoded_bbox_preds.clone().detach(),
                 pos_decoded_target_preds,
@@ -354,7 +311,9 @@ class DDBV3Head(nn.Module):
             delta_x1, delta_y1, delta_x2, delta_y2 = gt - pred
             delta_x1 >= 0, delta_y1 >= 0, delta_x2 <= 0, delta_y2 <= 0
             '''
-            pos_dist_scores = torch.abs(pos_decoded_target_preds - pos_decoded_bbox_preds)
+            pos_dist_scores = torch.abs(pos_decoded_target_preds -
+                                        pos_decoded_bbox_preds)
+
             pos_dist_scores_sorted = torch.abs(
                 pos_decoded_target_preds -
                 pos_decoded_sort_bbox_preds).detach()
@@ -579,26 +538,18 @@ class DDBV3Head(nn.Module):
         mlvl_centerness = []
         mlvl_bd_scores = []
         mlvl_bd_score_factors = []
-        for cls_score, bbox_pred, points, centerness, bd_scores_pred, stride in zip(
+        for cls_score, bbox_pred, points, centerness, bd_scores_pred in zip(
                 cls_scores, bbox_preds, mlvl_points, centernesses,
-                bd_scores_preds, self.strides):
+                bd_scores_preds):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
             centerness = centerness.permute(1, 2, 0).reshape(-1).sigmoid()
             bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
-            bbox_pred = bbox_pred * stride
 
             bd_scores_pred = bd_scores_pred.permute(1, 2,
                                                     0).reshape(-1,
                                                                4).sigmoid()
-            # bd_score_factors = bd_scores_pred.sum(1) / 4
-            bd_score_factors = bd_scores_pred[:,
-                                              0] * bd_scores_pred[:,
-                                                                  1] * bd_scores_pred[:,
-                                                                                      2] * bd_scores_pred[:,
-                                                                                                          3]
-            bd_score_factors = bd_score_factors / bd_score_factors.max()
 
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
