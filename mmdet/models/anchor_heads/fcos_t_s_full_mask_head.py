@@ -66,6 +66,9 @@ class FCOSTSFullMaskHead(nn.Module):
                  gamma=1,
                  adap_distill_loss_weight=0.5,
                  t_hint_loss=dict(type='MSELoss', loss_weight=1),
+                 pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
+                 reg_head_hint_loss=dict(type='MSELoss', loss_weight=1),
+                 cls_head_hint_loss=dict(type='MSELoss', loss_weight=1),
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -134,6 +137,9 @@ class FCOSTSFullMaskHead(nn.Module):
         self.fix_student_train_teacher = fix_student_train_teacher
         self.train_student_only = train_student_only
         self.t_hint_loss = build_loss(t_hint_loss)
+        self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
+        self.reg_head_hint_loss = build_loss(reg_head_hint_loss)
+        self.cls_head_hint_loss = build_loss(cls_head_hint_loss)
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -490,7 +496,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             pyramid_hint_pair[0])
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
 
-                    pyramid_hint_loss = self.t_hint_loss(
+                    pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature, t_pyramid_feature)
                     loss_dict.update({
                         'pyramid_hint_loss_block_{}'.format(j):
@@ -507,9 +513,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_cls_head_feature = cls_head_pair[1].detach()
                     t_reg_head_feature = reg_head_pair[1].detach()
 
-                    cls_head_hint_loss = self.t_hint_loss(
+                    cls_head_hint_loss = self.cls_head_hint_loss(
                         s_cls_head_feature, t_cls_head_feature)
-                    reg_head_hint_loss = self.t_hint_loss(
+                    reg_head_hint_loss = self.reg_head_hint_loss(
                         s_reg_head_feature, t_reg_head_feature)
                     loss_dict.update({
                         'cls_head_hint_loss_block_{}'.format(j):
