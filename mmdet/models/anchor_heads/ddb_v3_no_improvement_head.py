@@ -487,12 +487,11 @@ class DDBV3NPHead(nn.Module):
     def get_bboxes(self,
                    cls_scores,
                    bbox_preds,
-                   bd_scores_preds,
                    centernesses,
                    img_metas,
                    cfg,
                    rescale=None):
-        assert len(cls_scores) == len(bbox_preds) == len(bd_scores_preds)
+        assert len(cls_scores) == len(bbox_preds)
         num_levels = len(cls_scores)
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         mlvl_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
@@ -505,16 +504,12 @@ class DDBV3NPHead(nn.Module):
             bbox_pred_list = [
                 bbox_preds[i][img_id].detach() for i in range(num_levels)
             ]
-            bd_scores_pred_list = [
-                bd_scores_preds[i][img_id].detach() for i in range(num_levels)
-            ]
             centerness_pred_list = [
                 centernesses[i][img_id].detach() for i in range(num_levels)
             ]
             img_shape = img_metas[img_id]['img_shape']
             scale_factor = img_metas[img_id]['scale_factor']
             det_bboxes = self.get_bboxes_single(cls_score_list, bbox_pred_list,
-                                                bd_scores_pred_list,
                                                 centerness_pred_list,
                                                 mlvl_points, img_shape,
                                                 scale_factor, cfg, rescale)
@@ -524,54 +519,40 @@ class DDBV3NPHead(nn.Module):
     def get_bboxes_single(self,
                           cls_scores,
                           bbox_preds,
-                          bd_scores_preds,
                           centernesses,
                           mlvl_points,
                           img_shape,
                           scale_factor,
                           cfg,
                           rescale=False):
-        assert len(cls_scores) == len(bbox_preds) == len(mlvl_points) == len(
-            bd_scores_preds)
+        assert len(cls_scores) == len(bbox_preds) == len(mlvl_points) 
         mlvl_bboxes = []
         mlvl_scores = []
         mlvl_centerness = []
-        mlvl_bd_scores = []
-        mlvl_bd_score_factors = []
-        for cls_score, bbox_pred, points, centerness, bd_scores_pred in zip(
-                cls_scores, bbox_preds, mlvl_points, centernesses,
-                bd_scores_preds):
+        for cls_score, bbox_pred, points, centerness in zip(
+                cls_scores, bbox_preds, mlvl_points, centernesses):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
             centerness = centerness.permute(1, 2, 0).reshape(-1).sigmoid()
             bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
 
-            bd_scores_pred = bd_scores_pred.permute(1, 2,
-                                                    0).reshape(-1,
-                                                               4).sigmoid()
-
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
                 # max_scores, _ = scores.max(dim=1)
                 max_scores, _ = (scores * centerness[:, None]).max(dim=1)
-                # max_scores, _ = (scores * bd_score_factors[:, None]).max(dim=1)
 
                 _, topk_inds = max_scores.topk(nms_pre)
                 points = points[topk_inds, :]
                 bbox_pred = bbox_pred[topk_inds, :]
-                bd_scores_pred = bd_scores_pred[topk_inds, :]
                 scores = scores[topk_inds, :]
                 centerness = centerness[topk_inds]
-                bd_score_factors = bd_score_factors[topk_inds]
 
             bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
 
             mlvl_bboxes.append(bboxes)
             mlvl_scores.append(scores)
             mlvl_centerness.append(centerness)
-            mlvl_bd_score_factors.append(bd_score_factors)
-            mlvl_bd_scores.append(bd_scores_pred)
         mlvl_bboxes = torch.cat(mlvl_bboxes)
         if rescale:
             mlvl_bboxes /= mlvl_bboxes.new_tensor(scale_factor)
@@ -579,8 +560,6 @@ class DDBV3NPHead(nn.Module):
         padding = mlvl_scores.new_zeros(mlvl_scores.shape[0], 1)
         mlvl_scores = torch.cat([padding, mlvl_scores], dim=1)
         mlvl_centerness = torch.cat(mlvl_centerness)
-        mlvl_bd_scores = torch.cat(mlvl_bd_scores)
-        mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
         '''
         det_bboxes, det_labels = multiclass_nms_sorting(
             mlvl_bboxes,
@@ -589,7 +568,6 @@ class DDBV3NPHead(nn.Module):
             cfg.score_thr,
             cfg.nms,
             cfg.max_per_img)
-            # score_factors=mlvl_bd_score_factors)
             # score_factors=mlvl_centerness)
         # embed()
         '''
@@ -599,7 +577,6 @@ class DDBV3NPHead(nn.Module):
             cfg.score_thr,
             cfg.nms,
             cfg.max_per_img,
-            # score_factors=mlvl_bd_score_factors)
             score_factors=mlvl_centerness)
 
         return det_bboxes, det_labels
