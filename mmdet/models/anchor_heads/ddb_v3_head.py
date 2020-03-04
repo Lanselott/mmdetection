@@ -496,27 +496,19 @@ class DDBV3Head(nn.Module):
                     avg_factor=masked_pos_centerness_targets.sum())
             else:
                 if self.weight_balance:
-                    sorted_loss_weight = torch.where(
-                        _bd_sort_iou >= _bd_iou, _bd_sort_iou,
-                        torch.zeros_like(_bd_sort_iou))
-                    loss_weight = torch.where(_bd_sort_iou < _bd_iou, _bd_iou,
-                                              torch.zeros_like(_bd_iou))
-                    sorted_loss_weight = sorted_loss_weight.sum(
-                    ) / sorted_loss_weight.nonzero().shape[0]
-                    loss_weight = loss_weight.sum() / loss_weight.nonzero(
-                    ).shape[0]
-                    loss_weight_sum = loss_weight + sorted_loss_weight
-                    loss_weight = loss_weight / loss_weight_sum
-                    sorted_loss_weight = sorted_loss_weight / loss_weight_sum
-
-                    self.loss_bbox.loss_weight = loss_weight
-                    self.loss_sorted_bbox.loss_weight = sorted_loss_weight
+                    selected_ious_inds = (ious_weights < 0.5).nonzero().reshape(-1)
+                    if len(selected_ious_inds) > 0:
+                        loss_bbox = self.loss_bbox(pos_decoded_bbox_preds[selected_ious_inds],
+                                                   pos_decoded_target_preds[selected_ious_inds])
+                    else:
+                        loss_bbox = pos_decoded_bbox_preds[selected_ious_inds].sum()
+                else:
+                    loss_bbox = self.loss_bbox(pos_decoded_bbox_preds,
+                                               pos_decoded_target_preds)
                 # sorted bboxes
                 loss_sorted_bbox = self.loss_sorted_bbox(
                     pos_decoded_sort_bbox_preds, pos_decoded_target_preds)
                 # origin boxes
-                loss_bbox = self.loss_bbox(pos_decoded_bbox_preds,
-                                           pos_decoded_target_preds)
 
             loss_cls = self.loss_cls(
                 flatten_cls_scores,
