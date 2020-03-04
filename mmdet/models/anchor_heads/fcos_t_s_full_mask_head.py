@@ -57,6 +57,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  align_level=1,
                  apply_block_wise_alignment=False,
                  apply_pyramid_wise_alignment=False,
+                 apply_head_wise_alignment=False,
                  block_teacher_attention=False,
                  teacher_iou_attention=False,
                  attention_threshold=0.5,
@@ -112,6 +113,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.align_level = align_level
         self.apply_block_wise_alignment = apply_block_wise_alignment
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
+        self.apply_head_wise_alignment = apply_head_wise_alignment
         self.block_teacher_attention = block_teacher_attention
         self.teacher_iou_attention = teacher_iou_attention
         self.attention_threshold = attention_threshold
@@ -219,6 +221,12 @@ class FCOSTSFullMaskHead(nn.Module):
             self.t_s_pyramid_align = nn.Conv2d(
                 self.s_feat_channels, self.feat_channels, 3, padding=1)
 
+        if self.apply_head_wise_alignment:
+            self.t_s_reg_head_align = nn.Conv2d(
+                self.s_feat_channels, self.feat_channels, 3, padding=1)
+            self.t_s_cls_head_align = nn.Conv2d(
+                self.s_feat_channels, self.feat_channels, 3, padding=1)
+
         self.fcos_s_cls = nn.Conv2d(
             self.s_feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_s_reg = nn.Conv2d(self.s_feat_channels, 4, 3, padding=1)
@@ -250,6 +258,9 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_centerness, std=0.01)
         if self.apply_pyramid_wise_alignment:
             normal_init(self.t_s_pyramid_align, std=0.01)
+        if self.apply_head_wise_alignment:
+            normal_init(self.t_s_reg_head_align, std=0.01)
+            normal_init(self.t_s_cls_head_align, std=0.01)
         if self.freeze_teacher:
             self.freeze_teacher_layers()
 
@@ -307,6 +318,11 @@ class FCOSTSFullMaskHead(nn.Module):
             t_cls_feat = cls_layer(t_cls_feat)
             s_cls_feat = cls_s_layer(s_cls_feat)
 
+            if self.apply_head_wise_alignment:
+                cls_hint_pairs = []
+                cls_hint_pairs.append(s_cls_feat)
+                cls_hint_pairs.append(t_cls_feat)
+
             if i == self.align_level:
                 s_align_cls_feat = s_cls_feat
                 t_aligned_cls_feat = t_cls_feat
@@ -322,9 +338,20 @@ class FCOSTSFullMaskHead(nn.Module):
             t_reg_feat = reg_layer(t_reg_feat)
             s_reg_feat = s_reg_layer(s_reg_feat)
 
+            if self.apply_head_wise_alignment:
+                reg_hint_pairs = []
+                reg_hint_pairs.append(s_reg_feat)
+                reg_hint_pairs.append(t_reg_feat)
+
             if j == self.align_level:
                 s_align_reg_feat = s_reg_feat
                 t_aligned_reg_feat = t_reg_feat
+
+        # wrap reg/cls head features
+        if self.apply_head_wise_alignment:
+            head_hint_pairs = []
+            head_hint_pairs.append(cls_hint_pairs)
+            head_hint_pairs.append(reg_hint_pairs)
 
         # scale the bbox_pred of different level
         # float to avoid overflow when enabling FP16
@@ -349,8 +376,12 @@ class FCOSTSFullMaskHead(nn.Module):
                     size=t_aligned_reg_feat.shape[2:],
                     mode='nearest'))
         if self.training:
-            if self.apply_pyramid_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, pyramid_hint_pairs
+            if self.apply_pyramid_wise_alignment and not self.apply_head_wise_alignment:
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, pyramid_hint_pairs, None
+            elif self.apply_head_wise_alignment and not self.apply_pyramid_wise_alignment:
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, None, head_hint_pairs
+            elif self.apply_pyramid_wise_alignment and self.apply_head_wise_alignment:
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, pyramid_hint_pairs, head_hint_pairs
             else:
                 return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, None
         else:
@@ -373,6 +404,7 @@ class FCOSTSFullMaskHead(nn.Module):
              s_reg_feats,
              hint_pairs,
              pyramid_hint_pairs,
+             head_hint_pairs,
              gt_bboxes,
              gt_labels,
              img_metas,
@@ -446,9 +478,6 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update(
                         {'hint_loss_block_{}'.format(j): hint_loss})
             if self.apply_pyramid_wise_alignment:
-                if self.teacher_iou_attention:
-                    flatten_t_pyramid_feature_list = []
-                    flatten_s_pyramid_feature_list = []
                 for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
                     if self.spatial_ratio > 1:
                         s_pyramid_feature = self.t_s_pyramid_align(
@@ -461,41 +490,35 @@ class FCOSTSFullMaskHead(nn.Module):
                             pyramid_hint_pair[0])
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
 
-                    if self.teacher_iou_attention:
-                        flatten_t_pyramid_feature_list.append(
-                            t_pyramid_feature.permute(0, 2, 3, 1).reshape(
-                                -1, self.feat_channels))
-                        flatten_s_pyramid_feature_list.append(
-                            s_pyramid_feature.permute(0, 2, 3, 1).reshape(
-                                -1, self.feat_channels))
-                    else:
-                        pyramid_hint_loss = self.t_hint_loss(
-                            s_pyramid_feature, t_pyramid_feature)
-                    if not self.teacher_iou_attention:
-                        loss_dict.update({
-                            'pyramid_hint_loss_block_{}'.format(j):
-                            pyramid_hint_loss
-                        })
-                if self.teacher_iou_attention:
-                    flatten_t_pyramid_feature = torch.cat(
-                        flatten_t_pyramid_feature_list)
-                    flatten_s_pyramid_feature = torch.cat(
-                        flatten_s_pyramid_feature_list)
-                    pos_t_pyramid_feature = flatten_t_pyramid_feature[
-                        t_pos_inds]
-                    pos_s_pyramid_feature = flatten_s_pyramid_feature[
-                        t_pos_inds]
-                    # update teacher iou > threshold
-                    iou_pos_inds = (t_iou_maps >= self.attention_threshold)
-                    pos_t_pyramid_feature = pos_t_pyramid_feature[iou_pos_inds]
-                    pos_s_pyramid_feature = pos_s_pyramid_feature[iou_pos_inds]
+                    pyramid_hint_loss = self.t_hint_loss(
+                        s_pyramid_feature, t_pyramid_feature)
+                    loss_dict.update({
+                        'pyramid_hint_loss_block_{}'.format(j):
+                        pyramid_hint_loss
+                    })
+            if self.apply_head_wise_alignment:
+                for j, head_hint_pair in enumerate(head_hint_pairs):
+                    cls_head_pair = head_hint_pair[0]
+                    reg_head_pair = head_hint_pair[1]
+                    s_cls_head_feature = self.t_s_cls_head_align(
+                        cls_head_pair[0])
+                    s_reg_head_feature = self.t_s_reg_head_align(
+                        reg_head_pair[0])
+                    t_cls_head_feature = cls_head_pair[1].detach()
+                    t_reg_head_feature = reg_head_pair[1].detach()
 
-                    if len(pos_s_pyramid_feature) != 0:
-                        pyramid_hint_loss = self.t_hint_loss(
-                            pos_s_pyramid_feature, pos_t_pyramid_feature)
-                        loss_dict.update(
-                            {'pyramid_iou_hint_loss_all': pyramid_hint_loss})
-
+                    cls_head_hint_loss = self.t_hint_loss(
+                        s_cls_head_feature, t_cls_head_feature)
+                    reg_head_hint_loss = self.t_hint_loss(
+                        s_reg_head_feature, t_reg_head_feature)
+                    loss_dict.update({
+                        'cls_head_hint_loss_block_{}'.format(j):
+                        cls_head_hint_loss
+                    })
+                    loss_dict.update({
+                        'reg_head_hint_loss_block_{}'.format(j):
+                        reg_head_hint_loss
+                    })
             if self.apply_feature_alignment:
                 if str(self.loss_s_t_cls) == 'MSELoss()':
                     loss_s_t_reg = self.loss_s_t_reg(
@@ -528,14 +551,14 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_iou_inds = (t_s_ious > gt_s_ious).nonzero().reshape(-1)
                     gt_iou_inds = (t_s_ious <= gt_s_ious).nonzero().reshape(-1)
                     merged_gt_bboxes = torch.where(gt_s_ious >= t_s_ious,
-                                                   s_gt_bboxes, t_pred_bboxes).detach()
+                                                   s_gt_bboxes,
+                                                   t_pred_bboxes).detach()
                     s_loss_bbox = self.loss_bbox(
                         s_pred_bboxes,
                         merged_gt_bboxes,
                         weight=pos_centerness_targets,
                         avg_factor=pos_centerness_targets.sum())
-                    loss_dict.update(
-                        s_loss_bbox=s_loss_bbox)
+                    loss_dict.update(s_loss_bbox=s_loss_bbox)
                 if self.apply_adaptive_distillation:
                     if self.spatial_ratio > 1:
                         # upsample student to match the size
