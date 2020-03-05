@@ -33,6 +33,7 @@ class DDBV3Head(nn.Module):
                  weight_balance_threshold=0.5,
                  consistency_weight=False,
                  apply_consistency_on_cls=True,
+                 normalize_centerness=False,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -68,6 +69,7 @@ class DDBV3Head(nn.Module):
         self.weight_balance_threshold = weight_balance_threshold
         self.consistency_weight = consistency_weight
         self.apply_consistency_on_cls = apply_consistency_on_cls
+        self.normalize_centerness = normalize_centerness
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -346,6 +348,10 @@ class DDBV3Head(nn.Module):
 
             pos_centerness_targets = pos_centerness_targets[
                 saved_target_mask].reshape(-1)
+            if self.normalize_centerness:
+                pos_centerness_targets = torch.pow(pos_centerness_targets, 2)
+                pos_centerness_targets = pos_centerness_targets / pos_centerness_targets.max()
+
             pos_inds = flatten_labels.nonzero().reshape(-1)
             num_pos = len(pos_inds)
 
