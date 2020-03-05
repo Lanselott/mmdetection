@@ -1,16 +1,15 @@
 # model settings
 model = dict(
     type='FCOS',
-    pretrained='open-mmlab://resnext101_64x4d',
+    pretrained='open-mmlab://resnet50_caffe',
     backbone=dict(
-        type='ResNeXt',
-        depth=101,
-        groups=64,
-        base_width=4,
+        type='ResNet',
+        depth=50,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
         frozen_stages=1,
-        style='pytorch'),
+        norm_cfg=dict(type='BN', requires_grad=False),
+        style='caffe'),
     neck=dict(
         type='FPN',
         in_channels=[256, 512, 1024, 2048],
@@ -27,16 +26,18 @@ model = dict(
         stacked_convs=4,
         feat_channels=256,
         strides=[8, 16, 32, 64, 128],
+        apply_consistency_on_cls=False,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
-        loss_bbox=dict(type='IoULoss', loss_weight=1.0),
+        loss_bbox=dict(type='GIoULoss', loss_weight=1.0),
         loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
+        bd_threshold=0.0,
         loss_dist_scores=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=2.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings
@@ -54,21 +55,17 @@ test_cfg = dict(
     nms_pre=1000,
     min_bbox_size=0,
     score_thr=0.05,
-    nms=dict(type='nms', iou_thr=0.6),
+    nms=dict(type='nms', iou_thr=0.5),
     max_per_img=100)
 # dataset settings
 dataset_type = 'CocoDataset'
-data_root = 'data/2017/'
+data_root = '/coco/data/2017/'
 img_norm_cfg = dict(
-    mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
+    mean=[102.9801, 115.9465, 122.7717], std=[1.0, 1.0, 1.0], to_rgb=False)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
-    dict(
-        type='Resize',
-        img_scale=[(1333, 640), (1333, 800)],
-        multiscale_mode='value',
-        keep_ratio=True),
+    dict(type='Resize', img_scale=(1333, 800), keep_ratio=True),
     dict(type='RandomFlip', flip_ratio=0.5),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
@@ -79,8 +76,7 @@ test_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(
         type='MultiScaleFlipAug',
-        # img_scale=(1333, 800),
-        img_scale=[(1400, 1000), (1400, 600)],
+        img_scale=(1333, 800),
         flip=False,
         transforms=[
             dict(type='Resize', keep_ratio=True),
@@ -92,22 +88,22 @@ test_pipeline = [
         ])
 ]
 data = dict(
-    imgs_per_gpu=2,
-    workers_per_gpu=2,
+    imgs_per_gpu=4,
+    workers_per_gpu=4,
     train=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_train2017.json',
-        img_prefix=data_root + 'train2017/',
+        img_prefix=data_root + 'images/train2017/',
         pipeline=train_pipeline),
     val=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'val2017/',
+        img_prefix=data_root + 'images/val2017/',
         pipeline=test_pipeline),
     test=dict(
         type=dataset_type,
-        ann_file=data_root + 'annotations/image_info_test-dev2017.json',
-        img_prefix=data_root + 'test2017/',
+        ann_file=data_root + 'annotations/instances_val2017.json',
+        img_prefix=data_root + 'images/val2017/',
         pipeline=test_pipeline))
 # optimizer
 optimizer = dict(
@@ -123,7 +119,7 @@ lr_config = dict(
     warmup='constant',
     warmup_iters=500,
     warmup_ratio=1.0 / 3,
-    step=[16, 22])
+    step=[8, 11])
 checkpoint_config = dict(interval=1)
 # yapf:disable
 log_config = dict(
@@ -134,10 +130,10 @@ log_config = dict(
     ])
 # yapf:enable
 # runtime settings
-total_epochs = 24
+total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
-work_dir = './work_dirs/fcos_mstrain_640_800_x101_64x4d_fpn_gn_2x'
+work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
 load_from = None
 resume_from = None
 workflow = [('train', 1)]

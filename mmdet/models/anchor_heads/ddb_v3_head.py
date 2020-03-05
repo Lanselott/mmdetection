@@ -27,11 +27,12 @@ class DDBV3Head(nn.Module):
                  mask_origin_bbox_loss=False,
                  iou_delta=0.0,
                  apply_iou_cache=False,
-                 mask_sort=True,
+                 mask_sort=False,
                  weighted_mask=False,
                  weight_balance=False,
                  weight_balance_threshold=0.5,
                  consistency_weight=False,
+                 apply_consistency_on_cls=True,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -66,6 +67,7 @@ class DDBV3Head(nn.Module):
         self.weight_balance = weight_balance
         self.weight_balance_threshold = weight_balance_threshold
         self.consistency_weight = consistency_weight
+        self.apply_consistency_on_cls = apply_consistency_on_cls
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -325,8 +327,10 @@ class DDBV3Head(nn.Module):
 
             # cls branch
             reduced_mask = (masks_for_all == 0).nonzero()
-            flatten_labels[pos_inds[
-                reduced_mask]] = 0  # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
+            if self.apply_consistency_on_cls:
+                # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
+                flatten_labels[pos_inds[reduced_mask]] = 0
+
             saved_target_mask = masks_for_all.nonzero().reshape(-1)
             pos_centerness = pos_centerness[saved_target_mask].reshape(-1)
             '''
@@ -457,28 +461,11 @@ class DDBV3Head(nn.Module):
             else:
                 origin_gradient_mask = (_bd_sort_iou <=
                                         (_bd_iou + self.iou_delta)).float()
-            # apply hook to mask origin/sort gradients
-            if self.weighted_mask:
-                sort_gradient_mask_weight = sorted_ious_weights.reshape(
-                    -1, 1).expand(-1, 4)
-                sort_gradient_mask_weight = torch.where(
-                    sort_gradient_mask_weight > 0.3, sort_gradient_mask_weight,
-                    torch.ones(1, device=sort_gradient_mask_weight.device))
-                gradient_mask_weight = torch.where(
-                    _bd_iou > 0.3, _bd_iou,
-                    torch.ones(1, device=_bd_iou.device))
 
-                pos_decoded_sort_bbox_preds.register_hook(
-                    lambda grad: grad * sort_gradient_mask *
-                    sort_gradient_mask_weight)
-                pos_decoded_bbox_preds.register_hook(
-                    lambda grad: grad * origin_gradient_mask *
-                    gradient_mask_weight)
-            else:
-                pos_decoded_sort_bbox_preds.register_hook(
-                    lambda grad: grad * sort_gradient_mask)
-                pos_decoded_bbox_preds.register_hook(
-                    lambda grad: grad * origin_gradient_mask)
+            pos_decoded_sort_bbox_preds.register_hook(
+                lambda grad: grad * sort_gradient_mask)
+            pos_decoded_bbox_preds.register_hook(
+                lambda grad: grad * origin_gradient_mask)
 
             if self.consistency_weight is True:
                 masked_pos_centerness_targets = torch.where(
@@ -498,8 +485,9 @@ class DDBV3Head(nn.Module):
                     avg_factor=masked_pos_centerness_targets.sum())
             else:
                 if self.weight_balance:
-                    selected_ious_inds = (ious_weights <
-                                          self.weight_balance_threshold).nonzero().reshape(-1)
+                    selected_ious_inds = (
+                        ious_weights <
+                        self.weight_balance_threshold).nonzero().reshape(-1)
                     if len(selected_ious_inds) > 0:
                         loss_bbox = self.loss_bbox(
                             pos_decoded_bbox_preds[selected_ious_inds],
