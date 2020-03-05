@@ -30,6 +30,7 @@ class DDBV3Head(nn.Module):
                  mask_sort=True,
                  weighted_mask=False,
                  weight_balance=False,
+                 weight_balance_threshold=0.5,
                  consistency_weight=False,
                  loss_cls=dict(
                      type='FocalLoss',
@@ -63,6 +64,7 @@ class DDBV3Head(nn.Module):
         self.mask_sort = mask_sort
         self.weighted_mask = weighted_mask
         self.weight_balance = weight_balance
+        self.weight_balance_threshold = weight_balance_threshold
         self.consistency_weight = consistency_weight
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
@@ -496,12 +498,15 @@ class DDBV3Head(nn.Module):
                     avg_factor=masked_pos_centerness_targets.sum())
             else:
                 if self.weight_balance:
-                    selected_ious_inds = (ious_weights < 0.5).nonzero().reshape(-1)
+                    selected_ious_inds = (ious_weights <
+                                          self.weight_balance_threshold).nonzero().reshape(-1)
                     if len(selected_ious_inds) > 0:
-                        loss_bbox = self.loss_bbox(pos_decoded_bbox_preds[selected_ious_inds],
-                                                   pos_decoded_target_preds[selected_ious_inds])
+                        loss_bbox = self.loss_bbox(
+                            pos_decoded_bbox_preds[selected_ious_inds],
+                            pos_decoded_target_preds[selected_ious_inds])
                     else:
-                        loss_bbox = pos_decoded_bbox_preds[selected_ious_inds].sum()
+                        loss_bbox = pos_decoded_bbox_preds[
+                            selected_ious_inds].sum()
                 else:
                     loss_bbox = self.loss_bbox(pos_decoded_bbox_preds,
                                                pos_decoded_target_preds)
