@@ -315,11 +315,14 @@ class DDBV3Head(nn.Module):
             if not self.cls_aware:
                 pos_scores, _ = pos_scores.sigmoid().max(1)
             else:
-                pos_scores_list = []
-                for i in range(len(pos_scores)):
-                    pos_scores_list.append(pos_scores[i, pos_labels[i] -
-                                                      1].reshape(-1, 1))
-                pos_scores = torch.cat(pos_scores_list).reshape(-1)
+                cls_pos_inds = torch.arange(
+                    0, len(pos_scores), out=torch.LongTensor())
+                pos_scores = pos_scores[cls_pos_inds, pos_labels[cls_pos_inds] - 1]
+                # pos_scores_list = []
+                # for i in range(len(pos_scores)):
+                #     pos_scores_list.append(pos_scores[i, pos_labels[i] -
+                #                                       1].reshape(-1, 1))
+                # pos_scores = torch.cat(pos_scores_list).reshape(-1)
 
             for dist_conf_mask in dist_conf_mask_list:
                 obj_mask_inds = dist_conf_mask.nonzero().reshape(-1)
