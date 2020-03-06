@@ -34,6 +34,7 @@ class DDBV3Head(nn.Module):
                  consistency_weight=False,
                  apply_consistency_on_cls=True,
                  normalize_centerness=False,
+                 cls_aware=False,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -70,6 +71,7 @@ class DDBV3Head(nn.Module):
         self.consistency_weight = consistency_weight
         self.apply_consistency_on_cls = apply_consistency_on_cls
         self.normalize_centerness = normalize_centerness
+        self.cls_aware = cls_aware
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -310,7 +312,15 @@ class DDBV3Head(nn.Module):
             # if pixel i  regression < mean & classification < mean, label as zero and do not regression on these pixels.
             '''
             pos_scores = flatten_cls_scores[pos_inds]
-            pos_scores, _ = pos_scores.sigmoid().max(1)
+            if not self.cls_aware:
+                pos_scores, _ = pos_scores.sigmoid().max(1)
+            else:
+                pos_scores_list = []
+                for i in range(len(pos_scores)):
+                    pos_scores_list.append(pos_scores[i, pos_labels[i] -
+                                                      1].reshape(-1, 1))
+                pos_scores = torch.cat(pos_scores_list).reshape(-1)
+
             for dist_conf_mask in dist_conf_mask_list:
                 obj_mask_inds = dist_conf_mask.nonzero().reshape(-1)
                 pos_centerness_obj = pos_centerness_targets[obj_mask_inds]
@@ -350,7 +360,8 @@ class DDBV3Head(nn.Module):
                 saved_target_mask].reshape(-1)
             if self.normalize_centerness:
                 pos_centerness_targets = torch.pow(pos_centerness_targets, 2)
-                pos_centerness_targets = pos_centerness_targets / pos_centerness_targets.max()
+                pos_centerness_targets = pos_centerness_targets / pos_centerness_targets.max(
+                )
 
             pos_inds = flatten_labels.nonzero().reshape(-1)
             num_pos = len(pos_inds)
@@ -542,7 +553,8 @@ class DDBV3Head(nn.Module):
                    centernesses,
                    img_metas,
                    cfg,
-                   rescale=None):
+                   rescale=None,
+                   nms=True):
         assert len(cls_scores) == len(bbox_preds) == len(bd_scores_preds)
         num_levels = len(cls_scores)
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
@@ -568,7 +580,8 @@ class DDBV3Head(nn.Module):
                                                 bd_scores_pred_list,
                                                 centerness_pred_list,
                                                 mlvl_points, img_shape,
-                                                scale_factor, cfg, rescale)
+                                                scale_factor, cfg, rescale,
+                                                nms)
             result_list.append(det_bboxes)
         return result_list
 
@@ -581,14 +594,14 @@ class DDBV3Head(nn.Module):
                           img_shape,
                           scale_factor,
                           cfg,
-                          rescale=False):
+                          rescale=False,
+                          nms=True):
         assert len(cls_scores) == len(bbox_preds) == len(mlvl_points) == len(
             bd_scores_preds)
         mlvl_bboxes = []
         mlvl_scores = []
         mlvl_centerness = []
         mlvl_bd_scores = []
-        mlvl_bd_score_factors = []
         for cls_score, bbox_pred, points, centerness, bd_scores_pred, stride in zip(
                 cls_scores, bbox_preds, mlvl_points, centernesses,
                 bd_scores_preds, self.strides):
@@ -602,19 +615,10 @@ class DDBV3Head(nn.Module):
             bd_scores_pred = bd_scores_pred.permute(1, 2,
                                                     0).reshape(-1,
                                                                4).sigmoid()
-            # bd_score_factors = bd_scores_pred.sum(1) / 4
-            bd_score_factors = bd_scores_pred[:,
-                                              0] * bd_scores_pred[:,
-                                                                  1] * bd_scores_pred[:,
-                                                                                      2] * bd_scores_pred[:,
-                                                                                                          3]
-            bd_score_factors = bd_score_factors / bd_score_factors.max()
-
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
                 # max_scores, _ = scores.max(dim=1)
                 max_scores, _ = (scores * centerness[:, None]).max(dim=1)
-                # max_scores, _ = (scores * bd_score_factors[:, None]).max(dim=1)
 
                 _, topk_inds = max_scores.topk(nms_pre)
                 points = points[topk_inds, :]
@@ -622,16 +626,15 @@ class DDBV3Head(nn.Module):
                 bd_scores_pred = bd_scores_pred[topk_inds, :]
                 scores = scores[topk_inds, :]
                 centerness = centerness[topk_inds]
-                bd_score_factors = bd_score_factors[topk_inds]
 
             bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
 
             mlvl_bboxes.append(bboxes)
             mlvl_scores.append(scores)
             mlvl_centerness.append(centerness)
-            mlvl_bd_score_factors.append(bd_score_factors)
             mlvl_bd_scores.append(bd_scores_pred)
         mlvl_bboxes = torch.cat(mlvl_bboxes)
+
         if rescale:
             mlvl_bboxes /= mlvl_bboxes.new_tensor(scale_factor)
         mlvl_scores = torch.cat(mlvl_scores)
@@ -639,29 +642,19 @@ class DDBV3Head(nn.Module):
         mlvl_scores = torch.cat([padding, mlvl_scores], dim=1)
         mlvl_centerness = torch.cat(mlvl_centerness)
         mlvl_bd_scores = torch.cat(mlvl_bd_scores)
-        mlvl_bd_score_factors = torch.cat(mlvl_bd_score_factors)
-        '''
-        det_bboxes, det_labels = multiclass_nms_sorting(
-            mlvl_bboxes,
-            mlvl_scores,
-            mlvl_bd_scores,
-            cfg.score_thr,
-            cfg.nms,
-            cfg.max_per_img)
-            # score_factors=mlvl_bd_score_factors)
-            # score_factors=mlvl_centerness)
-        # embed()
-        '''
-        det_bboxes, det_labels = multiclass_nms(
-            mlvl_bboxes,
-            mlvl_scores,
-            cfg.score_thr,
-            cfg.nms,
-            cfg.max_per_img,
-            # score_factors=mlvl_bd_score_factors)
-            score_factors=mlvl_centerness)
 
-        return det_bboxes, det_labels
+        if nms:
+            det_bboxes, det_labels = multiclass_nms(
+                mlvl_bboxes,
+                mlvl_scores,
+                cfg.score_thr,
+                cfg.nms,
+                cfg.max_per_img,
+                score_factors=mlvl_centerness)
+
+            return det_bboxes, det_labels
+        else:
+            return mlvl_bboxes, mlvl_scores
 
     def get_points(self, featmap_sizes, dtype, device):
         """Get points according to feature map sizes.

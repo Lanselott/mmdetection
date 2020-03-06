@@ -117,14 +117,17 @@ class SingleStageDetector(BaseDetector):
         for x, img_meta in zip(feats, img_metas):
             # only one image in the batch
             outs = self.bbox_head(x)
-            bbox_inputs = outs + (img_meta, self.test_cfg, rescale)
+            bbox_inputs = outs + (img_meta, self.test_cfg, False, False)
             det_bboxes, det_scores = self.bbox_head.get_bboxes(*bbox_inputs)[0]
             aug_bboxes.append(det_bboxes)
             aug_scores.append(det_scores)
         # after merging, bboxes will be rescaled to the original image size
-        det_bboxes, det_labels = self.merge_aug_results(
+        merged_bboxes, merged_scores = self.merge_aug_results(
             aug_bboxes, aug_scores, img_metas)
-     
+        det_bboxes, det_labels = multiclass_nms(merged_bboxes, merged_scores,
+                                                self.test_cfg.score_thr,
+                                                self.test_cfg.nms,
+                                                self.test_cfg.max_per_img)
         if rescale:
             _det_bboxes = det_bboxes
         else:

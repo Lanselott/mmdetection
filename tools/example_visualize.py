@@ -19,7 +19,6 @@ model = init_detector(config_file, checkpoint_file, device='cuda:0')
 i = 0
 for img in imgs:
     result = inference_detector(model, img)
-    embed()
     # or save the visualization results to image files
     # embed()
     show_result(img, result, model.CLASSES, score_thr=0.3, show=False, out_file='result_{}.jpg'.format(i))
