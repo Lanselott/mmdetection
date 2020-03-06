@@ -191,6 +191,8 @@ class FCOSTSFullMaskHead(nn.Module):
     def _init_student_layers(self):
         self.s_cls_convs = nn.ModuleList()
         self.s_reg_convs = nn.ModuleList()
+        self.t_s_reg_head_align = nn.ModuleList()
+        self.t_s_cls_head_align = nn.ModuleList()
 
         for i in range(self.stacked_convs):
             chn = self.s_in_channels if i == 0 else self.s_feat_channels
@@ -228,10 +230,15 @@ class FCOSTSFullMaskHead(nn.Module):
                 self.s_feat_channels, self.feat_channels, 3, padding=1)
 
         if self.apply_head_wise_alignment:
-            self.t_s_reg_head_align = nn.Conv2d(
-                self.s_feat_channels, self.feat_channels, 3, padding=1)
-            self.t_s_cls_head_align = nn.Conv2d(
-                self.s_feat_channels, self.feat_channels, 3, padding=1)
+            for _ in range(self.stacked_convs):
+                self.t_s_reg_head_align.append(
+                    nn.Conv2d(
+                        self.s_feat_channels, self.feat_channels, 3,
+                        padding=1))
+                self.t_s_cls_head_align.append(
+                    nn.Conv2d(
+                        self.s_feat_channels, self.feat_channels, 3,
+                        padding=1))
 
         self.fcos_s_cls = nn.Conv2d(
             self.s_feat_channels, self.cls_out_channels, 3, padding=1)
@@ -265,8 +272,10 @@ class FCOSTSFullMaskHead(nn.Module):
         if self.apply_pyramid_wise_alignment:
             normal_init(self.t_s_pyramid_align, std=0.01)
         if self.apply_head_wise_alignment:
-            normal_init(self.t_s_reg_head_align, std=0.01)
-            normal_init(self.t_s_cls_head_align, std=0.01)
+            for m in self.t_s_cls_head_align:
+                normal_init(m, std=0.01)
+            for m in self.t_s_reg_head_align:
+                normal_init(m, std=0.01)
         if self.freeze_teacher:
             self.freeze_teacher_layers()
 
@@ -313,6 +322,9 @@ class FCOSTSFullMaskHead(nn.Module):
         # student head model
         s_cls_feat = s_x
         s_reg_feat = s_x
+        cls_hint_pairs = []
+        reg_hint_pairs = []
+
         if self.apply_pyramid_wise_alignment:
             pyramid_hint_pairs = []
             pyramid_hint_pairs.append(s_x)
@@ -325,9 +337,7 @@ class FCOSTSFullMaskHead(nn.Module):
             s_cls_feat = cls_s_layer(s_cls_feat)
 
             if self.apply_head_wise_alignment:
-                cls_hint_pairs = []
-                cls_hint_pairs.append(s_cls_feat)
-                cls_hint_pairs.append(t_cls_feat)
+                cls_hint_pairs.append([s_cls_feat, t_cls_feat])
 
             if i == self.align_level:
                 s_align_cls_feat = s_cls_feat
@@ -345,9 +355,7 @@ class FCOSTSFullMaskHead(nn.Module):
             s_reg_feat = s_reg_layer(s_reg_feat)
 
             if self.apply_head_wise_alignment:
-                reg_hint_pairs = []
-                reg_hint_pairs.append(s_reg_feat)
-                reg_hint_pairs.append(t_reg_feat)
+                reg_hint_pairs.append([s_reg_feat, t_reg_feat])
 
             if j == self.align_level:
                 s_align_reg_feat = s_reg_feat
@@ -506,24 +514,31 @@ class FCOSTSFullMaskHead(nn.Module):
                 for j, head_hint_pair in enumerate(head_hint_pairs):
                     cls_head_pair = head_hint_pair[0]
                     reg_head_pair = head_hint_pair[1]
-                    s_cls_head_feature = self.t_s_cls_head_align(
-                        cls_head_pair[0])
-                    s_reg_head_feature = self.t_s_reg_head_align(
-                        reg_head_pair[0])
-                    t_cls_head_feature = cls_head_pair[1].detach()
-                    t_reg_head_feature = reg_head_pair[1].detach()
+                    reg_head_stacked_loss_list = []
+                    cls_head_stacked_loss_list = []
+                    #5 pyramids, each pyramid incudes group of towers
+                    for k in range(self.stacked_convs):
+                        s_cls_head_feature = self.t_s_cls_head_align[k](
+                            cls_head_pair[k][0])
+                        s_reg_head_feature = self.t_s_reg_head_align[k](
+                            reg_head_pair[k][0])
+                        t_cls_head_feature = cls_head_pair[k][1].detach()
+                        t_reg_head_feature = reg_head_pair[k][1].detach()
 
-                    cls_head_hint_loss = self.cls_head_hint_loss(
-                        s_cls_head_feature, t_cls_head_feature)
-                    reg_head_hint_loss = self.reg_head_hint_loss(
-                        s_reg_head_feature, t_reg_head_feature)
-                    loss_dict.update({
-                        'cls_head_hint_loss_block_{}'.format(j):
-                        cls_head_hint_loss
-                    })
+                        cls_head_hint_loss = self.cls_head_hint_loss(
+                            s_cls_head_feature, t_cls_head_feature)
+                        reg_head_hint_loss = self.reg_head_hint_loss(
+                            s_reg_head_feature, t_reg_head_feature)
+
+                        reg_head_stacked_loss_list.append(reg_head_hint_loss)
+                        cls_head_stacked_loss_list.append(cls_head_hint_loss)
                     loss_dict.update({
                         'reg_head_hint_loss_block_{}'.format(j):
-                        reg_head_hint_loss
+                        sum(reg_head_stacked_loss_list)
+                    })
+                    loss_dict.update({
+                        'cls_head_hint_loss_block_{}'.format(j):
+                        sum(cls_head_stacked_loss_list)
                     })
             if self.apply_feature_alignment:
                 if str(self.loss_s_t_cls) == 'MSELoss()':
