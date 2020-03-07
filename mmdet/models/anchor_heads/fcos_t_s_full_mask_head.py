@@ -522,8 +522,8 @@ class FCOSTSFullMaskHead(nn.Module):
                             cls_head_pair[k][0])
                         s_reg_head_feature = self.t_s_reg_head_align[k](
                             reg_head_pair[k][0])
-                        t_cls_head_feature = cls_head_pair[k][1].detach()
-                        t_reg_head_feature = reg_head_pair[k][1].detach()
+                        t_cls_head_feature = cls_head_pair[k][1].detach().sigmoid()
+                        t_reg_head_feature = reg_head_pair[k][1].detach().sigmoid()
 
                         cls_head_hint_loss = self.cls_head_hint_loss(
                             s_cls_head_feature, t_cls_head_feature)
