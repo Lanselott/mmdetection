@@ -57,6 +57,7 @@ model = dict(
         apply_head_wise_alignment=HEAD_ALIGN,
         freeze_teacher=FREEZE_TEACHER,
         block_teacher_attention=False,
+        head_teacher_reg_attention=True,
         attention_threshold=0.5, # duplicate
         # student distillation params
         beta = 1.5,
@@ -65,16 +66,8 @@ model = dict(
         strides=[8, 16, 32, 64, 128],
         t_hint_loss=dict(type='MSELoss', loss_weight=10),
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=10),
-        reg_head_hint_loss=dict(
-            type='CrossEntropyLoss',
-            use_sigmoid=True,
-            reduction='none',
-            loss_weight=1.0),
-        cls_head_hint_loss=dict(
-            type='CrossEntropyLoss',
-            use_sigmoid=True,
-            reduction='none',
-            loss_weight=1.0),
+        reg_head_hint_loss=dict(type='MSELoss', loss_weight=10),
+        cls_head_hint_loss=dict(type='MSELoss', loss_weight=10),
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,

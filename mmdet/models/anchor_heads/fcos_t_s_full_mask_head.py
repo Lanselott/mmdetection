@@ -59,6 +59,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_pyramid_wise_alignment=False,
                  apply_head_wise_alignment=False,
                  block_teacher_attention=False,
+                 head_teacher_reg_attention=False,
                  teacher_iou_attention=False,
                  attention_threshold=0.5,
                  freeze_teacher=False,
@@ -118,6 +119,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
         self.apply_head_wise_alignment = apply_head_wise_alignment
         self.block_teacher_attention = block_teacher_attention
+        self.head_teacher_reg_attention = head_teacher_reg_attention
         self.teacher_iou_attention = teacher_iou_attention
         self.attention_threshold = attention_threshold
         self.freeze_teacher = freeze_teacher
@@ -303,12 +305,6 @@ class FCOSTSFullMaskHead(nn.Module):
         # hint_losses_list = []
         if self.apply_block_wise_alignment:
             hint_pairs = feats[2]
-            # for block_pair in feats[2]:
-            #     aligned_s_feature = block_pair[0]
-            #     t_block_feature = block_pair[1]
-            #     hint_losses_list.append(self.t_hint_loss(aligned_s_feature, t_block_feature.detach()))
-            # hint_losses = tuple(hint_losses_list)
-            # hint_losses += (tuple('N'))
             hint_pairs += tuple('N')
             return multi_apply(self.forward_single, t_feats, s_feats,
                                self.scales, self.s_scales, hint_pairs)
@@ -511,35 +507,77 @@ class FCOSTSFullMaskHead(nn.Module):
                         pyramid_hint_loss
                     })
             if self.apply_head_wise_alignment:
+                t_cls_heads_feature_list = []
+                s_cls_heads_feature_list = []
+                t_reg_heads_feature_list = []
+                s_reg_heads_feature_list = []
                 for j, head_hint_pair in enumerate(head_hint_pairs):
                     cls_head_pair = head_hint_pair[0]
                     reg_head_pair = head_hint_pair[1]
                     reg_head_stacked_loss_list = []
                     cls_head_stacked_loss_list = []
+                    # store temp tensors
+                    t_cls_head_feature_list = []
+                    s_cls_head_feature_list = []
+                    t_reg_head_feature_list = []
+                    s_reg_head_feature_list = []
                     #5 pyramids, each pyramid incudes group of towers
                     for k in range(self.stacked_convs):
                         s_cls_head_feature = self.t_s_cls_head_align[k](
                             cls_head_pair[k][0])
                         s_reg_head_feature = self.t_s_reg_head_align[k](
                             reg_head_pair[k][0])
-                        t_cls_head_feature = cls_head_pair[k][1].detach().sigmoid()
-                        t_reg_head_feature = reg_head_pair[k][1].detach().sigmoid()
+                        t_cls_head_feature = cls_head_pair[k][1].detach()
+                        t_reg_head_feature = reg_head_pair[k][1].detach()
 
-                        cls_head_hint_loss = self.cls_head_hint_loss(
-                            s_cls_head_feature, t_cls_head_feature)
-                        reg_head_hint_loss = self.reg_head_hint_loss(
-                            s_reg_head_feature, t_reg_head_feature)
+                        t_cls_head_feature_list.append(t_cls_head_feature)
+                        s_cls_head_feature_list.append(s_cls_head_feature)
+                        t_reg_head_feature_list.append(t_reg_head_feature)
+                        s_reg_head_feature_list.append(s_reg_head_feature)
 
-                        reg_head_stacked_loss_list.append(reg_head_hint_loss)
-                        cls_head_stacked_loss_list.append(cls_head_hint_loss)
-                    loss_dict.update({
-                        'reg_head_hint_loss_block_{}'.format(j):
-                        sum(reg_head_stacked_loss_list)
-                    })
-                    loss_dict.update({
-                        'cls_head_hint_loss_block_{}'.format(j):
-                        sum(cls_head_stacked_loss_list)
-                    })
+                    t_cls_heads_feature_list.append(
+                        torch.cat(t_cls_head_feature_list,
+                                  1).permute(0, 2, 3, 1).reshape(
+                                      -1,
+                                      self.stacked_convs * self.feat_channels))
+                    s_cls_heads_feature_list.append(
+                        torch.cat(s_cls_head_feature_list,
+                                  1).permute(0, 2, 3, 1).reshape(
+                                      -1,
+                                      self.stacked_convs * self.feat_channels))
+                    t_reg_heads_feature_list.append(
+                        torch.cat(t_reg_head_feature_list,
+                                  1).permute(0, 2, 3, 1).reshape(
+                                      -1,
+                                      self.stacked_convs * self.feat_channels))
+                    s_reg_heads_feature_list.append(
+                        torch.cat(s_reg_head_feature_list,
+                                  1).permute(0, 2, 3, 1).reshape(
+                                      -1,
+                                      self.stacked_convs * self.feat_channels))
+                t_cls_heads_feature_list = torch.cat(t_cls_heads_feature_list,
+                                                     0)
+                s_cls_heads_feature_list = torch.cat(s_cls_heads_feature_list,
+                                                     0)
+                t_reg_heads_feature_list = torch.cat(t_reg_heads_feature_list,
+                                                     0)
+                s_reg_heads_feature_list = torch.cat(s_reg_heads_feature_list,
+                                                     0)
+                if not self.head_teacher_reg_attention:
+                    reg_head_hint_loss = self.reg_head_hint_loss(
+                        s_reg_heads_feature_list, t_reg_heads_feature_list)
+                else:
+                    pos_t_reg_heads_feature = t_reg_heads_feature_list[
+                        t_pos_inds]
+                    pos_s_reg_heads_feature = s_reg_heads_feature_list[
+                        t_pos_inds]
+                    reg_head_hint_loss = self.reg_head_hint_loss(
+                        pos_s_reg_heads_feature, pos_t_reg_heads_feature)
+                cls_head_hint_loss = self.cls_head_hint_loss(
+                    s_cls_heads_feature_list, t_cls_heads_feature_list)
+                loss_dict.update({'reg_head_hint_loss': reg_head_hint_loss})
+                loss_dict.update({'cls_head_hint_loss': cls_head_hint_loss})
+
             if self.apply_feature_alignment:
                 if str(self.loss_s_t_cls) == 'MSELoss()':
                     loss_s_t_reg = self.loss_s_t_reg(
