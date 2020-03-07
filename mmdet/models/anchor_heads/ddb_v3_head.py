@@ -34,6 +34,7 @@ class DDBV3Head(nn.Module):
                  consistency_weight=False,
                  apply_consistency_on_cls=True,
                  normalize_centerness=False,
+                 apply_cls_ignore_area=True,
                  cls_aware=False,
                  loss_cls=dict(
                      type='FocalLoss',
@@ -71,6 +72,7 @@ class DDBV3Head(nn.Module):
         self.consistency_weight = consistency_weight
         self.apply_consistency_on_cls = apply_consistency_on_cls
         self.normalize_centerness = normalize_centerness
+        self.apply_cls_ignore_area = apply_cls_ignore_area
         self.cls_aware = cls_aware
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
@@ -343,8 +345,14 @@ class DDBV3Head(nn.Module):
             # cls branch
             reduced_mask = (masks_for_all == 0).nonzero()
             if self.apply_consistency_on_cls:
-                # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
-                flatten_labels[pos_inds[reduced_mask]] = 0
+                if self.apply_cls_ignore_area:
+                    flatten_labels[pos_inds[reduced_mask]] = -1
+                    saved_inds = (flatten_labels != -1).nonzero().reshape(-1)
+                    flatten_labels = flatten_labels[saved_inds]
+                    flatten_cls_scores = flatten_cls_scores[saved_inds]
+                else:
+                    # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
+                    flatten_labels[pos_inds[reduced_mask]] = 0
 
             saved_target_mask = masks_for_all.nonzero().reshape(-1)
             pos_centerness = pos_centerness[saved_target_mask].reshape(-1)

@@ -31,6 +31,7 @@ model = dict(
         apply_iou_cache=False,
         weight_balance=True,
         normalize_centerness=False,
+        apply_cls_ignore_area=True,
         cls_aware=True,
         mask_sort=False,
         weighted_mask=False,
