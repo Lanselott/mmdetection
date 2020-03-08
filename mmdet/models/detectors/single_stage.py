@@ -84,7 +84,7 @@ class SingleStageDetector(BaseDetector):
         ]
         return bbox_results[0]
 
-    def merge_aug_results(self, aug_bboxes, aug_scores, img_metas):
+    def merge_aug_results(self, aug_bboxes, aug_scores, aug_centernesses,img_metas):
         """Merge augmented detection bboxes and scores.
 
         Args:
@@ -107,7 +107,12 @@ class SingleStageDetector(BaseDetector):
             return bboxes
         else:
             scores = torch.cat(aug_scores, dim=0)
-            return bboxes, scores
+            if aug_centernesses is None:
+                return bboxes, scores
+            else:
+                centernesses = torch.cat(aug_centernesses, dim=0)
+                return bboxes, scores, centernesses
+
 
     def aug_test(self, imgs, img_metas, rescale=False):
         # recompute feats to save memory
@@ -115,20 +120,23 @@ class SingleStageDetector(BaseDetector):
 
         aug_bboxes = []
         aug_scores = []
+        aug_centernesses = []
+
         for x, img_meta in zip(feats, img_metas):
             # only one image in the batch
             outs = self.bbox_head(x)
             bbox_inputs = outs + (img_meta, self.test_cfg, False, False)
-            det_bboxes, det_scores = self.bbox_head.get_bboxes(*bbox_inputs)[0]
+            det_bboxes, det_scores,det_centerness = self.bbox_head.get_bboxes(*bbox_inputs)[0]
             aug_bboxes.append(det_bboxes)
             aug_scores.append(det_scores)
+            aug_centernesses.append(det_centerness)
         # after merging, bboxes will be rescaled to the original image size
-        merged_bboxes, merged_scores = self.merge_aug_results(
-            aug_bboxes, aug_scores, img_metas)
+        merged_bboxes, merged_scores, merged_centernesses = self.merge_aug_results(
+            aug_bboxes, aug_scores, aug_centernesses, img_metas)
         det_bboxes, det_labels = multiclass_nms(merged_bboxes, merged_scores,
                                                 self.test_cfg.score_thr,
                                                 self.test_cfg.nms,
-                                                self.test_cfg.max_per_img)
+                                                self.test_cfg.max_per_img,score_factors=merged_centernesses)
         if rescale:
             _det_bboxes = det_bboxes
         else:

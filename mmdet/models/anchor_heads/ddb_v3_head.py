@@ -665,7 +665,7 @@ class DDBV3Head(nn.Module):
 
             return det_bboxes, det_labels
         else:
-            return mlvl_bboxes, mlvl_scores
+            return mlvl_bboxes, mlvl_scores, mlvl_centerness
 
     def get_points(self, featmap_sizes, dtype, device):
         """Get points according to feature map sizes.

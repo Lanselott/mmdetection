@@ -193,8 +193,9 @@ class FCOSTSFullMaskHead(nn.Module):
     def _init_student_layers(self):
         self.s_cls_convs = nn.ModuleList()
         self.s_reg_convs = nn.ModuleList()
-        self.t_s_reg_head_align = nn.ModuleList()
-        self.t_s_cls_head_align = nn.ModuleList()
+
+        self.s_t_reg_head_align = nn.ModuleList()
+        self.s_t_cls_head_align = nn.ModuleList()
 
         for i in range(self.stacked_convs):
             chn = self.s_in_channels if i == 0 else self.s_feat_channels
@@ -232,15 +233,28 @@ class FCOSTSFullMaskHead(nn.Module):
                 self.s_feat_channels, self.feat_channels, 3, padding=1)
 
         if self.apply_head_wise_alignment:
-            for _ in range(self.stacked_convs):
-                self.t_s_reg_head_align.append(
-                    nn.Conv2d(
-                        self.s_feat_channels, self.feat_channels, 3,
-                        padding=1))
-                self.t_s_cls_head_align.append(
-                    nn.Conv2d(
-                        self.s_feat_channels, self.feat_channels, 3,
-                        padding=1))
+            for i in range(self.stacked_convs):
+                # s->t
+                self.s_t_reg_head_align.append(
+                    ConvModule(
+                        self.s_feat_channels,
+                        self.feat_channels,
+                        3,
+                        stride=1,
+                        padding=1,
+                        conv_cfg=self.conv_cfg,
+                        norm_cfg=self.norm_cfg,
+                        bias=self.norm_cfg is None))
+                self.s_t_cls_head_align.append(
+                    ConvModule(
+                        self.s_feat_channels,
+                        self.feat_channels,
+                        3,
+                        stride=1,
+                        padding=1,
+                        conv_cfg=self.conv_cfg,
+                        norm_cfg=self.norm_cfg,
+                        bias=self.norm_cfg is None))
 
         self.fcos_s_cls = nn.Conv2d(
             self.s_feat_channels, self.cls_out_channels, 3, padding=1)
@@ -274,10 +288,10 @@ class FCOSTSFullMaskHead(nn.Module):
         if self.apply_pyramid_wise_alignment:
             normal_init(self.t_s_pyramid_align, std=0.01)
         if self.apply_head_wise_alignment:
-            for m in self.t_s_cls_head_align:
-                normal_init(m, std=0.01)
-            for m in self.t_s_reg_head_align:
-                normal_init(m, std=0.01)
+            for m in self.s_t_cls_head_align:
+                normal_init(m.conv, std=0.01)
+            for m in self.s_t_reg_head_align:
+                normal_init(m.conv, std=0.01)
         if self.freeze_teacher:
             self.freeze_teacher_layers()
 
@@ -511,6 +525,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 s_cls_heads_feature_list = []
                 t_reg_heads_feature_list = []
                 s_reg_heads_feature_list = []
+                # pyramids
                 for j, head_hint_pair in enumerate(head_hint_pairs):
                     cls_head_pair = head_hint_pair[0]
                     reg_head_pair = head_hint_pair[1]
@@ -521,11 +536,11 @@ class FCOSTSFullMaskHead(nn.Module):
                     s_cls_head_feature_list = []
                     t_reg_head_feature_list = []
                     s_reg_head_feature_list = []
-                    #5 pyramids, each pyramid incudes group of towers
+                    # towers
                     for k in range(self.stacked_convs):
-                        s_cls_head_feature = self.t_s_cls_head_align[k](
+                        s_cls_head_feature = self.s_t_cls_head_align[k](
                             cls_head_pair[k][0])
-                        s_reg_head_feature = self.t_s_reg_head_align[k](
+                        s_reg_head_feature = self.s_t_reg_head_align[k](
                             reg_head_pair[k][0])
                         t_cls_head_feature = cls_head_pair[k][1].detach()
                         t_reg_head_feature = reg_head_pair[k][1].detach()
