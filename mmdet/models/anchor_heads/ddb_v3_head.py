@@ -332,11 +332,19 @@ class DDBV3Head(nn.Module):
                 pos_scores_obj = pos_scores[obj_mask_inds]
                 # pos_scores_obj = pos_scores
                 # mean IoU of an object
-                regression_reduced_threshold = pos_centerness_obj.mean()
-                classification_reduced_threshold = pos_scores_obj.mean()
+                regression_reduced_mean = pos_centerness_obj.mean()
+                classification_reduced_mean = pos_scores_obj.mean()
 
-                regression_mask = pos_centerness_obj < regression_reduced_threshold
-                classification_mask = pos_scores_obj < classification_reduced_threshold
+                regression_reduced_median = pos_centerness_obj.median()
+                classification_reduced_median = pos_scores_obj.median()
+                
+                if classification_reduced_mean < classification_reduced_median:
+                    self.apply_cls_ignore_area = False
+                else:
+                    self.apply_cls_ignore_area = True
+
+                regression_mask = pos_centerness_obj < regression_reduced_mean
+                classification_mask = pos_scores_obj < classification_reduced_mean
 
                 # consistency:
                 consistency_mask = (regression_mask + classification_mask) == 2
