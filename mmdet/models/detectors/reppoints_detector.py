@@ -70,7 +70,6 @@ class RepPointsDetector(SingleStageDetector):
                                                 self.test_cfg.score_thr,
                                                 self.test_cfg.nms,
                                                 self.test_cfg.max_per_img)
-        
         if rescale:
             _det_bboxes = det_bboxes
         else:

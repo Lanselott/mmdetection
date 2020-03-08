@@ -7,6 +7,7 @@ from ..registry import DETECTORS
 from .base import BaseDetector
 from IPython import embed
 
+
 @DETECTORS.register_module
 class SingleStageDetector(BaseDetector):
     """Base class for single-stage detectors.
