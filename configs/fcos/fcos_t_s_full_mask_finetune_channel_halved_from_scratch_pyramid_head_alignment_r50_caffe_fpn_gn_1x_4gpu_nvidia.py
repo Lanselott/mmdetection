@@ -1,6 +1,6 @@
 # model settings
 BLOCK_ALIGN=False
-PYRAMID_ALIGN=True
+PYRAMID_ALIGN=False
 HEAD_ALIGN=True
 FREEZE_TEACHER=True
 RATIO=2
@@ -57,7 +57,7 @@ model = dict(
         apply_head_wise_alignment=HEAD_ALIGN,
         freeze_teacher=FREEZE_TEACHER,
         block_teacher_attention=False,
-        head_teacher_reg_attention=False,
+        head_teacher_reg_attention=True,
         attention_threshold=0.5, # duplicate
         # student distillation params
         beta = 1.5,
