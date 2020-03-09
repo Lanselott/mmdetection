@@ -137,7 +137,7 @@ class DDBV3Head(nn.Module):
                 self.feat_channels, 1, 3, padding=1)
         else:
             kernel_size = 3
-            deformable_groups = 4
+            deformable_groups = 1
             offset_channels = kernel_size * kernel_size * 2
 
             self.reg_offset = nn.Conv2d(
