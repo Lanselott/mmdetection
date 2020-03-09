@@ -129,9 +129,9 @@ class DDBV3Head(nn.Module):
                     bias=self.norm_cfg is None))
 
         self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
+        self.fcos_cls = nn.Conv2d(
+            self.feat_channels, self.cls_out_channels, 3, padding=1)
         if not self.use_deformable:
-            self.fcos_cls = nn.Conv2d(
-                self.feat_channels, self.cls_out_channels, 3, padding=1)
             self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
             self.fcos_centerness = nn.Conv2d(
                 self.feat_channels, 1, 3, padding=1)
@@ -139,18 +139,6 @@ class DDBV3Head(nn.Module):
             kernel_size = 3
             deformable_groups = 4
             offset_channels = kernel_size * kernel_size * 2
-
-            self.cls_offset = nn.Conv2d(
-                self.feat_channels,
-                deformable_groups * offset_channels,
-                1,
-                bias=False)
-            self.cls_adaption = DeformConv(
-                self.feat_channels,
-                self.cls_out_channels,
-                kernel_size=kernel_size,
-                padding=(kernel_size - 1) // 2,
-                deformable_groups=deformable_groups)
 
             self.reg_offset = nn.Conv2d(
                 self.feat_channels,
@@ -191,14 +179,12 @@ class DDBV3Head(nn.Module):
         normal_init(self.fcos_bd_scores, std=0.01)
 
         if self.use_deformable:
-            normal_init(self.cls_offset, std=0.1, bias=bias_cls)
-            normal_init(self.cls_adaption, std=0.01, bias=bias_cls)
+            normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
             normal_init(self.reg_offset, std=0.1)
             normal_init(self.reg_adaption, std=0.01)
             normal_init(self.centerness_offset, std=0.1)
             normal_init(self.centerness_adaption, std=0.01)
         else:
-            normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
             normal_init(self.fcos_reg, std=0.01)
             normal_init(self.fcos_centerness, std=0.01)
 
@@ -212,12 +198,8 @@ class DDBV3Head(nn.Module):
         for cls_layer in self.cls_convs:
             cls_feat = cls_layer(cls_feat)
 
-        if not self.use_deformable:
-            cls_score = self.fcos_cls(cls_feat)
-        else:
-            cls_offset = self.cls_offset(cls_feat.detach())
-            cls_score = self.cls_adaption(cls_feat, cls_offset)
-
+        cls_score = self.fcos_cls(cls_feat)
+       
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
 
