@@ -57,7 +57,7 @@ model = dict(
         apply_head_wise_alignment=HEAD_ALIGN,
         freeze_teacher=FREEZE_TEACHER,
         block_teacher_attention=False,
-        head_teacher_reg_attention=True,
+        head_teacher_reg_attention=False,
         attention_threshold=0.5, # duplicate
         # student distillation params
         beta = 1.5,
