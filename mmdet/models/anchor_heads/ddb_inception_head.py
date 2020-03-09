@@ -25,6 +25,7 @@ class DDBInceptionHead(nn.Module):
                  strides=(4, 8, 16, 32, 64),
                  regress_ranges=((-1, 64), (64, 128), (128, 256), (256, 512),
                                  (512, INF)),
+                 use_deformable=False,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -32,9 +33,13 @@ class DDBInceptionHead(nn.Module):
                      alpha=0.25,
                      loss_weight=1.0),
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
-                 loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),     
-                 loss_centerness=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-                 loss_dist_scores=dict(type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
+                 loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),
+                 loss_centerness=dict(
+                     type='CrossEntropyLoss',
+                     use_sigmoid=True,
+                     loss_weight=1.0),
+                 loss_dist_scores=dict(
+                     type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
         super(DDBInceptionHead, self).__init__()
@@ -45,6 +50,7 @@ class DDBInceptionHead(nn.Module):
         self.feat_channels = feat_channels
         self.stacked_convs = stacked_convs
         self.strides = strides
+        self.use_deformable = use_deformable
         self.regress_ranges = regress_ranges
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
@@ -83,23 +89,19 @@ class DDBInceptionHead(nn.Module):
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
-        
+
         for _ in range(2):
             self.bd_convs.append(
                 ConvModule(
-                        chn,
-                        self.feat_channels,
-                        3,
-                        stride=1,
-                        padding=1,
-                        conv_cfg=self.conv_cfg,
-                        norm_cfg=self.norm_cfg,
-                        bias=self.norm_cfg is None))
+                    chn,
+                    self.feat_channels,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=self.norm_cfg is None))
 
-        self.fcos_cls = nn.Conv2d(
-            self.feat_channels, self.cls_out_channels, 3, padding=1)
-        self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
-        self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
         self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.relu = nn.ReLU(inplace=True)
 
@@ -128,7 +130,7 @@ class DDBInceptionHead(nn.Module):
             cls_feat = cls_layer(cls_feat)
 
         cls_score = self.fcos_cls(cls_feat)
-        
+
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
         # trick: centerness to reg branch
@@ -142,12 +144,12 @@ class DDBInceptionHead(nn.Module):
         '''
         bbox_pred = scale(self.fcos_reg(reg_feat))
         bbox_pred = self.relu(bbox_pred)
-        
+
         for bd_layer in self.bd_convs:
             bd_feat = bd_layer(reg_feat.detach())
 
         bd_scores_pred = self.fcos_bd_scores(bd_feat)
-        
+
         return cls_score, bbox_pred, bd_scores_pred, centerness
 
     # def regression_hook()
@@ -163,7 +165,8 @@ class DDBInceptionHead(nn.Module):
              cfg,
              gt_bboxes_ignore=None):
 
-        assert len(cls_scores) == len(bbox_preds) == len(centernesses) == len(bd_scores_preds)
+        assert len(cls_scores) == len(bbox_preds) == len(centernesses) == len(
+            bd_scores_preds)
         dist_conf_mask_list = []
 
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
@@ -173,10 +176,10 @@ class DDBInceptionHead(nn.Module):
         normalized bbox: bbox_targets
         origin bbox: bbox_origins
         '''
-        labels, bbox_targets, bbox_strided_targets, bbox_strides = self.fcos_target(all_level_points, gt_bboxes,
-                                                gt_labels)
+        labels, bbox_targets, bbox_strided_targets, bbox_strides = self.fcos_target(
+            all_level_points, gt_bboxes, gt_labels)
         num_imgs = cls_scores[0].size(0)
-        # flatten cls_scores, bbox_preds 
+        # flatten cls_scores, bbox_preds
         flatten_cls_scores = [
             cls_score.permute(0, 2, 3, 1).reshape(-1, self.cls_out_channels)
             for cls_score in cls_scores
@@ -200,7 +203,7 @@ class DDBInceptionHead(nn.Module):
         flatten_bd_scores_preds = torch.cat(flatten_bd_scores_preds)
         flatten_centerness = torch.cat(flatten_centerness)
         flatten_labels = torch.cat(labels)
-        
+
         flatten_bbox_targets = torch.cat(bbox_targets)
         flatten_bbox_strided_targets = torch.cat(bbox_strided_targets)
         flatten_bbox_strides = torch.cat(bbox_strides)
@@ -219,8 +222,6 @@ class DDBInceptionHead(nn.Module):
         pos_centerness = flatten_centerness[pos_inds]
         pos_labels = flatten_labels[pos_inds]
         pos_bd_scores_preds = flatten_bd_scores_preds[pos_inds]
-        
-
         '''
         # BUG: do not use
         for id in range(1, len(pos_labels)):
@@ -231,24 +232,29 @@ class DDBInceptionHead(nn.Module):
                 instance_counter[id] = start_id
         instance_counter = instance_counter.int()
         '''
-            
+
         if num_pos > 0:
             pos_points = flatten_points[pos_inds]
             '''
             NOTE: 
             Strided box and Origin box
             '''
-            pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds * pos_bbox_strides)
-            pos_decoded_bbox_strided_preds = distance2bbox(pos_points, pos_bbox_preds)
-            pos_decoded_strided_targets = distance2bbox(pos_points, 
-                                                        pos_bbox_strided_targets)
+            pos_decoded_bbox_preds = distance2bbox(
+                pos_points, pos_bbox_preds * pos_bbox_strides)
+            pos_decoded_bbox_strided_preds = distance2bbox(
+                pos_points, pos_bbox_preds)
+            pos_decoded_strided_targets = distance2bbox(
+                pos_points, pos_bbox_strided_targets)
             pos_decoded_target_preds = distance2bbox(pos_points,
                                                      pos_bbox_targets)
             # create centerness targets, iou based, NOTE: strided as FCOS implementation
             '''
             pos_centerness_targets = bbox_overlaps(pos_decoded_bbox_strided_preds.clone().detach(), pos_decoded_strided_targets, is_aligned=True)
             '''
-            pos_centerness_targets = bbox_overlaps(pos_decoded_bbox_preds.clone().detach(), pos_decoded_target_preds, is_aligned=True)
+            pos_centerness_targets = bbox_overlaps(
+                pos_decoded_bbox_preds.clone().detach(),
+                pos_decoded_target_preds,
+                is_aligned=True)
             '''
             sorting bbox branch
             '''
@@ -259,21 +265,23 @@ class DDBInceptionHead(nn.Module):
             instance_counter = torch.zeros(num_pos, device=pos_labels.device)
             remove = torch.zeros(num_pos, device=pos_labels.device)
             obj_id = 0
-            
+
             # NOTE: get mask for each obj
             for i in range(len(pos_decoded_target_preds)):
                 if remove[i] == 0:
-                    current_bbox = pos_decoded_target_preds[i]                
-                    mask = ((pos_decoded_target_preds == current_bbox).sum(1)==4).nonzero()
+                    current_bbox = pos_decoded_target_preds[i]
+                    mask = ((pos_decoded_target_preds == current_bbox
+                             ).sum(1) == 4).nonzero()
                     instance_counter[mask] = obj_id
                     remove[mask] = 1
                     obj_id += 1
 
             instance_counter = instance_counter.int()
             obj_ids = torch.bincount(instance_counter).nonzero().int()
-            
+
             for obj_id in obj_ids:
-                dist_conf_mask_list.append((instance_counter==obj_id).float())
+                dist_conf_mask_list.append(
+                    (instance_counter == obj_id).float())
 
             masks_for_all = torch.ones_like(instance_counter).float()
             '''
@@ -293,33 +301,37 @@ class DDBInceptionHead(nn.Module):
 
                 regression_mask = pos_centerness_obj < regression_reduced_threshold
                 classification_mask = pos_scores_obj < classification_reduced_threshold
-                
+
                 # consistency:
                 consistency_mask = (regression_mask + classification_mask) == 2
                 masks_for_all[obj_mask_inds[consistency_mask]] = 0
 
             # cls branch
-            reduced_mask = (masks_for_all==0).nonzero()
-            flatten_labels[pos_inds[reduced_mask]] = 0 # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
+            reduced_mask = (masks_for_all == 0).nonzero()
+            flatten_labels[pos_inds[
+                reduced_mask]] = 0  # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
             saved_target_mask = masks_for_all.nonzero().reshape(-1)
             pos_centerness = pos_centerness[saved_target_mask].reshape(-1)
-            pos_bd_scores_preds = pos_bd_scores_preds[saved_target_mask].reshape(-1, 4)
-            
+            pos_bd_scores_preds = pos_bd_scores_preds[
+                saved_target_mask].reshape(-1, 4)
             '''
             consistency between regression and classification
             '''
             # bbox branch
-            pos_decoded_target_preds = pos_decoded_target_preds[saved_target_mask].reshape(-1, 4)
-            pos_decoded_bbox_preds = pos_decoded_bbox_preds[saved_target_mask].reshape(-1, 4)
-            pos_bbox_strides = pos_bbox_strides[saved_target_mask].reshape(-1, 4)
+            pos_decoded_target_preds = pos_decoded_target_preds[
+                saved_target_mask].reshape(-1, 4)
+            pos_decoded_bbox_preds = pos_decoded_bbox_preds[
+                saved_target_mask].reshape(-1, 4)
+            pos_bbox_strides = pos_bbox_strides[saved_target_mask].reshape(
+                -1, 4)
 
-            pos_centerness_targets = pos_centerness_targets[saved_target_mask].reshape(-1)                
+            pos_centerness_targets = pos_centerness_targets[
+                saved_target_mask].reshape(-1)
             pos_inds = flatten_labels.nonzero().reshape(-1)
             num_pos = len(pos_inds)
-            
-            # NOTE: clone, avoid inplace operations
-            pos_decoded_sort_bbox_preds = pos_decoded_bbox_preds.clone() 
 
+            # NOTE: clone, avoid inplace operations
+            pos_decoded_sort_bbox_preds = pos_decoded_bbox_preds.clone()
             '''
             # NOTE: update sorting rules:
             # 1. first order bboxes (four boundries 'outside' the gt) 
@@ -335,79 +347,119 @@ class DDBInceptionHead(nn.Module):
             pos_dist_scores[:, 2:] = -pos_dist_scores[:, 2:]
             '''
             # beta version of pos_dist_scores
-            pos_dist_scores = torch.abs(pos_decoded_target_preds - pos_decoded_bbox_preds)
-            
-            pos_dist_scores_sorted = torch.abs(pos_decoded_target_preds - pos_decoded_sort_bbox_preds).detach()
+            pos_dist_scores = torch.abs(pos_decoded_target_preds -
+                                        pos_decoded_bbox_preds)
 
-            pos_dist_scores = pos_dist_scores.permute(1, 0).contiguous() # [pos_inds * 4] -> [4 * pos_inds]
-            
-            pos_gradient_update_mapping = torch.zeros_like(pos_dist_scores_sorted, dtype=torch.int64)
+            pos_dist_scores_sorted = torch.abs(
+                pos_decoded_target_preds -
+                pos_decoded_sort_bbox_preds).detach()
 
-            pos_gradient_update_anti_mapping = torch.zeros_like(pos_dist_scores_sorted, dtype=torch.int64)
+            pos_dist_scores = pos_dist_scores.permute(
+                1, 0).contiguous()  # [pos_inds * 4] -> [4 * pos_inds]
+
+            pos_gradient_update_mapping = torch.zeros_like(
+                pos_dist_scores_sorted, dtype=torch.int64)
+
+            pos_gradient_update_anti_mapping = torch.zeros_like(
+                pos_dist_scores_sorted, dtype=torch.int64)
 
             inds_shift = 0
             for dist_conf_mask in dist_conf_mask_list:
-                obj_mask_inds = ((dist_conf_mask[saved_target_mask] + masks_for_all[saved_target_mask]) == 2).nonzero()
+                obj_mask_inds = (
+                    (dist_conf_mask[saved_target_mask] +
+                     masks_for_all[saved_target_mask]) == 2).nonzero()
 
                 # global merging
-                _, sorted_inds = torch.sort(pos_dist_scores[:, obj_mask_inds], dim=1, descending=True)
-                pos_decoded_sort_bbox_preds[obj_mask_inds, 0] = pos_decoded_sort_bbox_preds[obj_mask_inds, 0][sorted_inds[0]].reshape(-1, 1)
-                pos_decoded_sort_bbox_preds[obj_mask_inds, 1] = pos_decoded_sort_bbox_preds[obj_mask_inds, 1][sorted_inds[1]].reshape(-1, 1)
-                pos_decoded_sort_bbox_preds[obj_mask_inds, 2] = pos_decoded_sort_bbox_preds[obj_mask_inds, 2][sorted_inds[2]].reshape(-1, 1)
-                pos_decoded_sort_bbox_preds[obj_mask_inds, 3] = pos_decoded_sort_bbox_preds[obj_mask_inds, 3][sorted_inds[3]].reshape(-1, 1)
+                _, sorted_inds = torch.sort(
+                    pos_dist_scores[:, obj_mask_inds], dim=1, descending=True)
+                pos_decoded_sort_bbox_preds[
+                    obj_mask_inds, 0] = pos_decoded_sort_bbox_preds[
+                        obj_mask_inds, 0][sorted_inds[0]].reshape(-1, 1)
+                pos_decoded_sort_bbox_preds[
+                    obj_mask_inds, 1] = pos_decoded_sort_bbox_preds[
+                        obj_mask_inds, 1][sorted_inds[1]].reshape(-1, 1)
+                pos_decoded_sort_bbox_preds[
+                    obj_mask_inds, 2] = pos_decoded_sort_bbox_preds[
+                        obj_mask_inds, 2][sorted_inds[2]].reshape(-1, 1)
+                pos_decoded_sort_bbox_preds[
+                    obj_mask_inds, 3] = pos_decoded_sort_bbox_preds[
+                        obj_mask_inds, 3][sorted_inds[3]].reshape(-1, 1)
 
-                pos_gradient_update_mapping[obj_mask_inds, 0] = inds_shift + sorted_inds[0]
-                pos_gradient_update_mapping[obj_mask_inds, 1] = inds_shift + sorted_inds[1]
-                pos_gradient_update_mapping[obj_mask_inds, 2] = inds_shift + sorted_inds[2]
-                pos_gradient_update_mapping[obj_mask_inds, 3] = inds_shift + sorted_inds[3]
+                pos_gradient_update_mapping[obj_mask_inds,
+                                            0] = inds_shift + sorted_inds[0]
+                pos_gradient_update_mapping[obj_mask_inds,
+                                            1] = inds_shift + sorted_inds[1]
+                pos_gradient_update_mapping[obj_mask_inds,
+                                            2] = inds_shift + sorted_inds[2]
+                pos_gradient_update_mapping[obj_mask_inds,
+                                            3] = inds_shift + sorted_inds[3]
 
-                pos_gradient_update_anti_mapping[inds_shift + sorted_inds[0], 0] = obj_mask_inds
-                pos_gradient_update_anti_mapping[inds_shift + sorted_inds[1], 1] = obj_mask_inds
-                pos_gradient_update_anti_mapping[inds_shift + sorted_inds[2], 2] = obj_mask_inds
-                pos_gradient_update_anti_mapping[inds_shift + sorted_inds[3], 3] = obj_mask_inds
+                pos_gradient_update_anti_mapping[inds_shift + sorted_inds[0],
+                                                 0] = obj_mask_inds
+                pos_gradient_update_anti_mapping[inds_shift + sorted_inds[1],
+                                                 1] = obj_mask_inds
+                pos_gradient_update_anti_mapping[inds_shift + sorted_inds[2],
+                                                 2] = obj_mask_inds
+                pos_gradient_update_anti_mapping[inds_shift + sorted_inds[3],
+                                                 3] = obj_mask_inds
 
                 inds_shift += sorted_inds.shape[1]
 
-            sorted_ious_weights = bbox_overlaps(pos_decoded_sort_bbox_preds, pos_decoded_target_preds, is_aligned=True).detach()
-            ious_weights = bbox_overlaps(pos_decoded_bbox_preds, pos_decoded_target_preds, is_aligned=True).detach()
+            sorted_ious_weights = bbox_overlaps(
+                pos_decoded_sort_bbox_preds,
+                pos_decoded_target_preds,
+                is_aligned=True).detach()
+            ious_weights = bbox_overlaps(
+                pos_decoded_bbox_preds,
+                pos_decoded_target_preds,
+                is_aligned=True).detach()
 
-            _bd_sort_iou = torch.cat([sorted_ious_weights[pos_gradient_update_anti_mapping[..., 0]].reshape(-1, 1),
-                        sorted_ious_weights[pos_gradient_update_anti_mapping[..., 1]].reshape(-1, 1),
-                        sorted_ious_weights[pos_gradient_update_anti_mapping[..., 2]].reshape(-1, 1),
-                        sorted_ious_weights[pos_gradient_update_anti_mapping[..., 3]].reshape(-1, 1)], 1)
+            _bd_sort_iou = torch.cat([
+                sorted_ious_weights[pos_gradient_update_anti_mapping[..., 0]].
+                reshape(-1, 1), sorted_ious_weights[
+                    pos_gradient_update_anti_mapping[..., 1]].reshape(-1, 1),
+                sorted_ious_weights[pos_gradient_update_anti_mapping[..., 2]].
+                reshape(-1, 1), sorted_ious_weights[
+                    pos_gradient_update_anti_mapping[..., 3]].reshape(-1, 1)
+            ], 1)
             _bd_iou = ious_weights.reshape(-1, 1).repeat(1, 4)
-
             '''
             # NOTE: the grad of sorted branch is in sort order, diff from origin
             '''
             sort_gradient_mask = (_bd_sort_iou > _bd_iou).float()
-            sort_gradient_mask[..., 0] = sort_gradient_mask[pos_gradient_update_mapping[..., 0], 0] 
-            sort_gradient_mask[..., 1] = sort_gradient_mask[pos_gradient_update_mapping[..., 1], 1] 
-            sort_gradient_mask[..., 2] = sort_gradient_mask[pos_gradient_update_mapping[..., 2], 2] 
-            sort_gradient_mask[..., 3] = sort_gradient_mask[pos_gradient_update_mapping[..., 3], 3] 
-            
+            sort_gradient_mask[..., 0] = sort_gradient_mask[
+                pos_gradient_update_mapping[..., 0], 0]
+            sort_gradient_mask[..., 1] = sort_gradient_mask[
+                pos_gradient_update_mapping[..., 1], 1]
+            sort_gradient_mask[..., 2] = sort_gradient_mask[
+                pos_gradient_update_mapping[..., 2], 2]
+            sort_gradient_mask[..., 3] = sort_gradient_mask[
+                pos_gradient_update_mapping[..., 3], 3]
+
             origin_gradient_mask = (_bd_sort_iou <= _bd_iou).float()
-            
-            # apply hook to mask origin/sort gradients 
-            pos_decoded_sort_bbox_preds.register_hook(lambda grad: grad * sort_gradient_mask)
-            pos_decoded_bbox_preds.register_hook(lambda grad: grad * origin_gradient_mask)
+
+            # apply hook to mask origin/sort gradients
+            pos_decoded_sort_bbox_preds.register_hook(
+                lambda grad: grad * sort_gradient_mask)
+            pos_decoded_bbox_preds.register_hook(
+                lambda grad: grad * origin_gradient_mask)
             # print(sort_gradient_mask.sum() / 4 /sort_gradient_mask.shape[0])
             # sorted bboxes
             loss_sorted_bbox = self.loss_sorted_bbox(
-                pos_decoded_sort_bbox_preds,
-                pos_decoded_target_preds)
-                
+                pos_decoded_sort_bbox_preds, pos_decoded_target_preds)
+
             # origin boxes
-            loss_bbox = self.loss_bbox(
-                pos_decoded_bbox_preds,
-                pos_decoded_target_preds)
-            
+            loss_bbox = self.loss_bbox(pos_decoded_bbox_preds,
+                                       pos_decoded_target_preds)
+
             loss_cls = self.loss_cls(
-                flatten_cls_scores, flatten_labels,
+                flatten_cls_scores,
+                flatten_labels,
                 avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
 
             # boundary scores
-            updated_selected_pos_dist_scores_sorted = torch.max(_bd_iou, _bd_sort_iou) 
+            updated_selected_pos_dist_scores_sorted = torch.max(
+                _bd_iou, _bd_sort_iou)
             '''    
             dist_scores_weights = torch.zeros_like(updated_selected_pos_dist_scores_sorted)
             for dist_conf_mask in dist_conf_mask_list:
@@ -416,15 +468,16 @@ class DDBInceptionHead(nn.Module):
                 # print("obj_dist_mean:{}".format(obj_dist_mean))
                 dist_scores_weights[obj_mask_inds] =  (updated_selected_pos_dist_scores_sorted[obj_mask_inds] >= obj_dist_mean).float()
             '''
-            dist_scores_weights = (updated_selected_pos_dist_scores_sorted >= 0.95).float()
+            dist_scores_weights = (updated_selected_pos_dist_scores_sorted >=
+                                   0.95).float()
             loss_dist_scores = self.loss_dist_scores(
                 pos_bd_scores_preds,
                 updated_selected_pos_dist_scores_sorted,
                 weight=dist_scores_weights)
 
-            loss_centerness = self.loss_centerness(pos_centerness, 
-                                                    pos_centerness_targets)
-                                                    
+            loss_centerness = self.loss_centerness(pos_centerness,
+                                                   pos_centerness_targets)
+
         else:
             loss_sorted_bbox = pos_bbox_preds.sum()
             loss_bbox = pos_bbox_preds.sum()
@@ -485,7 +538,8 @@ class DDBInceptionHead(nn.Module):
                           scale_factor,
                           cfg,
                           rescale=False):
-        assert len(cls_scores) == len(bbox_preds) == len(mlvl_points) == len(bd_scores_preds)
+        assert len(cls_scores) == len(bbox_preds) == len(mlvl_points) == len(
+            bd_scores_preds)
         mlvl_bboxes = []
         mlvl_scores = []
         mlvl_centerness = []
@@ -493,17 +547,20 @@ class DDBInceptionHead(nn.Module):
         mlvl_bd_score_factors = []
         embed()
         for cls_score, bbox_pred, points, centerness, bd_scores_pred, stride in zip(
-                cls_scores, bbox_preds, mlvl_points, centernesses, bd_scores_preds, self.strides):
+                cls_scores, bbox_preds, mlvl_points, centernesses,
+                bd_scores_preds, self.strides):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
             centerness = centerness.permute(1, 2, 0).reshape(-1).sigmoid()
             bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
             bbox_pred *= stride
-            bd_scores_pred = bd_scores_pred.permute(1, 2, 0).reshape(-1, 4).sigmoid()
+            bd_scores_pred = bd_scores_pred.permute(1, 2,
+                                                    0).reshape(-1,
+                                                               4).sigmoid()
 
             bd_score_factors = bd_scores_pred.sum(1) / 4
-            
+
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
                 # max_scores, _ = scores.max(dim=1)
@@ -549,10 +606,10 @@ class DDBInceptionHead(nn.Module):
             mlvl_bboxes,
             mlvl_scores,
             cfg.score_thr,
-            dict(type='nms', iou_thr=0.5),# cfg.nms,
+            dict(type='nms', iou_thr=0.5),  # cfg.nms,
             cfg.max_per_img,
             score_factors=mlvl_centerness)
-        
+
         return det_bboxes, det_labels
 
     def get_points(self, featmap_sizes, dtype, device):
@@ -610,7 +667,7 @@ class DDBInceptionHead(nn.Module):
             bbox_targets.split(num_points, 0)
             for bbox_targets in bbox_targets_list
         ]
-       
+
         # concat per level image
         concat_lvl_labels = []
         concat_lvl_bbox_targets = []
@@ -626,11 +683,15 @@ class DDBInceptionHead(nn.Module):
                 torch.cat(
                     [bbox_targets[i] for bbox_targets in bbox_targets_list]))
             concat_lvl_bbox_strided_targets.append(
-                torch.cat(
-                    [bbox_targets[i] / self.strides[i] for bbox_targets in bbox_targets_list]))
+                torch.cat([
+                    bbox_targets[i] / self.strides[i]
+                    for bbox_targets in bbox_targets_list
+                ]))
             concat_lvl_strides.append(
-                torch.cat(
-                    [stride.expand_as(bbox_targets[i]) for bbox_targets in bbox_targets_list]))
+                torch.cat([
+                    stride.expand_as(bbox_targets[i])
+                    for bbox_targets in bbox_targets_list
+                ]))
 
         return concat_lvl_labels, concat_lvl_bbox_targets, concat_lvl_bbox_strided_targets, concat_lvl_strides
 

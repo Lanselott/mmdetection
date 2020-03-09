@@ -6,6 +6,7 @@ from mmdet.core import multi_apply, multiclass_nms, multiclass_nms_sorting, dist
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import bias_init_with_prob, Scale, ConvModule
+from mmdet.ops import DeformConv, MaskedConv2d
 
 from IPython import embed
 
@@ -24,6 +25,7 @@ class DDBV3Head(nn.Module):
                  strides=(4, 8, 16, 32, 64),
                  regress_ranges=((-1, 64), (64, 128), (128, 256), (256, 512),
                                  (512, INF)),
+                 use_deformable=False,
                  mask_origin_bbox_loss=False,
                  iou_delta=0.0,
                  apply_iou_cache=False,
@@ -62,6 +64,7 @@ class DDBV3Head(nn.Module):
         self.stacked_convs = stacked_convs
         self.strides = strides
         self.regress_ranges = regress_ranges
+        self.use_deformable = use_deformable
         self.mask_origin_bbox_loss = mask_origin_bbox_loss
         self.iou_delta = iou_delta
         self.apply_iou_cache = apply_iou_cache
@@ -125,12 +128,53 @@ class DDBV3Head(nn.Module):
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
 
-        self.fcos_cls = nn.Conv2d(
-            self.feat_channels, self.cls_out_channels, 3, padding=1)
-        self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
-        self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
         self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
+        if not self.use_deformable:
+            self.fcos_cls = nn.Conv2d(
+                self.feat_channels, self.cls_out_channels, 3, padding=1)
+            self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
+            self.fcos_centerness = nn.Conv2d(
+                self.feat_channels, 1, 3, padding=1)
+        else:
+            kernel_size = 3
+            deformable_groups = 4
+            offset_channels = kernel_size * kernel_size * 2
 
+            self.cls_offset = nn.Conv2d(
+                self.feat_channels,
+                deformable_groups * offset_channels,
+                1,
+                bias=False)
+            self.cls_adaption = DeformConv(
+                self.feat_channels,
+                self.cls_out_channels,
+                kernel_size=kernel_size,
+                padding=(kernel_size - 1) // 2,
+                deformable_groups=deformable_groups)
+
+            self.reg_offset = nn.Conv2d(
+                self.feat_channels,
+                deformable_groups * offset_channels,
+                1,
+                bias=False)
+            self.reg_adaption = DeformConv(
+                self.feat_channels,
+                4,
+                kernel_size=kernel_size,
+                padding=(kernel_size - 1) // 2,
+                deformable_groups=deformable_groups)
+
+            self.centerness_offset = nn.Conv2d(
+                self.feat_channels,
+                deformable_groups * offset_channels,
+                1,
+                bias=False)
+            self.centerness_adaption = DeformConv(
+                self.feat_channels,
+                1,
+                kernel_size=kernel_size,
+                padding=(kernel_size - 1) // 2,
+                deformable_groups=deformable_groups)
         self.relu = nn.ReLU(inplace=True)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
@@ -144,10 +188,19 @@ class DDBV3Head(nn.Module):
             normal_init(m.conv, std=0.01)
 
         bias_cls = bias_init_with_prob(0.01)
-        normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
-        normal_init(self.fcos_reg, std=0.01)
-        normal_init(self.fcos_centerness, std=0.01)
         normal_init(self.fcos_bd_scores, std=0.01)
+
+        if self.use_deformable:
+            normal_init(self.cls_offset, std=0.1, bias=bias_cls)
+            normal_init(self.cls_adaption, std=0.01, bias=bias_cls)
+            normal_init(self.reg_offset, std=0.1)
+            normal_init(self.reg_adaption, std=0.01)
+            normal_init(self.centerness_offset, std=0.1)
+            normal_init(self.centerness_adaption, std=0.01)
+        else:
+            normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
+            normal_init(self.fcos_reg, std=0.01)
+            normal_init(self.fcos_centerness, std=0.01)
 
     def forward(self, feats):
         return multi_apply(self.forward_single, feats, self.scales)
@@ -159,13 +212,21 @@ class DDBV3Head(nn.Module):
         for cls_layer in self.cls_convs:
             cls_feat = cls_layer(cls_feat)
 
-        cls_score = self.fcos_cls(cls_feat)
+        if not self.use_deformable:
+            cls_score = self.fcos_cls(cls_feat)
+        else:
+            cls_offset = self.cls_offset(cls_feat.detach())
+            cls_score = self.cls_adaption(cls_feat, cls_offset)
 
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
 
         # trick: centerness to reg branch
-        centerness = self.fcos_centerness(reg_feat)
+        if not self.use_deformable:
+            centerness = self.fcos_centerness(reg_feat)
+        else:
+            centerness_offset = self.centerness_offset(reg_feat.detach())
+            centerness = self.centerness_adaption(reg_feat, centerness_offset)
         '''
         # scale the bbox_pred of different level
         bbox_pred = scale(self.fcos_reg(reg_feat)).exp()
@@ -173,7 +234,12 @@ class DDBV3Head(nn.Module):
         '''
         # tricks in https://github.com/tianzhi0549/FCOS/blob/4697f876b5aeead5f60423e0d04ea7e3e1282790/fcos_core/modeling/rpn/fcos/fcos.py
         '''
-        bbox_pred = scale(self.fcos_reg(reg_feat))
+        if not self.use_deformable:
+            bbox_pred = scale(self.fcos_reg(reg_feat))
+        else:
+            reg_offset = self.reg_offset(reg_feat.detach())
+            bbox_pred = scale(self.reg_adaption(reg_feat, reg_offset))
+
         bbox_pred = self.relu(bbox_pred)
 
         for bd_layer in self.bd_convs:
@@ -319,7 +385,8 @@ class DDBV3Head(nn.Module):
             else:
                 cls_pos_inds = torch.arange(
                     0, len(pos_scores), out=torch.LongTensor())
-                pos_scores = pos_scores[cls_pos_inds, pos_labels[cls_pos_inds] - 1]
+                pos_scores = pos_scores[cls_pos_inds,
+                                        pos_labels[cls_pos_inds] - 1]
                 # pos_scores_list = []
                 # for i in range(len(pos_scores)):
                 #     pos_scores_list.append(pos_scores[i, pos_labels[i] -
@@ -337,7 +404,7 @@ class DDBV3Head(nn.Module):
 
                 regression_reduced_median = pos_centerness_obj.median()
                 classification_reduced_median = pos_scores_obj.median()
-                
+
                 if classification_reduced_mean < classification_reduced_median:
                     self.apply_cls_ignore_area = False
                 else:
