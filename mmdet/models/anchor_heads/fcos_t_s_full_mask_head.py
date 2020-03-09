@@ -58,6 +58,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_block_wise_alignment=False,
                  apply_pyramid_wise_alignment=False,
                  apply_head_wise_alignment=False,
+                 cosine_similarity=False,
                  block_teacher_attention=False,
                  head_teacher_reg_attention=False,
                  teacher_iou_attention=False,
@@ -118,6 +119,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_block_wise_alignment = apply_block_wise_alignment
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
         self.apply_head_wise_alignment = apply_head_wise_alignment
+        self.cosine_similarity = cosine_similarity
         self.block_teacher_attention = block_teacher_attention
         self.head_teacher_reg_attention = head_teacher_reg_attention
         self.teacher_iou_attention = teacher_iou_attention
@@ -586,8 +588,11 @@ class FCOSTSFullMaskHead(nn.Module):
                         t_pos_inds]
                     pos_s_reg_heads_feature = s_reg_heads_feature_list[
                         t_pos_inds]
+                    if self.cosine_similarity is True:
+                        self.reg_head_hint_loss = torch.nn.CosineEmbeddingLoss(
+                            margin=0.2, reduction='mean')
                     reg_head_hint_loss = self.reg_head_hint_loss(
-                        pos_s_reg_heads_feature, pos_t_reg_heads_feature)
+                        pos_s_reg_heads_feature, pos_t_reg_heads_feature, torch.ones_like(pos_t_reg_heads_feature[:, 0]))
                 cls_head_hint_loss = self.cls_head_hint_loss(
                     s_cls_heads_feature_list, t_cls_heads_feature_list)
                 loss_dict.update({'reg_head_hint_loss': reg_head_hint_loss})
