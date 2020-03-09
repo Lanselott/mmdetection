@@ -91,7 +91,6 @@ class DDBV3Head(nn.Module):
     def _init_layers(self):
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
-        self.bd_convs = nn.ModuleList()
 
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
@@ -116,19 +115,6 @@ class DDBV3Head(nn.Module):
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
 
-        for _ in range(2):
-            self.bd_convs.append(
-                ConvModule(
-                    chn,
-                    self.feat_channels,
-                    3,
-                    stride=1,
-                    padding=1,
-                    conv_cfg=self.conv_cfg,
-                    norm_cfg=self.norm_cfg,
-                    bias=self.norm_cfg is None))
-
-        self.fcos_bd_scores = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_cls = nn.Conv2d(
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         if not self.use_deformable:
@@ -172,11 +158,8 @@ class DDBV3Head(nn.Module):
             normal_init(m.conv, std=0.01)
         for m in self.reg_convs:
             normal_init(m.conv, std=0.01)
-        for m in self.bd_convs:
-            normal_init(m.conv, std=0.01)
 
         bias_cls = bias_init_with_prob(0.01)
-        normal_init(self.fcos_bd_scores, std=0.01)
 
         if self.use_deformable:
             normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
@@ -199,7 +182,7 @@ class DDBV3Head(nn.Module):
             cls_feat = cls_layer(cls_feat)
 
         cls_score = self.fcos_cls(cls_feat)
-       
+
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
 
@@ -224,19 +207,13 @@ class DDBV3Head(nn.Module):
 
         bbox_pred = self.relu(bbox_pred)
 
-        for bd_layer in self.bd_convs:
-            reg_feat = bd_layer(reg_feat.detach())
-
-        bd_scores_pred = self.fcos_bd_scores(reg_feat)
-
-        return cls_score, bbox_pred, bd_scores_pred, centerness
+        return cls_score, bbox_pred, centerness
 
     # def regression_hook()
 
     def loss(self,
              cls_scores,
              bbox_preds,
-             bd_scores_preds,
              centernesses,
              gt_bboxes,
              gt_labels,
@@ -244,8 +221,7 @@ class DDBV3Head(nn.Module):
              cfg,
              gt_bboxes_ignore=None):
 
-        assert len(cls_scores) == len(bbox_preds) == len(centernesses) == len(
-            bd_scores_preds)
+        assert len(cls_scores) == len(bbox_preds) == len(centernesses)
         dist_conf_mask_list = []
 
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
@@ -617,13 +593,12 @@ class DDBV3Head(nn.Module):
     def get_bboxes(self,
                    cls_scores,
                    bbox_preds,
-                   bd_scores_preds,
                    centernesses,
                    img_metas,
                    cfg,
                    rescale=None,
                    nms=True):
-        assert len(cls_scores) == len(bbox_preds) == len(bd_scores_preds)
+        assert len(cls_scores) == len(bbox_preds)
         num_levels = len(cls_scores)
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         mlvl_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
@@ -636,16 +611,12 @@ class DDBV3Head(nn.Module):
             bbox_pred_list = [
                 bbox_preds[i][img_id].detach() for i in range(num_levels)
             ]
-            bd_scores_pred_list = [
-                bd_scores_preds[i][img_id].detach() for i in range(num_levels)
-            ]
             centerness_pred_list = [
                 centernesses[i][img_id].detach() for i in range(num_levels)
             ]
             img_shape = img_metas[img_id]['img_shape']
             scale_factor = img_metas[img_id]['scale_factor']
             det_bboxes = self.get_bboxes_single(cls_score_list, bbox_pred_list,
-                                                bd_scores_pred_list,
                                                 centerness_pred_list,
                                                 mlvl_points, img_shape,
                                                 scale_factor, cfg, rescale,
@@ -656,7 +627,6 @@ class DDBV3Head(nn.Module):
     def get_bboxes_single(self,
                           cls_scores,
                           bbox_preds,
-                          bd_scores_preds,
                           centernesses,
                           mlvl_points,
                           img_shape,
@@ -664,15 +634,13 @@ class DDBV3Head(nn.Module):
                           cfg,
                           rescale=False,
                           nms=True):
-        assert len(cls_scores) == len(bbox_preds) == len(mlvl_points) == len(
-            bd_scores_preds)
+        assert len(cls_scores) == len(bbox_preds) == len(mlvl_points)
         mlvl_bboxes = []
         mlvl_scores = []
         mlvl_centerness = []
-        mlvl_bd_scores = []
-        for cls_score, bbox_pred, points, centerness, bd_scores_pred, stride in zip(
+        for cls_score, bbox_pred, points, centerness, stride in zip(
                 cls_scores, bbox_preds, mlvl_points, centernesses,
-                bd_scores_preds, self.strides):
+                self.strides):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
@@ -680,9 +648,6 @@ class DDBV3Head(nn.Module):
             bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
             bbox_pred = bbox_pred * stride
 
-            bd_scores_pred = bd_scores_pred.permute(1, 2,
-                                                    0).reshape(-1,
-                                                               4).sigmoid()
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
                 # max_scores, _ = scores.max(dim=1)
@@ -691,7 +656,6 @@ class DDBV3Head(nn.Module):
                 _, topk_inds = max_scores.topk(nms_pre)
                 points = points[topk_inds, :]
                 bbox_pred = bbox_pred[topk_inds, :]
-                bd_scores_pred = bd_scores_pred[topk_inds, :]
                 scores = scores[topk_inds, :]
                 centerness = centerness[topk_inds]
 
@@ -700,7 +664,6 @@ class DDBV3Head(nn.Module):
             mlvl_bboxes.append(bboxes)
             mlvl_scores.append(scores)
             mlvl_centerness.append(centerness)
-            mlvl_bd_scores.append(bd_scores_pred)
         mlvl_bboxes = torch.cat(mlvl_bboxes)
 
         if rescale:
@@ -709,7 +672,6 @@ class DDBV3Head(nn.Module):
         padding = mlvl_scores.new_zeros(mlvl_scores.shape[0], 1)
         mlvl_scores = torch.cat([padding, mlvl_scores], dim=1)
         mlvl_centerness = torch.cat(mlvl_centerness)
-        mlvl_bd_scores = torch.cat(mlvl_bd_scores)
 
         if nms:
             det_bboxes, det_labels = multiclass_nms(
