@@ -588,15 +588,27 @@ class FCOSTSFullMaskHead(nn.Module):
                         t_pos_inds]
                     pos_s_reg_heads_feature = s_reg_heads_feature_list[
                         t_pos_inds]
+                    select_update_reg_inds = (t_iou_maps >
+                                              s_iou_maps).nonzero().reshape(-1)
                     if self.cosine_similarity is True:
                         self.reg_head_hint_loss = torch.nn.CosineEmbeddingLoss(
                             margin=0.2, reduction='mean')
-                    reg_head_hint_loss = self.reg_head_hint_loss(
-                        pos_s_reg_heads_feature, pos_t_reg_heads_feature, torch.ones_like(pos_t_reg_heads_feature[:, 0]))
-                cls_head_hint_loss = self.cls_head_hint_loss(
-                    s_cls_heads_feature_list, t_cls_heads_feature_list)
+                        reg_head_hint_loss = self.reg_head_hint_loss(
+                            pos_s_reg_heads_feature, pos_t_reg_heads_feature,
+                            torch.ones_like(pos_t_reg_heads_feature[:, 0]))
+                    else:
+                        if len(select_update_reg_inds) > 0:
+                            reg_head_hint_loss = self.reg_head_hint_loss(
+                                pos_s_reg_heads_feature[
+                                    select_update_reg_inds],
+                                pos_t_reg_heads_feature[select_update_reg_inds]
+                            )
+                        else:
+                            reg_head_hint_loss = pos_t_reg_heads_feature[select_update_reg_inds].sum()
+                # cls_head_hint_loss = self.cls_head_hint_loss(
+                #     s_cls_heads_feature_list, t_cls_heads_feature_list)
                 loss_dict.update({'reg_head_hint_loss': reg_head_hint_loss})
-                loss_dict.update({'cls_head_hint_loss': cls_head_hint_loss})
+                # loss_dict.update({'cls_head_hint_loss': cls_head_hint_loss})
 
             if self.apply_feature_alignment:
                 if str(self.loss_s_t_cls) == 'MSELoss()':
