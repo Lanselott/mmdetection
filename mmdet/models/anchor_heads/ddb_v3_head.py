@@ -160,9 +160,9 @@ class DDBV3Head(nn.Module):
             normal_init(m.conv, std=0.01)
 
         bias_cls = bias_init_with_prob(0.01)
+        normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
 
         if self.use_deformable:
-            normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
             normal_init(self.reg_offset, std=0.1)
             normal_init(self.reg_adaption, std=0.01)
             normal_init(self.centerness_offset, std=0.1)
@@ -529,21 +529,21 @@ class DDBV3Head(nn.Module):
                 lambda grad: grad * origin_gradient_mask)
 
             if self.consistency_weight is True:
-                masked_pos_centerness_targets = torch.where(
-                    pos_centerness_targets > 0.3, pos_centerness_targets,
-                    torch.ones(1, device=pos_centerness_targets.device))
+                sorted_pos_centerness_targets = torch.max(_bd_sort_iou, _bd_iou)
+                sorted_pos_centerness_targets = sorted_pos_centerness_targets.max(1)[0]
+
                 # sorted bboxes
                 loss_sorted_bbox = self.loss_sorted_bbox(
                     pos_decoded_sort_bbox_preds,
                     pos_decoded_target_preds,
-                    weight=masked_pos_centerness_targets,
-                    avg_factor=masked_pos_centerness_targets.sum())
+                    weight=sorted_pos_centerness_targets,
+                    avg_factor=sorted_pos_centerness_targets.sum())
                 # origin boxes
                 loss_bbox = self.loss_bbox(
                     pos_decoded_bbox_preds,
-                    pos_decoded_target_preds,
-                    weight=masked_pos_centerness_targets,
-                    avg_factor=masked_pos_centerness_targets.sum())
+                    pos_decoded_target_preds)#,
+                    # weight=pos_centerness_targets,
+                    # avg_factor=pos_centerness_targets.sum())
             else:
                 if self.weight_balance:
                     selected_ious_inds = (

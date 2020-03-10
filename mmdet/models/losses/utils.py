@@ -1,7 +1,7 @@
 import functools
 
 import torch.nn.functional as F
-
+from IPython import embed
 
 def reduce_loss(loss, reduction):
     """Reduce loss as specified.
@@ -38,7 +38,7 @@ def weight_reduce_loss(loss, weight=None, reduction='mean', avg_factor=None):
     # if weight is specified, apply element-wise weight
     if weight is not None:
         loss = loss * weight
-
+    
     # if avg_factor is not specified, just reduce the loss
     if avg_factor is None:
         loss = reduce_loss(loss, reduction)
