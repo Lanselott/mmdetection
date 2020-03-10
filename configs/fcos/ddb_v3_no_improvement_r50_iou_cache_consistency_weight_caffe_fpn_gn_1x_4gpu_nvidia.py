@@ -27,9 +27,9 @@ model = dict(
         feat_channels=256,
         strides=[8, 16, 32, 64, 128],
         mask_origin_bbox_loss=False,
-        iou_delta = 0.2,
+        iou_delta = 0.0,
         apply_iou_cache=True,
-        consistency_weight=False,
+        consistency_weight=True,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
@@ -37,7 +37,7 @@ model = dict(
             alpha=0.25,
             loss_weight=1.0),
         loss_bbox=dict(type='IoULoss', loss_weight=1.0),
-        loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),
+        loss_sorted_bbox=dict(type='GIoULoss', loss_weight=2.0),
         bd_threshold=0.0,
         loss_dist_scores=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=2.0),
