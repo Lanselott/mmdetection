@@ -151,7 +151,7 @@ class DDBV3NPHead(nn.Module):
              cfg,
              gt_bboxes_ignore=None):
 
-        assert len(cls_scores) == len(bbox_preds) == len(centernesses) 
+        assert len(cls_scores) == len(bbox_preds) == len(centernesses)
         dist_conf_mask_list = []
 
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
@@ -413,21 +413,14 @@ class DDBV3NPHead(nn.Module):
                                         (_bd_iou + self.iou_delta)).float()
             # apply hook to mask origin/sort gradients
             if self.weighted_mask:
-                sort_gradient_mask_weight = sorted_ious_weights.reshape(
-                    -1, 1).expand(-1, 4)
-                sort_gradient_mask_weight = torch.where(
-                    sort_gradient_mask_weight > 0.7, sort_gradient_mask_weight,
-                    torch.ones(1, device=sort_gradient_mask_weight.device))
-                gradient_mask_weight = torch.where(
-                    _bd_iou > 0.7, _bd_iou,
-                    torch.ones(1, device=_bd_iou.device))
-
                 pos_decoded_sort_bbox_preds.register_hook(
-                    lambda grad: grad * sort_gradient_mask *
-                    sort_gradient_mask_weight)
+                    lambda grad: grad * sort_gradient_mask)
                 pos_decoded_bbox_preds.register_hook(
-                    lambda grad: grad * origin_gradient_mask *
-                    gradient_mask_weight)
+                    lambda grad: grad * origin_gradient_mask)
+            elif self.mask_origin_bbox_loss:
+                origin_gradient_mask = torch.zeros_like(origin_gradient_mask)
+                pos_decoded_bbox_preds.register_hook(
+                    lambda grad: grad * origin_gradient_mask)
             else:
                 pos_decoded_sort_bbox_preds.register_hook(
                     lambda grad: grad * sort_gradient_mask)
@@ -435,8 +428,10 @@ class DDBV3NPHead(nn.Module):
                     lambda grad: grad * origin_gradient_mask)
 
             if self.consistency_weight is True:
-                sorted_pos_centerness_targets = torch.max(_bd_sort_iou, _bd_iou)
-                sorted_pos_centerness_targets = sorted_pos_centerness_targets.max(1)[0]
+                sorted_pos_centerness_targets = torch.max(
+                    _bd_sort_iou, _bd_iou)
+                sorted_pos_centerness_targets = sorted_pos_centerness_targets.max(
+                    1)[0]
                 # sorted bboxes
                 loss_sorted_bbox = self.loss_sorted_bbox(
                     pos_decoded_sort_bbox_preds,
@@ -444,11 +439,10 @@ class DDBV3NPHead(nn.Module):
                     weight=sorted_pos_centerness_targets,
                     avg_factor=sorted_pos_centerness_targets.sum())
                 # origin boxes
-                loss_bbox = self.loss_bbox(
-                    pos_decoded_bbox_preds,
-                    pos_decoded_target_preds)
-                    # weight=pos_centerness_targets,
-                    # avg_factor=pos_centerness_targets.sum())
+                loss_bbox = self.loss_bbox(pos_decoded_bbox_preds,
+                                           pos_decoded_target_preds)
+                # weight=pos_centerness_targets,
+                # avg_factor=pos_centerness_targets.sum())
             else:
                 # sorted bboxes
                 loss_sorted_bbox = self.loss_sorted_bbox(
@@ -467,21 +461,14 @@ class DDBV3NPHead(nn.Module):
 
         else:
             loss_sorted_bbox = pos_bbox_preds.sum()
-            if not self.mask_origin_bbox_loss:
-                loss_bbox = pos_bbox_preds.sum()
-
+            loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
-        if not self.mask_origin_bbox_loss:
-            return dict(
-                loss_cls=loss_cls,
-                loss_bbox=loss_bbox,
-                loss_sorted_bbox=loss_sorted_bbox,
-                loss_centerness=loss_centerness)
-        else:
-            return dict(
-                loss_cls=loss_cls,
-                loss_sorted_bbox=loss_sorted_bbox,
-                loss_centerness=loss_centerness)
+
+        return dict(
+            loss_cls=loss_cls,
+            loss_bbox=loss_bbox,
+            loss_sorted_bbox=loss_sorted_bbox,
+            loss_centerness=loss_centerness)
 
     def get_bboxes(self,
                    cls_scores,
@@ -524,7 +511,7 @@ class DDBV3NPHead(nn.Module):
                           scale_factor,
                           cfg,
                           rescale=False):
-        assert len(cls_scores) == len(bbox_preds) == len(mlvl_points) 
+        assert len(cls_scores) == len(bbox_preds) == len(mlvl_points)
         mlvl_bboxes = []
         mlvl_scores = []
         mlvl_centerness = []
