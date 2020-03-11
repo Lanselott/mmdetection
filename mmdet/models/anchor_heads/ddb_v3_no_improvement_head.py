@@ -435,12 +435,14 @@ class DDBV3NPHead(nn.Module):
                     lambda grad: grad * origin_gradient_mask)
 
             if self.consistency_weight is True:
+                sorted_pos_centerness_targets = torch.max(_bd_sort_iou, _bd_iou)
+                sorted_pos_centerness_targets = sorted_pos_centerness_targets.max(1)[0]
                 # sorted bboxes
                 loss_sorted_bbox = self.loss_sorted_bbox(
                     pos_decoded_sort_bbox_preds,
                     pos_decoded_target_preds,
-                    weight=pos_centerness_targets,
-                    avg_factor=pos_centerness_targets.sum())
+                    weight=sorted_pos_centerness_targets,
+                    avg_factor=sorted_pos_centerness_targets.sum())
                 # origin boxes
                 loss_bbox = self.loss_bbox(
                     pos_decoded_bbox_preds,
