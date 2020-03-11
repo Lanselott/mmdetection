@@ -29,9 +29,10 @@ model = dict(
         mask_origin_bbox_loss=True,
         iou_delta=0.0,
         apply_iou_cache=False,
+        origin_bbox_loss_downgrade=True,
         mask_sort=False,
         weighted_mask=False,
-        consistency_weight=True,
+        consistency_weight=False,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
@@ -39,7 +40,7 @@ model = dict(
             alpha=0.25,
             loss_weight=1.0),
         loss_bbox=dict(type='GIoULoss', loss_weight=1.0),
-        loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),
+        loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
         loss_dist_scores=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_centerness=dict(

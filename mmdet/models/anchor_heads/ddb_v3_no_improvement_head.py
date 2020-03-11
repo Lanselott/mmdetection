@@ -392,11 +392,13 @@ class DDBV3NPHead(nn.Module):
             '''
             # NOTE: the grad of sorted branch is in sort order, diff from origin
             '''
+            downgrade_threshold = 0.8
             if self.apply_iou_cache:
                 sort_gradient_mask = (_bd_sort_iou >
                                       (_bd_iou - self.iou_delta)).float()
             elif self.origin_bbox_loss_downgrade:
-                sort_gradient_mask = ((_bd_sort_iou > _bd_iou) or (_bd_iou < 0.5)).float()
+                sort_gradient_mask = (((_bd_sort_iou > _bd_iou) +
+                                       (_bd_iou < downgrade_threshold)) > 0).float()  # or
             else:
                 sort_gradient_mask = (_bd_sort_iou >
                                       (_bd_iou + self.iou_delta)).float()
@@ -413,8 +415,8 @@ class DDBV3NPHead(nn.Module):
                 origin_gradient_mask = ((_bd_sort_iou - self.iou_delta) <=
                                         _bd_iou).float()
             elif self.origin_bbox_loss_downgrade:
-                origin_gradient_mask = ((_bd_sort_iou <= _bd_iou)
-                                        and (_bd_iou <= 0.5)).float()
+                origin_gradient_mask = (((_bd_sort_iou <= _bd_iou) +
+                                         (_bd_iou <= downgrade_threshold)) == 2).float()  # and
 
             else:
                 origin_gradient_mask = (_bd_sort_iou <=
