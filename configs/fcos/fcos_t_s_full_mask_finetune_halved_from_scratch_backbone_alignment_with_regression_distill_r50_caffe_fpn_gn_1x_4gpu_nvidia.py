@@ -1,5 +1,7 @@
 # model settings
-ALIGN = True
+BLOCK_ALIGN=False
+PYRAMID_ALIGN=True
+HEAD_ALIGN=False
 FREEZE_TEACHER=True
 RATIO = 2
 model = dict(
@@ -15,7 +17,7 @@ model = dict(
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe',
         t_hint_loss=dict(type='MSELoss', loss_weight=1),
-        apply_block_wise_alignment=ALIGN),
+        apply_block_wise_alignment=BLOCK_ALIGN),
     neck=dict(
         type='FPNTS',
         in_channels=[256, 512, 1024, 2048],
@@ -28,7 +30,7 @@ model = dict(
         extra_convs_on_inputs=False,  # use P5
         num_outs=5,
         relu_before_extra_convs=True,
-        apply_block_wise_alignment=ALIGN,
+        apply_block_wise_alignment=BLOCK_ALIGN,
         freeze_teacher=FREEZE_TEACHER),
     bbox_head=dict(
         type='FCOSTSFullMaskHead',
@@ -48,7 +50,8 @@ model = dict(
         apply_adaptive_distillation=False,
         temperature=1,
         align_level=0,
-        apply_block_wise_alignment=ALIGN,
+        apply_block_wise_alignment=BLOCK_ALIGN,
+        apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         freeze_teacher=FREEZE_TEACHER,
         # student distillation params
         beta=1.5,

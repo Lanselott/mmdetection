@@ -604,7 +604,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                 pos_t_reg_heads_feature[select_update_reg_inds]
                             )
                         else:
-                            reg_head_hint_loss = pos_t_reg_heads_feature[select_update_reg_inds].sum()
+                            reg_head_hint_loss = pos_t_reg_heads_feature[
+                                select_update_reg_inds].sum()
                 # cls_head_hint_loss = self.cls_head_hint_loss(
                 #     s_cls_heads_feature_list, t_cls_heads_feature_list)
                 loss_dict.update({'reg_head_hint_loss': reg_head_hint_loss})
@@ -634,21 +635,34 @@ class FCOSTSFullMaskHead(nn.Module):
                     # calcuate iou of student boxes with teacher boxes and ground truths
                     # choose the better iou as guidance
                     t_s_ious = bbox_overlaps(
-                        s_pred_bboxes, t_pred_bboxes,
-                        is_aligned=True).reshape(-1, 1).expand(-1, 4)
+                        s_pred_bboxes, t_pred_bboxes, is_aligned=True)
                     gt_s_ious = bbox_overlaps(
-                        s_pred_bboxes, s_gt_bboxes,
-                        is_aligned=True).reshape(-1, 1).expand(-1, 4)
+                        s_pred_bboxes, s_gt_bboxes, is_aligned=True)
                     t_iou_inds = (t_s_ious > gt_s_ious).nonzero().reshape(-1)
                     gt_iou_inds = (t_s_ious <= gt_s_ious).nonzero().reshape(-1)
-                    merged_gt_bboxes = torch.where(gt_s_ious >= t_s_ious,
-                                                   s_gt_bboxes,
-                                                   t_pred_bboxes).detach()
-                    s_loss_bbox = self.loss_bbox(
-                        s_pred_bboxes,
-                        merged_gt_bboxes,
-                        weight=pos_centerness_targets,
-                        avg_factor=pos_centerness_targets.sum())
+
+                    if len(t_iou_inds) > 0:
+                        # learn from teacher
+                        s_distill_loss_bbox = self.loss_bbox(
+                            s_pred_bboxes[t_iou_inds],
+                            t_pred_bboxes[t_iou_inds],
+                            weight=pos_centerness_targets[t_iou_inds],
+                            avg_factor=pos_centerness_targets[t_iou_inds].sum(
+                            ))
+                    else:
+                        s_distill_loss_bbox = t_pred_bboxes[t_iou_inds].sum()
+                    if len(gt_iou_inds) > 0:
+                        # learn from ground truth
+                        s_loss_bbox = self.loss_bbox(
+                            s_pred_bboxes[gt_iou_inds],
+                            t_pred_bboxes[gt_iou_inds],
+                            weight=pos_centerness_targets[gt_iou_inds],
+                            avg_factor=pos_centerness_targets[gt_iou_inds].sum(
+                            ))
+                    else:
+                        s_loss_bbox = t_pred_bboxes[gt_iou_inds].sum()
+
+                    loss_dict.update(s_distill_loss_bbox=s_distill_loss_bbox)
                     loss_dict.update(s_loss_bbox=s_loss_bbox)
                 if self.apply_adaptive_distillation:
                     if self.spatial_ratio > 1:
