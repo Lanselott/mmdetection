@@ -690,6 +690,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update(
                         adaptive_distillation_loss=adaptive_distillation_loss)
                 if self.apply_soft_centerness_distill:
+                    t_pred_centerness = t_pred_centerness.detach().sigmoid()
                     # compare teacher and gt
                     self.loss_centerness.reduction = 'none'
                     s_centerness_diff = self.loss_centerness(
