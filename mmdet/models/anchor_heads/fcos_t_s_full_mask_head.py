@@ -661,9 +661,9 @@ class FCOSTSFullMaskHead(nn.Module):
                             ))
                     else:
                         s_loss_bbox = t_pred_bboxes[gt_iou_inds].sum()
-
                     loss_dict.update(s_distill_loss_bbox=s_distill_loss_bbox)
                     loss_dict.update(s_loss_bbox=s_loss_bbox)
+
                 if self.apply_adaptive_distillation:
                     if self.spatial_ratio > 1:
                         # upsample student to match the size
