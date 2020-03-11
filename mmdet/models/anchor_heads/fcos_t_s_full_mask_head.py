@@ -49,7 +49,8 @@ class FCOSTSFullMaskHead(nn.Module):
                  train_teacher=False,
                  apply_iou_similarity=False,
                  apply_soft_regression_distill=False,
-                 apply_adaptive_distillation=False,
+                 apply_soft_cls_distill=False,
+                 apply_soft_centerness_distill=False,
                  temperature=1,
                  apply_feature_alignment=False,
                  fix_student_train_teacher=False,
@@ -135,7 +136,8 @@ class FCOSTSFullMaskHead(nn.Module):
         self.train_teacher = train_teacher
         self.apply_iou_similarity = apply_iou_similarity
         self.apply_soft_regression_distill = apply_soft_regression_distill
-        self.apply_adaptive_distillation = apply_adaptive_distillation
+        self.apply_soft_cls_distill = apply_soft_cls_distill
+        self.apply_soft_centerness_distill = apply_soft_centerness_distill
         self.temperature = temperature
         self.apply_feature_alignment = apply_feature_alignment
         self.fix_student_train_teacher = fix_student_train_teacher
@@ -436,7 +438,7 @@ class FCOSTSFullMaskHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, t_iou_maps, t_pos_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _ = self.loss_single(
+        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, t_iou_maps, t_pos_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _, t_pred_centerness = self.loss_single(
             cls_scores,
             bbox_preds,
             centernesses,
@@ -445,7 +447,7 @@ class FCOSTSFullMaskHead(nn.Module):
             img_metas,
             cfg,
             gt_bboxes_ignore=None)
-        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets = self.loss_single(
+        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness = self.loss_single(
             s_cls_scores,
             s_bbox_preds,
             s_centernesses,
@@ -664,7 +666,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update(s_distill_loss_bbox=s_distill_loss_bbox)
                     loss_dict.update(s_loss_bbox=s_loss_bbox)
 
-                if self.apply_adaptive_distillation:
+                if self.apply_soft_cls_distill:
                     if self.spatial_ratio > 1:
                         # upsample student to match the size
                         # TODO: currently not use
@@ -687,6 +689,34 @@ class FCOSTSFullMaskHead(nn.Module):
                             len(t_pos_inds) + cls_scores[0].size(0))
                     loss_dict.update(
                         adaptive_distillation_loss=adaptive_distillation_loss)
+                if self.apply_soft_centerness_distill:
+                    # compare teacher and gt
+                    self.loss_centerness.reduction = 'none'
+                    s_centerness_diff = self.loss_centerness(
+                        s_pred_centerness, pos_centerness_targets)
+                    s_distill_diff = self.loss_centerness(
+                        s_pred_centerness, t_pred_centerness)
+                    t_center_inds = (s_distill_diff <
+                                     s_centerness_diff).nonzero().reshape(-1)
+                    gt_center_inds = (s_distill_diff >=
+                                      s_centerness_diff).nonzero().reshape(-1)
+                    # get loss
+                    self.loss_centerness.reduction = 'mean'
+                    if len(gt_center_inds) > 0:
+                        s_loss_centerness = self.loss_centerness(
+                            s_pred_centerness[gt_center_inds],
+                            pos_centerness_targets[gt_center_inds])
+                    else:
+                        s_loss_centerness = pos_centerness_targets[gt_center_inds].sum()
+                    if len(t_center_inds) > 0:
+                        s_distill_loss_centerness = self.loss_centerness(
+                            s_pred_centerness[t_center_inds],
+                            t_pred_centerness[t_center_inds])
+                    else:
+                        s_distill_loss_centerness = pos_centerness_targets[t_center_inds].sum()
+                    loss_dict.update(
+                        s_loss_centerness=s_loss_centerness,
+                        s_distill_loss_centerness=s_distill_loss_centerness)
                 if self.train_teacher:
                     # currently duplicate
                     assert self.train_teacher != self.freeze_teacher
@@ -803,7 +833,7 @@ class FCOSTSFullMaskHead(nn.Module):
             loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
 
-        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, pos_iou_maps, pos_inds, pos_decoded_bbox_preds, pos_decoded_target_preds, block_distill_masks, pos_centerness_targets
+        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, pos_iou_maps, pos_inds, pos_decoded_bbox_preds, pos_decoded_target_preds, block_distill_masks, pos_centerness_targets, pos_centerness
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,

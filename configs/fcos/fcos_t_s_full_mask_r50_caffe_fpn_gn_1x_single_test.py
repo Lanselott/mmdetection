@@ -1,8 +1,8 @@
 # model settings
-BLOCK_ALIGN=False
-PYRAMID_ALIGN=True
-RATIO=2
-DOWNSAMPLE_RATIO=1
+BLOCK_ALIGN = False
+PYRAMID_ALIGN = True
+RATIO = 2
+DOWNSAMPLE_RATIO = 1
 model = dict(
     type='FCOSTS',
     pretrained='open-mmlab://resnet50_caffe',
@@ -47,8 +47,9 @@ model = dict(
         finetune_student=True,
         apply_iou_similarity=False,
         apply_soft_regression_distill=True,
-        apply_adaptive_distillation=False,
-        apply_feature_alignment=False, # regression
+        apply_soft_cls_distill=False,
+        apply_soft_centerness_distill=True,
+        apply_feature_alignment=False,  # regression
         apply_head_wise_alignment=True,
         cosine_similarity=True,
         head_teacher_reg_attention=True,
@@ -60,9 +61,9 @@ model = dict(
         teacher_iou_attention=False,
         attention_threshold=0.5,
         # student distillation params
-        beta = 1.5,
-        gamma = 2,
-        adap_distill_loss_weight = 0.3,
+        beta=1.5,
+        gamma=2,
+        adap_distill_loss_weight=0.3,
         strides=[8, 16, 32, 64, 128],
         t_hint_loss=dict(type='MSELoss', loss_weight=1),
         loss_cls=dict(
@@ -78,8 +79,13 @@ model = dict(
         #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_s_t_cls=dict(type='MSELoss', loss_weight=5),
         loss_s_t_reg=dict(type='MSELoss', loss_weight=5),
-        t_s_distance = dict(type='CrossEntropyLoss', use_sigmoid=True, reduction='none', loss_weight=1.0),
-        loss_iou_similiarity = dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
+        t_s_distance=dict(
+            type='CrossEntropyLoss',
+            use_sigmoid=True,
+            reduction='none',
+            loss_weight=1.0),
+        loss_iou_similiarity=dict(
+            type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings
@@ -177,6 +183,6 @@ total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
-load_from = None#'work/dirs/fcos_t_s_finetune_from_scratch/fcos_t_s_finetune_student_from_scratch_5w_epoch_12.pth'
+load_from = 'work/dirs/fcos_t_s_finetune_from_scratch/fcos_t_s_finetune_student_from_scratch_epoch_12.pth'
 resume_from = None
 workflow = [('train', 1)]
