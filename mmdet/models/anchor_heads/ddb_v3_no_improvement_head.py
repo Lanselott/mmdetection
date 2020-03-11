@@ -25,6 +25,7 @@ class DDBV3NPHead(nn.Module):
                  regress_ranges=((-1, 64), (64, 128), (128, 256), (256, 512),
                                  (512, INF)),
                  mask_origin_bbox_loss=False,
+                 origin_bbox_loss_downgrade=False,
                  iou_delta=0.0,
                  apply_iou_cache=False,
                  mask_sort=True,
@@ -57,6 +58,7 @@ class DDBV3NPHead(nn.Module):
         self.strides = strides
         self.regress_ranges = regress_ranges
         self.mask_origin_bbox_loss = mask_origin_bbox_loss
+        self.origin_bbox_loss_downgrade = origin_bbox_loss_downgrade
         self.iou_delta = iou_delta
         self.apply_iou_cache = apply_iou_cache
         self.mask_sort = mask_sort
@@ -393,6 +395,8 @@ class DDBV3NPHead(nn.Module):
             if self.apply_iou_cache:
                 sort_gradient_mask = (_bd_sort_iou >
                                       (_bd_iou - self.iou_delta)).float()
+            elif self.origin_bbox_loss_downgrade:
+                sort_gradient_mask = ((_bd_sort_iou > _bd_iou) or (_bd_iou < 0.5)).float()
             else:
                 sort_gradient_mask = (_bd_sort_iou >
                                       (_bd_iou + self.iou_delta)).float()
@@ -408,6 +412,10 @@ class DDBV3NPHead(nn.Module):
             if self.apply_iou_cache:
                 origin_gradient_mask = ((_bd_sort_iou - self.iou_delta) <=
                                         _bd_iou).float()
+            elif self.origin_bbox_loss_downgrade:
+                origin_gradient_mask = ((_bd_sort_iou <= _bd_iou)
+                                        and (_bd_iou <= 0.5)).float()
+
             else:
                 origin_gradient_mask = (_bd_sort_iou <=
                                         (_bd_iou + self.iou_delta)).float()
