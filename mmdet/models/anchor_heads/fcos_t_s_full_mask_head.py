@@ -657,12 +657,12 @@ class FCOSTSFullMaskHead(nn.Module):
                         # learn from ground truth
                         s_loss_bbox = self.loss_bbox(
                             s_pred_bboxes[gt_iou_inds],
-                            t_pred_bboxes[gt_iou_inds],
+                            s_gt_bboxes[gt_iou_inds],
                             weight=pos_centerness_targets[gt_iou_inds],
                             avg_factor=pos_centerness_targets[gt_iou_inds].sum(
                             ))
                     else:
-                        s_loss_bbox = t_pred_bboxes[gt_iou_inds].sum()
+                        s_loss_bbox = s_gt_bboxes[gt_iou_inds].sum()
                     loss_dict.update(s_distill_loss_bbox=s_distill_loss_bbox)
                     loss_dict.update(s_loss_bbox=s_loss_bbox)
 
