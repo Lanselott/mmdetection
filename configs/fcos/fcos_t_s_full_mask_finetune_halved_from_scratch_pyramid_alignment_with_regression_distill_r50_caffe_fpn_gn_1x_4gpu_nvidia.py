@@ -46,6 +46,7 @@ model = dict(
         finetune_student=True,
         apply_iou_similarity=False,
         apply_soft_regression_distill=True,
+        choose_better_iou=False,
         apply_soft_cls_distill=False,
         apply_feature_alignment=False, # regression
         temperature=1,

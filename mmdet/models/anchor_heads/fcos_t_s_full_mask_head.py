@@ -49,6 +49,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  train_teacher=False,
                  apply_iou_similarity=False,
                  apply_soft_regression_distill=False,
+                 choose_better_iou=False,
                  apply_soft_cls_distill=False,
                  apply_soft_centerness_distill=False,
                  temperature=1,
@@ -136,6 +137,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.train_teacher = train_teacher
         self.apply_iou_similarity = apply_iou_similarity
         self.apply_soft_regression_distill = apply_soft_regression_distill
+        self.choose_better_iou = choose_better_iou
         self.apply_soft_cls_distill = apply_soft_cls_distill
         self.apply_soft_centerness_distill = apply_soft_centerness_distill
         self.temperature = temperature
@@ -653,16 +655,24 @@ class FCOSTSFullMaskHead(nn.Module):
                             ))
                     else:
                         s_distill_loss_bbox = t_pred_bboxes[t_iou_inds].sum()
-                    if len(gt_iou_inds) > 0:
-                        # learn from ground truth
-                        s_loss_bbox = self.loss_bbox(
-                            s_pred_bboxes[gt_iou_inds],
-                            s_gt_bboxes[gt_iou_inds],
-                            weight=pos_centerness_targets[gt_iou_inds],
-                            avg_factor=pos_centerness_targets[gt_iou_inds].sum(
-                            ))
+
+                    if self.choose_better_iou:
+                        if len(gt_iou_inds) > 0:
+                            # learn from ground truth
+                            s_loss_bbox = self.loss_bbox(
+                                s_pred_bboxes[gt_iou_inds],
+                                s_gt_bboxes[gt_iou_inds],
+                                weight=pos_centerness_targets[gt_iou_inds],
+                                avg_factor=pos_centerness_targets[gt_iou_inds].
+                                sum())
+                        else:
+                            s_loss_bbox = s_gt_bboxes[gt_iou_inds].sum()
                     else:
-                        s_loss_bbox = s_gt_bboxes[gt_iou_inds].sum()
+                        s_loss_bbox = self.loss_bbox(
+                            s_pred_bboxes,
+                            s_gt_bboxes,
+                            weight=pos_centerness_targets,
+                            avg_factor=pos_centerness_targets.sum())
                     loss_dict.update(s_distill_loss_bbox=s_distill_loss_bbox)
                     loss_dict.update(s_loss_bbox=s_loss_bbox)
 
@@ -708,13 +718,15 @@ class FCOSTSFullMaskHead(nn.Module):
                             s_pred_centerness[gt_center_inds],
                             pos_centerness_targets[gt_center_inds])
                     else:
-                        s_loss_centerness = pos_centerness_targets[gt_center_inds].sum()
+                        s_loss_centerness = pos_centerness_targets[
+                            gt_center_inds].sum()
                     if len(t_center_inds) > 0:
                         s_distill_loss_centerness = self.loss_centerness(
                             s_pred_centerness[t_center_inds],
                             t_pred_centerness[t_center_inds])
                     else:
-                        s_distill_loss_centerness = pos_centerness_targets[t_center_inds].sum()
+                        s_distill_loss_centerness = pos_centerness_targets[
+                            t_center_inds].sum()
                     loss_dict.update(
                         s_loss_centerness=s_loss_centerness,
                         s_distill_loss_centerness=s_distill_loss_centerness)
