@@ -398,7 +398,8 @@ class DDBV3NPHead(nn.Module):
                                       (_bd_iou - self.iou_delta)).float()
             elif self.origin_bbox_loss_downgrade:
                 sort_gradient_mask = (((_bd_sort_iou > _bd_iou) +
-                                       (_bd_iou < downgrade_threshold)) > 0).float()  # or
+                                       (_bd_iou < downgrade_threshold)) >
+                                      0).float()  # or
             else:
                 sort_gradient_mask = (_bd_sort_iou >
                                       (_bd_iou + self.iou_delta)).float()
@@ -415,9 +416,9 @@ class DDBV3NPHead(nn.Module):
                 origin_gradient_mask = ((_bd_sort_iou - self.iou_delta) <=
                                         _bd_iou).float()
             elif self.origin_bbox_loss_downgrade:
-                origin_gradient_mask = (((_bd_sort_iou <= _bd_iou) +
-                                         (_bd_iou <= downgrade_threshold)) == 2).float()  # and
-
+                origin_gradient_mask = (
+                    ((_bd_sort_iou <= _bd_iou) +
+                     (_bd_iou <= downgrade_threshold)) == 2).float()  # and
             else:
                 origin_gradient_mask = (_bd_sort_iou <=
                                         (_bd_iou + self.iou_delta)).float()
@@ -428,7 +429,9 @@ class DDBV3NPHead(nn.Module):
                 pos_decoded_bbox_preds.register_hook(
                     lambda grad: grad * origin_gradient_mask)
             elif self.mask_origin_bbox_loss:
-                origin_gradient_mask = torch.zeros_like(origin_gradient_mask)
+                if ious_weights.mean() >= 0.4:
+                    origin_gradient_mask = torch.zeros_like(origin_gradient_mask)
+                    
                 pos_decoded_bbox_preds.register_hook(
                     lambda grad: grad * origin_gradient_mask)
             else:
