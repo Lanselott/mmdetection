@@ -310,12 +310,13 @@ class FCOSTSFullMaskHead(nn.Module):
             m.eval()
             for param in m.parameters():
                 param.requires_grad = False
+
         self.fcos_cls.eval()
-        self.fcos_cls.requires_grad = False
         self.fcos_reg.eval()
-        self.fcos_reg.requires_grad = False
         self.fcos_centerness.eval()
-        self.fcos_centerness.requires_grad = False
+        for m in [self.fcos_cls, self.fcos_reg, self.fcos_centerness]:
+            for param in m.parameters():
+                    param.requires_grad = False
 
         for scale in self.scales:
             scale.eval()
