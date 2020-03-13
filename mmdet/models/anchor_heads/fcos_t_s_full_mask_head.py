@@ -634,7 +634,9 @@ class FCOSTSFullMaskHead(nn.Module):
                             weight=pos_centerness_targets,
                             avg_factor=pos_centerness_targets.sum())
                         teacher_cls_logits_loss = self.loss_cls(
-                            flatten_t_cls_logits, flatten_labels)
+                            flatten_t_cls_logits,
+                            flatten_labels,
+                            avg_factor=cls_avg_factor)
                         loss_dict.update({
                             'teacher_bbox_logits_loss_stacked_{}'.format(m):
                             teacher_bbox_logits_loss
