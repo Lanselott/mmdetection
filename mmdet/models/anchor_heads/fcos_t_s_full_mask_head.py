@@ -206,6 +206,8 @@ class FCOSTSFullMaskHead(nn.Module):
 
         self.s_t_reg_head_align = nn.ModuleList()
         self.s_t_cls_head_align = nn.ModuleList()
+        self.t_s_reg_head_align = nn.ModuleList()
+        self.t_s_cls_head_align = nn.ModuleList()
 
         for i in range(self.stacked_convs):
             chn = self.s_in_channels if i == 0 else self.s_feat_channels
@@ -269,6 +271,28 @@ class FCOSTSFullMaskHead(nn.Module):
         self.fcos_s_cls = nn.Conv2d(
             self.s_feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_s_reg = nn.Conv2d(self.s_feat_channels, 4, 3, padding=1)
+        if self.align_to_teacher_logits:
+            # t -> s at logits
+            self.t_s_reg_head_align.append(
+                ConvModule(
+                    self.feat_channels,
+                    self.s_feat_channels,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=self.norm_cfg is None))
+            self.t_s_cls_head_align.append(
+                ConvModule(
+                    self.feat_channels,
+                    self.s_feat_channels,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=self.norm_cfg is None))
         self.fcos_s_centerness = nn.Conv2d(
             self.s_feat_channels, 1, 3, padding=1)
 
@@ -302,6 +326,11 @@ class FCOSTSFullMaskHead(nn.Module):
                 normal_init(m.conv, std=0.01)
             for m in self.s_t_reg_head_align:
                 normal_init(m.conv, std=0.01)
+            for m in self.t_s_reg_head_align:
+                normal_init(m.conv, std=0.01)
+            for m in self.t_s_cls_head_align:
+                normal_init(m.conv, std=0.01)
+
         if self.freeze_teacher:
             self.freeze_teacher_layers()
 
@@ -316,7 +345,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.fcos_centerness.eval()
         for m in [self.fcos_cls, self.fcos_reg, self.fcos_centerness]:
             for param in m.parameters():
-                    param.requires_grad = False
+                param.requires_grad = False
 
         for scale in self.scales:
             scale.eval()
@@ -584,10 +613,15 @@ class FCOSTSFullMaskHead(nn.Module):
                                     s_reg_head_feature)
                                 s_cls_head_feature = self.cls_convs[l](
                                     s_cls_head_feature)
-
-                            t_aligned_bbox_pred = self.scales[j](self.fcos_reg(
-                                s_reg_head_feature)).float().exp()
-                            t_aligned_cls_pred = self.fcos_cls(
+                            # t -> s
+                            s_reg_head_feature = self.t_s_reg_head_align[0](
+                                s_reg_head_feature)
+                            s_cls_head_feature = self.t_s_cls_head_align[0](
+                                s_cls_head_feature)
+                            t_aligned_bbox_pred = self.s_scales[j](
+                                self.fcos_s_reg(
+                                    s_reg_head_feature)).float().exp()
+                            t_aligned_cls_pred = self.fcos_s_cls(
                                 s_cls_head_feature)
                             t_aligned_bbox_list[k].append(
                                 t_aligned_bbox_pred.permute(0, 2, 3,
