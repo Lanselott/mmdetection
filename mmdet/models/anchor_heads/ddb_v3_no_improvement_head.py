@@ -429,7 +429,7 @@ class DDBV3NPHead(nn.Module):
                 pos_decoded_bbox_preds.register_hook(
                     lambda grad: grad * origin_gradient_mask)
             elif self.mask_origin_bbox_loss:
-                if ious_weights.mean() >= 0.6: # default:0.4
+                if ious_weights.mean() >= 0.8: # default:0.4
                     origin_gradient_mask = torch.zeros_like(origin_gradient_mask)
 
                 pos_decoded_bbox_preds.register_hook(
