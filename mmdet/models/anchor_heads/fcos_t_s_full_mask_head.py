@@ -61,6 +61,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_pyramid_wise_alignment=False,
                  pyramid_wise_attention=False,
                  apply_head_wise_alignment=False,
+                 align_to_teacher_logits=False,
                  cosine_similarity=False,
                  block_teacher_attention=False,
                  head_teacher_reg_attention=False,
@@ -123,6 +124,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
         self.pyramid_wise_attention = pyramid_wise_attention
         self.apply_head_wise_alignment = apply_head_wise_alignment
+        self.align_to_teacher_logits = align_to_teacher_logits
         self.cosine_similarity = cosine_similarity
         self.block_teacher_attention = block_teacher_attention
         self.head_teacher_reg_attention = head_teacher_reg_attention
@@ -442,7 +444,7 @@ class FCOSTSFullMaskHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, t_iou_maps, t_pos_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _, t_pred_centerness = self.loss_single(
+        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, flatten_labels, t_iou_maps, t_pos_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _, t_pred_centerness = self.loss_single(
             cls_scores,
             bbox_preds,
             centernesses,
@@ -451,7 +453,7 @@ class FCOSTSFullMaskHead(nn.Module):
             img_metas,
             cfg,
             gt_bboxes_ignore=None)
-        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness = self.loss_single(
+        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, _, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness = self.loss_single(
             s_cls_scores,
             s_bbox_preds,
             s_centernesses,
@@ -461,21 +463,21 @@ class FCOSTSFullMaskHead(nn.Module):
             cfg,
             gt_bboxes_ignore=None,
             spatial_ratio=self.spatial_ratio)
-
+        # duplicate single head level align
         flatten_s_cls_feat = [
-            s_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
+            s_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.feat_channels)
             for s_cls_feat in s_cls_feats
         ]
         flatten_t_cls_feat = [
-            t_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
+            t_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.feat_channels)
             for t_cls_feat in t_cls_feats
         ]
         flatten_s_reg_feat = [
-            s_reg_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
+            s_reg_feat.permute(0, 2, 3, 1).reshape(-1, self.feat_channels)
             for s_reg_feat in s_reg_feats
         ]
         flatten_t_reg_feat = [
-            t_reg_feat.permute(0, 2, 3, 1).reshape(-1, self.s_feat_channels)
+            t_reg_feat.permute(0, 2, 3, 1).reshape(-1, self.feat_channels)
             for t_reg_feat in reg_feats
         ]
         flatten_s_cls_feat = torch.cat(flatten_s_cls_feat)
@@ -539,14 +541,23 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_pyramid_feature_list[t_pos_inds],
                         t_pyramid_feature_list[t_pos_inds],
                         weight=pos_centerness_targets)
-                    loss_dict.update({'attention_pyramid_hint_loss': attention_pyramid_hint_loss})
+                    loss_dict.update({
+                        'attention_pyramid_hint_loss':
+                        attention_pyramid_hint_loss
+                    })
                 loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
 
             if self.apply_head_wise_alignment:
-                t_cls_heads_feature_list = []
-                s_cls_heads_feature_list = []
-                t_reg_heads_feature_list = []
-                s_reg_heads_feature_list = []
+                if self.align_to_teacher_logits:
+                    t_aligned_bbox_list = [[]
+                                           for _ in range(self.stacked_convs)]
+                    t_aligned_cls_list = [[]
+                                          for _ in range(self.stacked_convs)]
+                else:
+                    t_cls_heads_feature_list = []
+                    s_cls_heads_feature_list = []
+                    t_reg_heads_feature_list = []
+                    s_reg_heads_feature_list = []
                 # pyramids
                 for j, head_hint_pair in enumerate(head_hint_pairs):
                     cls_head_pair = head_hint_pair[0]
@@ -564,73 +575,116 @@ class FCOSTSFullMaskHead(nn.Module):
                             cls_head_pair[k][0])
                         s_reg_head_feature = self.s_t_reg_head_align[k](
                             reg_head_pair[k][0])
-                        t_cls_head_feature = cls_head_pair[k][1].detach()
-                        t_reg_head_feature = reg_head_pair[k][1].detach()
+                        if self.align_to_teacher_logits:
+                            # learn from teacher logits
+                            # TODO: current implement may not efficient, update later
+                            for l in range(k, self.stacked_convs):
+                                s_reg_head_feature = self.reg_convs[l](
+                                    s_reg_head_feature)
+                                s_cls_head_feature = self.cls_convs[l](
+                                    s_cls_head_feature)
 
-                        t_cls_head_feature_list.append(t_cls_head_feature)
-                        s_cls_head_feature_list.append(s_cls_head_feature)
-                        t_reg_head_feature_list.append(t_reg_head_feature)
-                        s_reg_head_feature_list.append(s_reg_head_feature)
-
-                    t_cls_heads_feature_list.append(
-                        torch.cat(t_cls_head_feature_list,
-                                  1).permute(0, 2, 3, 1).reshape(
-                                      -1,
-                                      self.stacked_convs * self.feat_channels))
-                    s_cls_heads_feature_list.append(
-                        torch.cat(s_cls_head_feature_list,
-                                  1).permute(0, 2, 3, 1).reshape(
-                                      -1,
-                                      self.stacked_convs * self.feat_channels))
-                    t_reg_heads_feature_list.append(
-                        torch.cat(t_reg_head_feature_list,
-                                  1).permute(0, 2, 3, 1).reshape(
-                                      -1,
-                                      self.stacked_convs * self.feat_channels))
-                    s_reg_heads_feature_list.append(
-                        torch.cat(s_reg_head_feature_list,
-                                  1).permute(0, 2, 3, 1).reshape(
-                                      -1,
-                                      self.stacked_convs * self.feat_channels))
-                t_cls_heads_feature_list = torch.cat(t_cls_heads_feature_list,
-                                                     0)
-                s_cls_heads_feature_list = torch.cat(s_cls_heads_feature_list,
-                                                     0)
-                t_reg_heads_feature_list = torch.cat(t_reg_heads_feature_list,
-                                                     0)
-                s_reg_heads_feature_list = torch.cat(s_reg_heads_feature_list,
-                                                     0)
-                if not self.head_teacher_reg_attention:
-                    reg_head_hint_loss = self.reg_head_hint_loss(
-                        s_reg_heads_feature_list, t_reg_heads_feature_list)
-                else:
-                    pos_t_reg_heads_feature = t_reg_heads_feature_list[
-                        t_pos_inds]
-                    pos_s_reg_heads_feature = s_reg_heads_feature_list[
-                        t_pos_inds]
-                    select_update_reg_inds = (t_iou_maps >
-                                              s_iou_maps).nonzero().reshape(-1)
-                    if self.cosine_similarity is True:
-                        self.reg_head_hint_loss = torch.nn.CosineEmbeddingLoss(
-                            margin=0.2, reduction='mean')
-                        reg_head_hint_loss = self.reg_head_hint_loss(
-                            pos_s_reg_heads_feature, pos_t_reg_heads_feature,
-                            torch.ones_like(pos_t_reg_heads_feature[:, 0]))
-                    else:
-                        if len(select_update_reg_inds) > 0:
-                            reg_head_hint_loss = self.reg_head_hint_loss(
-                                pos_s_reg_heads_feature[
-                                    select_update_reg_inds],
-                                pos_t_reg_heads_feature[select_update_reg_inds]
-                            )
+                            t_aligned_bbox_pred = self.scales[j](self.fcos_reg(
+                                s_reg_head_feature)).float().exp()
+                            t_aligned_cls_pred = self.fcos_cls(
+                                s_cls_head_feature)
+                            t_aligned_bbox_list[k].append(
+                                t_aligned_bbox_pred.permute(0, 2, 3,
+                                                            1).reshape(-1, 4))
+                            t_aligned_cls_list[k].append(
+                                t_aligned_cls_pred.permute(0, 2, 3, 1).reshape(
+                                    -1, self.cls_out_channels))
                         else:
-                            reg_head_hint_loss = pos_t_reg_heads_feature[
-                                select_update_reg_inds].sum()
-                # cls_head_hint_loss = self.cls_head_hint_loss(
-                #     s_cls_heads_feature_list, t_cls_heads_feature_list)
-                loss_dict.update({'reg_head_hint_loss': reg_head_hint_loss})
-                # loss_dict.update({'cls_head_hint_loss': cls_head_hint_loss})
-
+                            t_cls_head_feature = cls_head_pair[k][1].detach()
+                            t_reg_head_feature = reg_head_pair[k][1].detach()
+                            # learn from intermediate layers
+                            t_cls_head_feature_list.append(t_cls_head_feature)
+                            s_cls_head_feature_list.append(s_cls_head_feature)
+                            t_reg_head_feature_list.append(t_reg_head_feature)
+                            s_reg_head_feature_list.append(s_reg_head_feature)
+                    if not self.align_to_teacher_logits:
+                        t_cls_heads_feature_list.append(
+                            torch.cat(t_cls_head_feature_list, 1).permute(
+                                0, 2, 3, 1).reshape(
+                                    -1,
+                                    self.stacked_convs * self.feat_channels))
+                        s_cls_heads_feature_list.append(
+                            torch.cat(s_cls_head_feature_list, 1).permute(
+                                0, 2, 3, 1).reshape(
+                                    -1,
+                                    self.stacked_convs * self.feat_channels))
+                        t_reg_heads_feature_list.append(
+                            torch.cat(t_reg_head_feature_list, 1).permute(
+                                0, 2, 3, 1).reshape(
+                                    -1,
+                                    self.stacked_convs * self.feat_channels))
+                        s_reg_heads_feature_list.append(
+                            torch.cat(s_reg_head_feature_list, 1).permute(
+                                0, 2, 3, 1).reshape(
+                                    -1,
+                                    self.stacked_convs * self.feat_channels))
+                if self.align_to_teacher_logits:
+                    for m in range(self.stacked_convs):
+                        flatten_t_bbox_logits = torch.cat(
+                            t_aligned_bbox_list[m])
+                        flatten_t_cls_logits = torch.cat(t_aligned_cls_list[m])
+                        teacher_bbox_logits_loss = self.loss_bbox(
+                            flatten_t_bbox_logits[t_pos_inds],
+                            t_gt_bboxes,
+                            weight=pos_centerness_targets,
+                            avg_factor=pos_centerness_targets.sum())
+                        teacher_cls_logits_loss = self.loss_cls(
+                            flatten_t_cls_logits, flatten_labels)
+                        loss_dict.update({
+                            'teacher_bbox_logits_loss_stacked_{}'.format(m):
+                            teacher_bbox_logits_loss
+                        })
+                        loss_dict.update({
+                            'teacher_cls_logits_loss_stacked_{}'.format(m):
+                            teacher_cls_logits_loss
+                        })
+                else:
+                    t_cls_heads_feature_list = torch.cat(
+                        t_cls_heads_feature_list, 0)
+                    s_cls_heads_feature_list = torch.cat(
+                        s_cls_heads_feature_list, 0)
+                    t_reg_heads_feature_list = torch.cat(
+                        t_reg_heads_feature_list, 0)
+                    s_reg_heads_feature_list = torch.cat(
+                        s_reg_heads_feature_list, 0)
+                    if not self.head_teacher_reg_attention:
+                        reg_head_hint_loss = self.reg_head_hint_loss(
+                            s_reg_heads_feature_list, t_reg_heads_feature_list)
+                    else:
+                        pos_t_reg_heads_feature = t_reg_heads_feature_list[
+                            t_pos_inds]
+                        pos_s_reg_heads_feature = s_reg_heads_feature_list[
+                            t_pos_inds]
+                        select_update_reg_inds = (
+                            t_iou_maps > s_iou_maps).nonzero().reshape(-1)
+                        if self.cosine_similarity is True:
+                            self.reg_head_hint_loss = torch.nn.CosineEmbeddingLoss(
+                                margin=0.2, reduction='mean')
+                            reg_head_hint_loss = self.reg_head_hint_loss(
+                                pos_s_reg_heads_feature,
+                                pos_t_reg_heads_feature,
+                                torch.ones_like(pos_t_reg_heads_feature[:, 0]))
+                        else:
+                            if len(select_update_reg_inds) > 0:
+                                reg_head_hint_loss = self.reg_head_hint_loss(
+                                    pos_s_reg_heads_feature[
+                                        select_update_reg_inds],
+                                    pos_t_reg_heads_feature[
+                                        select_update_reg_inds])
+                            else:
+                                reg_head_hint_loss = pos_t_reg_heads_feature[
+                                    select_update_reg_inds].sum()
+                    # cls_head_hint_loss = self.cls_head_hint_loss(
+                    #     s_cls_heads_feature_list, t_cls_heads_feature_list)
+                    loss_dict.update(
+                        {'reg_head_hint_loss': reg_head_hint_loss})
+                    # loss_dict.update({'cls_head_hint_loss': cls_head_hint_loss})
+            # duplicate
             if self.apply_feature_alignment:
                 if str(self.loss_s_t_cls) == 'MSELoss()':
                     loss_s_t_reg = self.loss_s_t_reg(
@@ -641,6 +695,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         flatten_s_reg_feat[t_pos_inds],
                         flatten_t_reg_feat[t_pos_inds].detach().sigmoid())
                 loss_dict.update(loss_s_t_reg=loss_s_t_reg)
+
             if self.finetune_student:
                 loss_dict.update(
                     s_loss_bbox=s_loss_bbox,
@@ -862,7 +917,7 @@ class FCOSTSFullMaskHead(nn.Module):
             loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
 
-        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, pos_iou_maps, pos_inds, pos_decoded_bbox_preds, pos_decoded_target_preds, block_distill_masks, pos_centerness_targets, pos_centerness
+        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, flatten_labels, pos_iou_maps, pos_inds, pos_decoded_bbox_preds, pos_decoded_target_preds, block_distill_masks, pos_centerness_targets, pos_centerness
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,
