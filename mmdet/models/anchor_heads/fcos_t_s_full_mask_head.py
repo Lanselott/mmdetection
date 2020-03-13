@@ -59,6 +59,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  align_level=1,
                  apply_block_wise_alignment=False,
                  apply_pyramid_wise_alignment=False,
+                 pyramid_wise_attention=False,
                  apply_head_wise_alignment=False,
                  cosine_similarity=False,
                  block_teacher_attention=False,
@@ -120,6 +121,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.align_level = align_level
         self.apply_block_wise_alignment = apply_block_wise_alignment
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
+        self.pyramid_wise_attention = pyramid_wise_attention
         self.apply_head_wise_alignment = apply_head_wise_alignment
         self.cosine_similarity = cosine_similarity
         self.block_teacher_attention = block_teacher_attention
@@ -508,6 +510,8 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update(
                         {'hint_loss_block_{}'.format(j): hint_loss})
             if self.apply_pyramid_wise_alignment:
+                t_pyramid_feature_list = []
+                s_pyramid_feature_list = []
                 for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
                     if self.spatial_ratio > 1:
                         s_pyramid_feature = self.t_s_pyramid_align(
@@ -519,13 +523,25 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_pyramid_feature = self.t_s_pyramid_align(
                             pyramid_hint_pair[0])
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
+                    t_pyramid_feature_list.append(
+                        t_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                            -1, self.feat_channels))
+                    s_pyramid_feature_list.append(
+                        s_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                            -1, self.feat_channels))
 
-                    pyramid_hint_loss = self.pyramid_hint_loss(
-                        s_pyramid_feature, t_pyramid_feature)
-                    loss_dict.update({
-                        'pyramid_hint_loss_block_{}'.format(j):
-                        pyramid_hint_loss
-                    })
+                t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
+                s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
+                pyramid_hint_loss = self.pyramid_hint_loss(
+                    s_pyramid_feature_list, t_pyramid_feature_list)
+                if self.pyramid_wise_attention:
+                    attention_pyramid_hint_loss = self.pyramid_hint_loss(
+                        s_pyramid_feature_list[t_pos_inds],
+                        t_pyramid_feature_list[t_pos_inds],
+                        weight=pos_centerness_targets)
+                    loss_dict.update({'attention_pyramid_hint_loss': attention_pyramid_hint_loss})
+                loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
+
             if self.apply_head_wise_alignment:
                 t_cls_heads_feature_list = []
                 s_cls_heads_feature_list = []
