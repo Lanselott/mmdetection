@@ -415,7 +415,7 @@ class FCOSTSFullMaskHead(nn.Module):
             elif self.apply_pyramid_wise_alignment and self.apply_head_wise_alignment:
                 return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, pyramid_hint_pairs, head_hint_pairs
             else:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, None
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, None, None
         else:
             if self.eval_student:
                 return s_cls_score, s_bbox_pred, s_centerness

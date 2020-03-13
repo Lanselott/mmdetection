@@ -1,6 +1,6 @@
 # model settings
 ALIGN=False
-PYRAMID_ALIGN=True
+PYRAMID_ALIGN=False
 HEAD_ALIGN=False
 FREEZE_TEACHER=True
 RATIO=2
