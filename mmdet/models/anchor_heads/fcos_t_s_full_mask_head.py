@@ -71,7 +71,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  beta=1,
                  gamma=1,
                  adap_distill_loss_weight=0.5,
-                 t_hint_loss=dict(type='MSELoss', loss_weight=1),
+                 pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
                  pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
                  reg_head_hint_loss=dict(type='MSELoss', loss_weight=1),
                  cls_head_hint_loss=dict(type='MSELoss', loss_weight=1),
@@ -148,7 +148,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_feature_alignment = apply_feature_alignment
         self.fix_student_train_teacher = fix_student_train_teacher
         self.train_student_only = train_student_only
-        self.t_hint_loss = build_loss(t_hint_loss)
+        self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
         self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
         self.reg_head_hint_loss = build_loss(reg_head_hint_loss)
         self.cls_head_hint_loss = build_loss(cls_head_hint_loss)
@@ -504,12 +504,12 @@ class FCOSTSFullMaskHead(nn.Module):
                             size=t_block_feature.shape[2:])
                         attention_weight = block_distill_masks.expand(
                             -1, t_block_feature.shape[1], -1, -1)
-                        hint_loss = self.t_hint_loss(
+                        hint_loss = self.pyramid_hint_loss(
                             s_block_feature,
                             t_block_feature,
                             weight=attention_weight)
                     else:
-                        hint_loss = self.t_hint_loss(s_block_feature,
+                        hint_loss = self.pyramid_hint_loss(s_block_feature,
                                                      t_block_feature)
                     loss_dict.update(
                         {'hint_loss_block_{}'.format(j): hint_loss})

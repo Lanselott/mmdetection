@@ -14,7 +14,7 @@ model = dict(
         frozen_stages=4,
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe',
-        t_hint_loss=dict(type='MSELoss', loss_weight=10),
+        pyramid_hint_loss=dict(type='MSELoss', loss_weight=10),
         apply_block_wise_alignment=ALIGN),
     neck=dict(
         type='FPNTS',

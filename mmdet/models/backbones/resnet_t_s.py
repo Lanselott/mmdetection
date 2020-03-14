@@ -391,7 +391,7 @@ class ResTSNet(nn.Module):
                  dilations=(1, 1, 1, 1),
                  out_indices=(0, 1, 2, 3),
                  style='pytorch',
-                 t_hint_loss=dict(type='MSELoss', loss_weight=1),
+                 pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
                  apply_block_wise_alignment=False,
                  frozen_stages=-1,
                  conv_cfg=None,
@@ -419,7 +419,7 @@ class ResTSNet(nn.Module):
         self.out_indices = out_indices
         assert max(out_indices) < num_stages
         self.style = style
-        self.t_hint_loss = build_loss(t_hint_loss)
+        self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
         self.apply_block_wise_alignment = apply_block_wise_alignment
         self.frozen_stages = frozen_stages
         self.conv_cfg = conv_cfg
@@ -609,7 +609,7 @@ class ResTSNet(nn.Module):
             if self.apply_block_wise_alignment:
                 aligned_s_feature = self.align_layers[j](s_x)
                 # hint_losses.append(
-                #     self.t_hint_loss(aligned_s_feature, outs[j].detach()))
+                #     self.pyramid_hint_loss(aligned_s_feature, outs[j].detach()))
                 block_distill_pairs.append([aligned_s_feature, outs[j]])
             if j in self.out_indices:
                 s_outs.append(s_x)

@@ -1,7 +1,7 @@
 # model settings
 ALIGN=False
-PYRAMID_ALIGN=False
-HEAD_ALIGN=True
+PYRAMID_ALIGN=True
+HEAD_ALIGN=False
 FREEZE_TEACHER=True
 RATIO=2
 DOWNSAMPLE_RATIO=1
@@ -18,7 +18,7 @@ model = dict(
         frozen_stages=4,
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe',
-        t_hint_loss=dict(type='MSELoss', loss_weight=1),
+        pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
         apply_block_wise_alignment=ALIGN),
     neck=dict(
         type='FPNTS',
@@ -50,24 +50,24 @@ model = dict(
         finetune_student=True,
         train_teacher=False, 
         apply_iou_similarity=False,
-        apply_soft_regression_distill=True,
+        apply_soft_regression_distill=False,
         temperature=1,
         align_level=0,
         apply_block_wise_alignment=ALIGN,
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
-        pyramid_wise_attention=True,
+        pyramid_wise_attention=False,
         apply_head_wise_alignment=HEAD_ALIGN,
-        align_to_teacher_logits=True,
+        align_to_teacher_logits=False,
         block_teacher_attention=False,
-        head_teacher_reg_attention=True,
+        head_teacher_reg_attention=False,
         freeze_teacher=FREEZE_TEACHER,
         # student distillation params
         beta = 1.5,
         gamma = 2,
         adap_distill_loss_weight = 0.5,
         strides=[8, 16, 32, 64, 128],
-        t_hint_loss=dict(type='MSELoss', loss_weight=10),
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=10),
+        pyramid_hint_loss=dict(type='MSELoss', loss_weight=100),
         reg_head_hint_loss=dict(type='MSELoss', loss_weight=10),
         cls_head_hint_loss=dict(type='MSELoss', loss_weight=10),
         loss_cls=dict(
