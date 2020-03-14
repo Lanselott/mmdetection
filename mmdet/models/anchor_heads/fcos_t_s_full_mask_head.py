@@ -72,7 +72,6 @@ class FCOSTSFullMaskHead(nn.Module):
                  gamma=1,
                  adap_distill_loss_weight=0.5,
                  pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
-                 pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
                  reg_head_hint_loss=dict(type='MSELoss', loss_weight=1),
                  cls_head_hint_loss=dict(type='MSELoss', loss_weight=1),
                  loss_cls=dict(
