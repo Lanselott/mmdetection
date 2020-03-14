@@ -149,7 +149,6 @@ class FCOSTSFullMaskHead(nn.Module):
         self.fix_student_train_teacher = fix_student_train_teacher
         self.train_student_only = train_student_only
         self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
-        self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
         self.reg_head_hint_loss = build_loss(reg_head_hint_loss)
         self.cls_head_hint_loss = build_loss(cls_head_hint_loss)
         self.loss_cls = build_loss(loss_cls)
