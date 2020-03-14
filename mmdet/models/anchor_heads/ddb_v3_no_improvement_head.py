@@ -24,6 +24,7 @@ class DDBV3NPHead(nn.Module):
                  strides=(4, 8, 16, 32, 64),
                  regress_ranges=((-1, 64), (64, 128), (128, 256), (256, 512),
                                  (512, INF)),
+                 apply_conditional_consistency_on_regression=False,
                  mask_origin_bbox_loss=False,
                  origin_bbox_loss_downgrade=False,
                  iou_delta=0.0,
@@ -57,6 +58,7 @@ class DDBV3NPHead(nn.Module):
         self.stacked_convs = stacked_convs
         self.strides = strides
         self.regress_ranges = regress_ranges
+        self.apply_conditional_consistency_on_regression = apply_conditional_consistency_on_regression
         self.mask_origin_bbox_loss = mask_origin_bbox_loss
         self.origin_bbox_loss_downgrade = origin_bbox_loss_downgrade
         self.iou_delta = iou_delta
@@ -271,6 +273,12 @@ class DDBV3NPHead(nn.Module):
                 regression_reduced_threshold = pos_centerness_obj.mean()
                 classification_reduced_threshold = pos_scores_obj.mean()
 
+                if self.apply_conditional_consistency_on_regression:
+                    if classification_reduced_threshold < 0.5:
+                        # if instance ious performs bad (especially at early epoches),
+                        # we train all
+                        classification_reduced_threshold = 0
+
                 regression_mask = pos_centerness_obj < regression_reduced_threshold
                 classification_mask = pos_scores_obj < classification_reduced_threshold
 
@@ -429,8 +437,9 @@ class DDBV3NPHead(nn.Module):
                 pos_decoded_bbox_preds.register_hook(
                     lambda grad: grad * origin_gradient_mask)
             elif self.mask_origin_bbox_loss:
-                if ious_weights.mean() >= 0.8: # default:0.4
-                    origin_gradient_mask = torch.zeros_like(origin_gradient_mask)
+                if ious_weights.mean() >= 0.8:  # default:0.4
+                    origin_gradient_mask = torch.zeros_like(
+                        origin_gradient_mask)
 
                 pos_decoded_bbox_preds.register_hook(
                     lambda grad: grad * origin_gradient_mask)

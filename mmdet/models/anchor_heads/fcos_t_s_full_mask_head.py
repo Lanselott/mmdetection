@@ -629,7 +629,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             t_aligned_bbox_list[m])
                         flatten_t_cls_logits = torch.cat(t_aligned_cls_list[m])
                         # downgrade the weight
-                        self.loss_bbox.loss_weight = 0.1
+                        self.loss_bbox.loss_weight = 0.01
                         teacher_bbox_logits_loss = self.loss_bbox(
                             flatten_t_bbox_logits[t_pos_inds],
                             t_gt_bboxes,
