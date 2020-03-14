@@ -25,6 +25,7 @@ class DDBV3Head(nn.Module):
                  strides=(4, 8, 16, 32, 64),
                  regress_ranges=((-1, 64), (64, 128), (128, 256), (256, 512),
                                  (512, INF)),
+                 apply_conditional_consistency_on_regression=False,
                  use_deformable=False,
                  mask_origin_bbox_loss=False,
                  iou_delta=0.0,
@@ -64,6 +65,7 @@ class DDBV3Head(nn.Module):
         self.stacked_convs = stacked_convs
         self.strides = strides
         self.regress_ranges = regress_ranges
+        self.apply_conditional_consistency_on_regression = apply_conditional_consistency_on_regression
         self.use_deformable = use_deformable
         self.mask_origin_bbox_loss = mask_origin_bbox_loss
         self.iou_delta = iou_delta
@@ -359,14 +361,12 @@ class DDBV3Head(nn.Module):
                 # mean IoU of an object
                 regression_reduced_mean = pos_centerness_obj.mean()
                 classification_reduced_mean = pos_scores_obj.mean()
-
-                regression_reduced_median = pos_centerness_obj.median()
-                classification_reduced_median = pos_scores_obj.median()
-
-                if classification_reduced_mean < classification_reduced_median:
-                    self.apply_cls_ignore_area = False
-                else:
-                    self.apply_cls_ignore_area = True
+                
+                if self.apply_conditional_consistency_on_regression:
+                    if regression_reduced_mean < 0.5:
+                        # if instance ious performs bad (especially at early epoches),
+                        # we train all
+                        regression_reduced_mean = 0
 
                 regression_mask = pos_centerness_obj < regression_reduced_mean
                 classification_mask = pos_scores_obj < classification_reduced_mean
