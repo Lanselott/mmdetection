@@ -1,10 +1,10 @@
 # model settings
-ALIGN=False
-PYRAMID_ALIGN=True
-HEAD_ALIGN=False
-FREEZE_TEACHER=True
-RATIO=2
-DOWNSAMPLE_RATIO=1
+ALIGN = False
+PYRAMID_ALIGN = True
+HEAD_ALIGN = False
+FREEZE_TEACHER = True
+RATIO = 2
+DOWNSAMPLE_RATIO = 1
 model = dict(
     type='FCOSTS',
     pretrained='open-mmlab://resnet50_caffe',
@@ -31,7 +31,7 @@ model = dict(
         add_extra_convs=True,
         extra_convs_on_inputs=False,  # use P5
         num_outs=5,
-        relu_before_extra_convs=True, 
+        relu_before_extra_convs=True,
         apply_block_wise_alignment=ALIGN,
         freeze_teacher=FREEZE_TEACHER),
     bbox_head=dict(
@@ -48,7 +48,7 @@ model = dict(
         eval_student=True,
         learn_when_train=True,
         finetune_student=True,
-        train_teacher=False, 
+        train_teacher=False,
         apply_iou_similarity=False,
         apply_soft_regression_distill=False,
         temperature=1,
@@ -60,15 +60,17 @@ model = dict(
         align_to_teacher_logits=False,
         block_teacher_attention=False,
         head_teacher_reg_attention=False,
+        consider_cls_reg_distribution=True,
         freeze_teacher=FREEZE_TEACHER,
         # student distillation params
-        beta = 1.5,
-        gamma = 2,
-        adap_distill_loss_weight = 0.5,
+        beta=1.5,
+        gamma=2,
+        adap_distill_loss_weight=0.5,
         strides=[8, 16, 32, 64, 128],
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=10),
         reg_head_hint_loss=dict(type='MSELoss', loss_weight=10),
         cls_head_hint_loss=dict(type='MSELoss', loss_weight=10),
+        cls_reg_distribution_hint_loss=dict(type='MSELoss', loss_weight=1),
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
@@ -82,10 +84,15 @@ model = dict(
         #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_s_t_cls=dict(type='MSELoss', loss_weight=5),
         loss_s_t_reg=dict(type='MSELoss', loss_weight=5),
-        t_s_distance = dict(type='CrossEntropyLoss', use_sigmoid=True, reduction='none', loss_weight=1.0),
-        loss_regression_distill = dict(type='IoULoss', loss_weight=1.0),
-        reg_distill_threshold = 0.5,
-        loss_iou_similiarity = dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
+        t_s_distance=dict(
+            type='CrossEntropyLoss',
+            use_sigmoid=True,
+            reduction='none',
+            loss_weight=1.0),
+        loss_regression_distill=dict(type='IoULoss', loss_weight=1.0),
+        reg_distill_threshold=0.5,
+        loss_iou_similiarity=dict(
+            type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings

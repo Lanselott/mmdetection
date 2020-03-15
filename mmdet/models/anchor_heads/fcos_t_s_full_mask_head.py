@@ -65,6 +65,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  cosine_similarity=False,
                  block_teacher_attention=False,
                  head_teacher_reg_attention=False,
+                 consider_cls_reg_distribution=False,
                  teacher_iou_attention=False,
                  attention_threshold=0.5,
                  freeze_teacher=False,
@@ -74,6 +75,8 @@ class FCOSTSFullMaskHead(nn.Module):
                  pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
                  reg_head_hint_loss=dict(type='MSELoss', loss_weight=1),
                  cls_head_hint_loss=dict(type='MSELoss', loss_weight=1),
+                 cls_reg_distribution_hint_loss=dict(
+                     type='MSELoss', loss_weight=1),
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -127,6 +130,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.cosine_similarity = cosine_similarity
         self.block_teacher_attention = block_teacher_attention
         self.head_teacher_reg_attention = head_teacher_reg_attention
+        self.consider_cls_reg_distribution = consider_cls_reg_distribution
         self.teacher_iou_attention = teacher_iou_attention
         self.attention_threshold = attention_threshold
         self.freeze_teacher = freeze_teacher
@@ -150,6 +154,8 @@ class FCOSTSFullMaskHead(nn.Module):
         self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
         self.reg_head_hint_loss = build_loss(reg_head_hint_loss)
         self.cls_head_hint_loss = build_loss(cls_head_hint_loss)
+        self.cls_reg_distribution_hint_loss = build_loss(
+            cls_reg_distribution_hint_loss)
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -507,8 +513,8 @@ class FCOSTSFullMaskHead(nn.Module):
                             t_block_feature,
                             weight=attention_weight)
                     else:
-                        hint_loss = self.pyramid_hint_loss(s_block_feature,
-                                                     t_block_feature)
+                        hint_loss = self.pyramid_hint_loss(
+                            s_block_feature, t_block_feature)
                     loss_dict.update(
                         {'hint_loss_block_{}'.format(j): hint_loss})
             if self.apply_pyramid_wise_alignment:
@@ -805,6 +811,16 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update(
                         s_loss_centerness=s_loss_centerness,
                         s_distill_loss_centerness=s_distill_loss_centerness)
+                if self.consider_cls_reg_distribution:
+                    t_cls_reg_distance = t_flatten_cls_scores[
+                        t_pos_inds].sigmoid().max(
+                            1)[0] * t_pred_centerness.sigmoid() - t_iou_maps
+                    s_cls_reg_distance = s_cls_scores[t_pos_inds].sigmoid(
+                    ).max(1)[0] * s_pred_centerness.sigmoid() - s_iou_maps
+                    cls_reg_dist_loss = self.cls_reg_distribution_hint_loss(
+                        s_cls_reg_distance, t_cls_reg_distance)
+                    loss_dict.update(cls_reg_dist_loss=cls_reg_dist_loss)
+
                 if self.train_teacher:
                     # currently duplicate
                     assert self.train_teacher != self.freeze_teacher
