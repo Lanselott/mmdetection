@@ -274,7 +274,7 @@ class DDBV3NPHead(nn.Module):
                 classification_reduced_threshold = pos_scores_obj.mean()
 
                 if self.apply_conditional_consistency_on_regression:
-                    if regression_reduced_threshold < 0.3:
+                    if regression_reduced_threshold < 0.7:
                         # if instance ious performs bad (especially at early epoches),
                         # we train all
                         regression_reduced_threshold = 0
