@@ -646,21 +646,21 @@ class FCOSTSFullMaskHead(nn.Module):
                                 t_gt_bboxes[t_s_ious_mask],
                                 weight=pos_centerness_targets[t_s_ious_mask],
                                 avg_factor=pos_centerness_targets[t_s_ious_mask].sum())
-                            # teacher_cls_logits_loss = self.loss_cls(
-                            #     flatten_t_cls_logits,
-                            #     flatten_labels,
-                            #     avg_factor=cls_avg_factor)
                         else:
                             teacher_bbox_logits_loss = t_bbox_logits.sum()
-                            # teacher_cls_logits_loss = t_bbox_logits.sum()
+
+                        teacher_cls_logits_loss = self.loss_cls(
+                            flatten_t_cls_logits,
+                            flatten_labels,
+                            avg_factor=cls_avg_factor)
                         loss_dict.update({
                             'teacher_bbox_logits_loss_stacked_{}'.format(m):
                             teacher_bbox_logits_loss
                         })
-                        # loss_dict.update({
-                        #     'teacher_cls_logits_loss_stacked_{}'.format(m):
-                        #     teacher_cls_logits_loss
-                        # })
+                        loss_dict.update({
+                            'teacher_cls_logits_loss_stacked_{}'.format(m):
+                            teacher_cls_logits_loss
+                        })
 
                 else:
                     t_cls_heads_feature_list = torch.cat(
