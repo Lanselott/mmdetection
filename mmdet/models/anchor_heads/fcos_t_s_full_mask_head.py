@@ -554,8 +554,8 @@ class FCOSTSFullMaskHead(nn.Module):
                 loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
 
             if self.apply_head_wise_alignment:
+                align_levels = [0]
                 if self.align_to_teacher_logits:
-                    align_levels = [0]
                     t_aligned_bbox_list = [[]
                                            for _ in range(len(align_levels))]
                     t_aligned_cls_list = [[] for _ in range(len(align_levels))]
