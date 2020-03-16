@@ -644,7 +644,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         t_bbox_logits = flatten_t_bbox_logits[t_pos_inds][t_s_ious_mask]
                         t_cls_logits = flatten_t_cls_logits[t_pos_inds][t_s_ious_mask]
                         if len(t_s_ious_mask) != 0:
-                            teacher_bbox_logits_loss = self.loss_bbox(
+                            teacher_bbox_logits_loss = self.loss_t_logits_bbox(
                                 t_bbox_logits,
                                 t_gt_bboxes[t_s_ious_mask],
                                 weight=pos_centerness_targets[t_s_ious_mask],
