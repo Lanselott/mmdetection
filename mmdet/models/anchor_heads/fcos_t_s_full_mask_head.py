@@ -637,7 +637,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         # early logits hint from teacher is not stable,
                         # mask at early stage
                         t_s_ious_mean = bbox_overlaps(t_pred_bboxes, s_pred_bboxes, is_aligned=True).mean()
-                        if t_s_ious_mean >= 0.5:
+                        if t_s_ious_mean >= 0.9:
                             teacher_bbox_logits_loss = self.loss_bbox(
                                 flatten_t_bbox_logits[t_pos_inds],
                                 t_gt_bboxes,
