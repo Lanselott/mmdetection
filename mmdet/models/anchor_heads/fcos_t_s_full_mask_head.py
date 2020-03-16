@@ -638,21 +638,23 @@ class FCOSTSFullMaskHead(nn.Module):
                         # mask at early stage
                         t_s_ious = bbox_overlaps(
                             t_pred_bboxes, s_pred_bboxes, is_aligned=True)
-                        t_s_ious_mask = (t_s_ious >= 0.9).nonzero().reshape(-1)
+                        t_s_ious_mask = (t_s_ious >= 0.8).nonzero().reshape(-1)
                         t_bbox_logits = flatten_t_bbox_logits[t_pos_inds][t_s_ious_mask]
+                        t_cls_logits = flatten_t_cls_logits[t_pos_inds][t_s_ious_mask]
                         if len(t_s_ious_mask) != 0:
                             teacher_bbox_logits_loss = self.loss_bbox(
                                 t_bbox_logits,
                                 t_gt_bboxes[t_s_ious_mask],
                                 weight=pos_centerness_targets[t_s_ious_mask],
                                 avg_factor=pos_centerness_targets[t_s_ious_mask].sum())
+                            teacher_cls_logits_loss = self.loss_cls(
+                                t_cls_logits,
+                                flatten_labels[t_pos_inds][t_s_ious_mask],
+                                avg_factor=len(t_s_ious_mask))
                         else:
                             teacher_bbox_logits_loss = t_bbox_logits.sum()
+                            teacher_cls_logits_loss = t_cls_logits.sum()
 
-                        teacher_cls_logits_loss = self.loss_cls(
-                            flatten_t_cls_logits,
-                            flatten_labels,
-                            avg_factor=cls_avg_factor)
                         loss_dict.update({
                             'teacher_bbox_logits_loss_stacked_{}'.format(m):
                             teacher_bbox_logits_loss
