@@ -615,22 +615,22 @@ class FCOSTSFullMaskHead(nn.Module):
                             torch.cat(t_cls_head_feature_list, 1).permute(
                                 0, 2, 3, 1).reshape(
                                     -1,
-                                    self.stacked_convs * self.feat_channels))
+                                    len(align_levels) * self.feat_channels))
                         s_cls_heads_feature_list.append(
                             torch.cat(s_cls_head_feature_list, 1).permute(
                                 0, 2, 3, 1).reshape(
                                     -1,
-                                    self.stacked_convs * self.feat_channels))
+                                    len(align_levels) * self.feat_channels))
                         t_reg_heads_feature_list.append(
                             torch.cat(t_reg_head_feature_list, 1).permute(
                                 0, 2, 3, 1).reshape(
                                     -1,
-                                    self.stacked_convs * self.feat_channels))
+                                    len(align_levels) * self.feat_channels))
                         s_reg_heads_feature_list.append(
                             torch.cat(s_reg_head_feature_list, 1).permute(
                                 0, 2, 3, 1).reshape(
                                     -1,
-                                    self.stacked_convs * self.feat_channels))
+                                    len(align_levels) * self.feat_channels))
                 if self.align_to_teacher_logits:
                     for m in range(len(align_levels)):
                         flatten_t_bbox_logits = torch.cat(
@@ -641,14 +641,17 @@ class FCOSTSFullMaskHead(nn.Module):
                         t_s_ious = bbox_overlaps(
                             t_pred_bboxes, s_pred_bboxes, is_aligned=True)
                         t_s_ious_mask = (t_s_ious >= 0.9).nonzero().reshape(-1)
-                        t_bbox_logits = flatten_t_bbox_logits[t_pos_inds][t_s_ious_mask]
-                        t_cls_logits = flatten_t_cls_logits[t_pos_inds][t_s_ious_mask]
+                        t_bbox_logits = flatten_t_bbox_logits[t_pos_inds][
+                            t_s_ious_mask]
+                        t_cls_logits = flatten_t_cls_logits[t_pos_inds][
+                            t_s_ious_mask]
                         if len(t_s_ious_mask) != 0:
                             teacher_bbox_logits_loss = self.loss_t_logits_bbox(
                                 t_bbox_logits,
                                 t_gt_bboxes[t_s_ious_mask],
                                 weight=pos_centerness_targets[t_s_ious_mask],
-                                avg_factor=pos_centerness_targets[t_s_ious_mask].sum())
+                                avg_factor=pos_centerness_targets[
+                                    t_s_ious_mask].sum())
                             teacher_cls_logits_loss = self.loss_cls(
                                 t_cls_logits,
                                 flatten_labels[t_pos_inds][t_s_ious_mask],
