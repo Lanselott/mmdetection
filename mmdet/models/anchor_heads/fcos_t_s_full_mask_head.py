@@ -555,10 +555,10 @@ class FCOSTSFullMaskHead(nn.Module):
 
             if self.apply_head_wise_alignment:
                 if self.align_to_teacher_logits:
+                    align_levels = [0]
                     t_aligned_bbox_list = [[]
-                                           for _ in range(self.stacked_convs)]
-                    t_aligned_cls_list = [[]
-                                          for _ in range(self.stacked_convs)]
+                                           for _ in range(len(align_levels))]
+                    t_aligned_cls_list = [[] for _ in range(len(align_levels))]
                 else:
                     t_cls_heads_feature_list = []
                     s_cls_heads_feature_list = []
@@ -576,7 +576,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_reg_head_feature_list = []
                     s_reg_head_feature_list = []
                     # towers
-                    for k in range(self.stacked_convs):
+                    for k in align_levels:
                         s_cls_head_feature = self.s_t_cls_head_align[k](
                             cls_head_pair[k][0])
                         s_reg_head_feature = self.s_t_reg_head_align[k](
@@ -584,7 +584,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         if self.align_to_teacher_logits:
                             # learn from teacher logits
                             # TODO: current implement may not efficient, update later
-                            for l in range(k, self.stacked_convs):
+                            for l in align_levels:
                                 s_reg_head_feature = self.reg_convs[l](
                                     s_reg_head_feature)
                                 s_cls_head_feature = self.cls_convs[l](
@@ -630,29 +630,31 @@ class FCOSTSFullMaskHead(nn.Module):
                                     -1,
                                     self.stacked_convs * self.feat_channels))
                 if self.align_to_teacher_logits:
-                    for m in range(self.stacked_convs):
+                    for m in range(len(align_levels)):
                         flatten_t_bbox_logits = torch.cat(
                             t_aligned_bbox_list[m])
                         flatten_t_cls_logits = torch.cat(t_aligned_cls_list[m])
-                        # downgrade the weight
-                        self.loss_bbox.loss_weight = 0.01
-                        teacher_bbox_logits_loss = self.loss_bbox(
-                            flatten_t_bbox_logits[t_pos_inds],
-                            t_gt_bboxes,
-                            weight=pos_centerness_targets,
-                            avg_factor=pos_centerness_targets.sum())
-                        teacher_cls_logits_loss = self.loss_cls(
-                            flatten_t_cls_logits,
-                            flatten_labels,
-                            avg_factor=cls_avg_factor)
-                        loss_dict.update({
-                            'teacher_bbox_logits_loss_stacked_{}'.format(m):
-                            teacher_bbox_logits_loss
-                        })
-                        loss_dict.update({
-                            'teacher_cls_logits_loss_stacked_{}'.format(m):
-                            teacher_cls_logits_loss
-                        })
+                        # early logits hint from teacher is not stable,
+                        # mask at early stage
+                        t_s_ious_mean = bbox_overlaps(t_pred_bboxes, s_pred_bboxes, is_aligned=True).mean()
+                        if t_s_ious_mean >= 0.5:
+                            teacher_bbox_logits_loss = self.loss_bbox(
+                                flatten_t_bbox_logits[t_pos_inds],
+                                t_gt_bboxes,
+                                weight=pos_centerness_targets,
+                                avg_factor=pos_centerness_targets.sum())
+                            teacher_cls_logits_loss = self.loss_cls(
+                                flatten_t_cls_logits,
+                                flatten_labels,
+                                avg_factor=cls_avg_factor)
+                            loss_dict.update({
+                                'teacher_bbox_logits_loss_stacked_{}'.format(m):
+                                teacher_bbox_logits_loss
+                            })
+                            loss_dict.update({
+                                'teacher_cls_logits_loss_stacked_{}'.format(m):
+                                teacher_cls_logits_loss
+                            })
                 else:
                     t_cls_heads_feature_list = torch.cat(
                         t_cls_heads_feature_list, 0)

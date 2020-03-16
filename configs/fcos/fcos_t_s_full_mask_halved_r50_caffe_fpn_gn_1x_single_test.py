@@ -1,7 +1,7 @@
 # model settings
 ALIGN = False
 PYRAMID_ALIGN = True
-HEAD_ALIGN = False
+HEAD_ALIGN = True
 FREEZE_TEACHER = True
 RATIO = 2
 DOWNSAMPLE_RATIO = 1
@@ -57,7 +57,7 @@ model = dict(
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         pyramid_wise_attention=False,
         apply_head_wise_alignment=HEAD_ALIGN,
-        align_to_teacher_logits=False,
+        align_to_teacher_logits=True,
         block_teacher_attention=False,
         head_teacher_reg_attention=False,
         consider_cls_reg_distribution=True,
