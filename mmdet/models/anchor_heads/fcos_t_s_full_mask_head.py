@@ -660,11 +660,11 @@ class FCOSTSFullMaskHead(nn.Module):
                             else:
                                 reg_head_hint_loss = pos_t_reg_heads_feature[
                                     select_update_reg_inds].sum()
-                    # cls_head_hint_loss = self.cls_head_hint_loss(
-                    #     s_cls_heads_feature_list, t_cls_heads_feature_list)
+                    cls_head_hint_loss = self.cls_head_hint_loss(
+                        s_cls_heads_feature_list, t_cls_heads_feature_list)
                     loss_dict.update(
                         {'reg_head_hint_loss': reg_head_hint_loss})
-                    # loss_dict.update({'cls_head_hint_loss': cls_head_hint_loss})
+                    loss_dict.update({'cls_head_hint_loss': cls_head_hint_loss})
 
             if self.finetune_student:
                 if not self.apply_data_free_mode:

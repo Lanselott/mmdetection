@@ -63,6 +63,8 @@ model = dict(
         adap_distill_loss_weight = 0.3,
         strides=[8, 16, 32, 64, 128],
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=10),
+        reg_head_hint_loss=dict(type='MSELoss', loss_weight=10),
+        cls_head_hint_loss=dict(type='MSELoss', loss_weight=10),
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
