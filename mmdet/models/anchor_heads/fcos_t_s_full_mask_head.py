@@ -636,13 +636,16 @@ class FCOSTSFullMaskHead(nn.Module):
                         flatten_t_cls_logits = torch.cat(t_aligned_cls_list[m])
                         # early logits hint from teacher is not stable,
                         # mask at early stage
-                        t_s_ious_mean = bbox_overlaps(t_pred_bboxes, s_pred_bboxes, is_aligned=True).mean()
-                        if t_s_ious_mean >= 0.7:
+                        t_s_ious = bbox_overlaps(
+                            t_pred_bboxes, s_pred_bboxes, is_aligned=True)
+                        t_s_ious_mask = (t_s_ious >= 0.5).nonzero().reshape(-1)
+                        if len(t_s_ious_mask) != 0:
+                            t_bbox_logits = flatten_t_bbox_logits[t_pos_inds][t_s_ious_mask]
                             teacher_bbox_logits_loss = self.loss_bbox(
-                                flatten_t_bbox_logits[t_pos_inds],
-                                t_gt_bboxes,
-                                weight=pos_centerness_targets,
-                                avg_factor=pos_centerness_targets.sum())
+                                t_bbox_logits,
+                                t_gt_bboxes[t_s_ious_mask],
+                                weight=pos_centerness_targets[t_s_ious_mask],
+                                avg_factor=pos_centerness_targets[t_s_ious_mask].sum())
                             teacher_cls_logits_loss = self.loss_cls(
                                 flatten_t_cls_logits,
                                 flatten_labels,
