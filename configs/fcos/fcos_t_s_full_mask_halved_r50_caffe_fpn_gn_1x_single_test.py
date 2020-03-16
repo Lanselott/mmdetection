@@ -1,7 +1,7 @@
 # model settings
 ALIGN = False
 PYRAMID_ALIGN = True
-HEAD_ALIGN = False
+HEAD_ALIGN = True
 FREEZE_TEACHER = True
 RATIO = 2
 DOWNSAMPLE_RATIO = 1

@@ -246,13 +246,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     bias=self.norm_cfg is None))
         '''
         # Align student feature to teacher
-        # TODO: Align each level individually?
         '''
-        self.t_s_cls_align = nn.Conv2d(
-            self.s_feat_channels, self.feat_channels, 3, padding=1)
-        self.t_s_reg_align = nn.Conv2d(
-            self.s_feat_channels, self.feat_channels, 3, padding=1)
-
         if self.apply_pyramid_wise_alignment:
             self.t_s_pyramid_align = nn.Conv2d(
                 self.s_feat_channels, self.feat_channels, 3, padding=1)
@@ -305,8 +299,6 @@ class FCOSTSFullMaskHead(nn.Module):
         for m in self.s_reg_convs:
             normal_init(m.conv, std=0.01)
         bias_s_cls = bias_init_with_prob(0.01)
-        normal_init(self.t_s_cls_align, std=0.01)
-        normal_init(self.t_s_reg_align, std=0.01)
         normal_init(self.fcos_s_cls, std=0.01, bias=bias_s_cls)
         normal_init(self.fcos_s_reg, std=0.01)
         normal_init(self.fcos_s_centerness, std=0.01)
@@ -376,10 +368,6 @@ class FCOSTSFullMaskHead(nn.Module):
             if self.apply_head_wise_alignment:
                 cls_hint_pairs.append([s_cls_feat, t_cls_feat])
 
-            if i == self.align_level:
-                s_align_cls_feat = s_cls_feat
-                t_aligned_cls_feat = t_cls_feat
-
         cls_score = self.fcos_cls(t_cls_feat)
         s_cls_score = self.fcos_s_cls(s_cls_feat)
         centerness = self.fcos_centerness(t_cls_feat)
@@ -394,10 +382,6 @@ class FCOSTSFullMaskHead(nn.Module):
             if self.apply_head_wise_alignment:
                 reg_hint_pairs.append([s_reg_feat, t_reg_feat])
 
-            if j == self.align_level:
-                s_align_reg_feat = s_reg_feat
-                t_aligned_reg_feat = t_reg_feat
-
         # wrap reg/cls head features
         if self.apply_head_wise_alignment:
             head_hint_pairs = []
@@ -408,33 +392,16 @@ class FCOSTSFullMaskHead(nn.Module):
         # float to avoid overflow when enabling FP16
         bbox_pred = scale(self.fcos_reg(t_reg_feat)).float().exp()
         s_bbox_pred = s_scale(self.fcos_s_reg(s_reg_feat)).float().exp()
-        '''
-        # feature align to teacher
-        '''
-        if self.spatial_ratio == 1:
-            s_align_reg_feat = self.t_s_reg_align(s_align_reg_feat)
-            s_align_cls_feat = self.t_s_cls_align(s_align_cls_feat)
-        else:
-            # upsample + conv
-            s_align_reg_feat = self.t_s_reg_align(
-                F.interpolate(
-                    s_align_reg_feat,
-                    size=t_aligned_reg_feat.shape[2:],
-                    mode='nearest'))
-            s_align_cls_feat = self.t_s_cls_align(
-                F.interpolate(
-                    s_align_cls_feat,
-                    size=t_aligned_reg_feat.shape[2:],
-                    mode='nearest'))
+
         if self.training:
             if self.apply_pyramid_wise_alignment and not self.apply_head_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, pyramid_hint_pairs, None
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None
             elif self.apply_head_wise_alignment and not self.apply_pyramid_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, None, head_hint_pairs
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, head_hint_pairs
             elif self.apply_pyramid_wise_alignment and self.apply_head_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, pyramid_hint_pairs, head_hint_pairs
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, head_hint_pairs
             else:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, t_aligned_cls_feat, s_align_cls_feat, t_aligned_reg_feat, s_align_reg_feat, hint_pairs, None, None
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None
         else:
             if self.eval_student:
                 return s_cls_score, s_bbox_pred, s_centerness
@@ -449,10 +416,6 @@ class FCOSTSFullMaskHead(nn.Module):
              s_cls_scores,
              s_bbox_preds,
              s_centernesses,
-             t_cls_feats,
-             s_cls_feats,
-             reg_feats,
-             s_reg_feats,
              hint_pairs,
              pyramid_hint_pairs,
              head_hint_pairs,
@@ -480,27 +443,6 @@ class FCOSTSFullMaskHead(nn.Module):
             cfg,
             gt_bboxes_ignore=None,
             spatial_ratio=self.spatial_ratio)
-        # duplicate single head level align
-        flatten_s_cls_feat = [
-            s_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.feat_channels)
-            for s_cls_feat in s_cls_feats
-        ]
-        flatten_t_cls_feat = [
-            t_cls_feat.permute(0, 2, 3, 1).reshape(-1, self.feat_channels)
-            for t_cls_feat in t_cls_feats
-        ]
-        flatten_s_reg_feat = [
-            s_reg_feat.permute(0, 2, 3, 1).reshape(-1, self.feat_channels)
-            for s_reg_feat in s_reg_feats
-        ]
-        flatten_t_reg_feat = [
-            t_reg_feat.permute(0, 2, 3, 1).reshape(-1, self.feat_channels)
-            for t_reg_feat in reg_feats
-        ]
-        flatten_s_cls_feat = torch.cat(flatten_s_cls_feat)
-        flatten_t_cls_feat = torch.cat(flatten_t_cls_feat)
-        flatten_s_reg_feat = torch.cat(flatten_s_reg_feat)
-        flatten_t_reg_feat = torch.cat(flatten_t_reg_feat)
 
         loss_dict = {}
         assert self.fix_student_train_teacher != self.learn_when_train
@@ -564,11 +506,14 @@ class FCOSTSFullMaskHead(nn.Module):
                 loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
 
             if self.apply_head_wise_alignment:
-                align_levels = [0]
+                head_align_levels = [0]
                 if self.align_to_teacher_logits:
-                    t_aligned_bbox_list = [[]
-                                           for _ in range(len(align_levels))]
-                    t_aligned_cls_list = [[] for _ in range(len(align_levels))]
+                    t_aligned_bbox_list = [
+                        [] for _ in range(len(head_align_levels))
+                    ]
+                    t_aligned_cls_list = [
+                        [] for _ in range(len(head_align_levels))
+                    ]
                 else:
                     t_cls_heads_feature_list = []
                     s_cls_heads_feature_list = []
@@ -586,7 +531,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_reg_head_feature_list = []
                     s_reg_head_feature_list = []
                     # towers
-                    for k in align_levels:
+                    for k in head_align_levels:
                         s_cls_head_feature = self.s_t_cls_head_align[k](
                             cls_head_pair[k][0])
                         s_reg_head_feature = self.s_t_reg_head_align[k](
@@ -594,7 +539,8 @@ class FCOSTSFullMaskHead(nn.Module):
                         if self.align_to_teacher_logits:
                             # learn from teacher logits
                             # TODO: current implement may not efficient, update later
-                            for l in align_levels:
+                            # TODO: consider spatio ratio version later
+                            for l in head_align_levels:
                                 s_reg_head_feature = self.reg_convs[l](
                                     s_reg_head_feature)
                                 s_cls_head_feature = self.cls_convs[l](
@@ -620,27 +566,31 @@ class FCOSTSFullMaskHead(nn.Module):
                             s_reg_head_feature_list.append(s_reg_head_feature)
                     if not self.align_to_teacher_logits:
                         t_cls_heads_feature_list.append(
-                            torch.cat(t_cls_head_feature_list, 1).permute(
-                                0, 2, 3, 1).reshape(
-                                    -1,
-                                    len(align_levels) * self.feat_channels))
+                            torch.cat(t_cls_head_feature_list,
+                                      1).permute(0, 2, 3, 1).reshape(
+                                          -1,
+                                          len(head_align_levels) *
+                                          self.feat_channels))
                         s_cls_heads_feature_list.append(
-                            torch.cat(s_cls_head_feature_list, 1).permute(
-                                0, 2, 3, 1).reshape(
-                                    -1,
-                                    len(align_levels) * self.feat_channels))
+                            torch.cat(s_cls_head_feature_list,
+                                      1).permute(0, 2, 3, 1).reshape(
+                                          -1,
+                                          len(head_align_levels) *
+                                          self.feat_channels))
                         t_reg_heads_feature_list.append(
-                            torch.cat(t_reg_head_feature_list, 1).permute(
-                                0, 2, 3, 1).reshape(
-                                    -1,
-                                    len(align_levels) * self.feat_channels))
+                            torch.cat(t_reg_head_feature_list,
+                                      1).permute(0, 2, 3, 1).reshape(
+                                          -1,
+                                          len(head_align_levels) *
+                                          self.feat_channels))
                         s_reg_heads_feature_list.append(
-                            torch.cat(s_reg_head_feature_list, 1).permute(
-                                0, 2, 3, 1).reshape(
-                                    -1,
-                                    len(align_levels) * self.feat_channels))
+                            torch.cat(s_reg_head_feature_list,
+                                      1).permute(0, 2, 3, 1).reshape(
+                                          -1,
+                                          len(head_align_levels) *
+                                          self.feat_channels))
                 if self.align_to_teacher_logits:
-                    for m in range(len(align_levels)):
+                    for m in range(len(head_align_levels)):
                         flatten_t_bbox_logits = torch.cat(
                             t_aligned_bbox_list[m])
                         flatten_t_cls_logits = torch.cat(t_aligned_cls_list[m])
@@ -715,17 +665,6 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update(
                         {'reg_head_hint_loss': reg_head_hint_loss})
                     # loss_dict.update({'cls_head_hint_loss': cls_head_hint_loss})
-            # duplicate
-            if self.apply_feature_alignment:
-                if str(self.loss_s_t_cls) == 'MSELoss()':
-                    loss_s_t_reg = self.loss_s_t_reg(
-                        flatten_s_reg_feat[t_pos_inds],
-                        flatten_t_reg_feat[t_pos_inds].detach())
-                elif str(self.loss_s_t_cls) == 'CrossEntropyLoss()':
-                    loss_s_t_reg = self.loss_s_t_reg(
-                        flatten_s_reg_feat[t_pos_inds],
-                        flatten_t_reg_feat[t_pos_inds].detach().sigmoid())
-                loss_dict.update(loss_s_t_reg=loss_s_t_reg)
 
             if self.finetune_student:
                 if not self.apply_data_free_mode:
