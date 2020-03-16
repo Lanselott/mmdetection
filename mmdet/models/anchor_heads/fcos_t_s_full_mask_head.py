@@ -83,6 +83,12 @@ class FCOSTSFullMaskHead(nn.Module):
                      gamma=2.0,
                      alpha=0.25,
                      loss_weight=1.0),
+                 loss_t_logits_cls=dict(
+                     type='FocalLoss',
+                     use_sigmoid=True,
+                     gamma=2.0,
+                     alpha=0.25,
+                     loss_weight=1.0),
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
                  loss_t_logits_bbox=dict(type='IoULoss', loss_weight=1.0),
                  loss_s_t_cls=dict(
@@ -158,6 +164,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.cls_reg_distribution_hint_loss = build_loss(
             cls_reg_distribution_hint_loss)
         self.loss_cls = build_loss(loss_cls)
+        self.loss_t_logits_cls = build_loss(loss_t_logits_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_t_logits_bbox = build_loss(loss_t_logits_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -653,7 +660,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         else:
                             teacher_bbox_logits_loss = t_bbox_logits.sum()
 
-                        teacher_cls_logits_loss = self.loss_cls(
+                        teacher_cls_logits_loss = self.loss_t_logits_cls(
                             flatten_t_cls_logits,
                             flatten_labels,
                             avg_factor=cls_avg_factor)
@@ -741,7 +748,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     if len(t_iou_inds) > 0:
                         # learn from teacher
-                        s_distill_loss_bbox = self.loss_t_logits_bbox(
+                        s_distill_loss_bbox = self.loss_bbox(
                             s_pred_bboxes[t_iou_inds],
                             t_pred_bboxes[t_iou_inds],
                             weight=pos_centerness_targets[t_iou_inds],
