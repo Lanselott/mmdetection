@@ -84,6 +84,7 @@ class FCOSTSFullMaskHead(nn.Module):
                      alpha=0.25,
                      loss_weight=1.0),
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
+                 loss_t_logits_bbox=dict(type='IoULoss', loss_weight=1.0),
                  loss_s_t_cls=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -158,6 +159,7 @@ class FCOSTSFullMaskHead(nn.Module):
             cls_reg_distribution_hint_loss)
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
+        self.loss_t_logits_bbox = build_loss(loss_t_logits_bbox)
         self.loss_centerness = build_loss(loss_centerness)
         self.loss_s_t_cls = build_loss(loss_s_t_cls)
         self.loss_s_t_reg = build_loss(loss_s_t_reg)
@@ -638,7 +640,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         # mask at early stage
                         t_s_ious = bbox_overlaps(
                             t_pred_bboxes, s_pred_bboxes, is_aligned=True)
-                        t_s_ious_mask = (t_s_ious >= 0.8).nonzero().reshape(-1)
+                        t_s_ious_mask = (t_s_ious >= 0.9).nonzero().reshape(-1)
                         t_bbox_logits = flatten_t_bbox_logits[t_pos_inds][t_s_ious_mask]
                         t_cls_logits = flatten_t_cls_logits[t_pos_inds][t_s_ious_mask]
                         if len(t_s_ious_mask) != 0:
@@ -739,7 +741,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     if len(t_iou_inds) > 0:
                         # learn from teacher
-                        s_distill_loss_bbox = self.loss_bbox(
+                        s_distill_loss_bbox = self.loss_t_logits_bbox(
                             s_pred_bboxes[t_iou_inds],
                             t_pred_bboxes[t_iou_inds],
                             weight=pos_centerness_targets[t_iou_inds],
