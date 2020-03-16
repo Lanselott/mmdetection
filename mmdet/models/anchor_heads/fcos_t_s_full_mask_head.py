@@ -59,6 +59,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  align_level=1,
                  apply_block_wise_alignment=False,
                  apply_pyramid_wise_alignment=False,
+                 apply_data_free_mode=False,
                  pyramid_wise_attention=False,
                  apply_head_wise_alignment=False,
                  align_to_teacher_logits=False,
@@ -156,6 +157,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_soft_centerness_distill = apply_soft_centerness_distill
         self.temperature = temperature
         self.apply_feature_alignment = apply_feature_alignment
+        self.apply_data_free_mode = apply_data_free_mode
         self.fix_student_train_teacher = fix_student_train_teacher
         self.train_student_only = train_student_only
         self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
@@ -504,7 +506,6 @@ class FCOSTSFullMaskHead(nn.Module):
         assert self.fix_student_train_teacher != self.learn_when_train
 
         if self.learn_when_train:
-            loss_dict.update(s_loss_cls=s_loss_cls)
             if self.apply_block_wise_alignment:
                 hint_pairs = hint_pairs[:4]  # Remove placeholder
                 for j, hint_feature in enumerate(hint_pairs):
@@ -727,10 +728,11 @@ class FCOSTSFullMaskHead(nn.Module):
                 loss_dict.update(loss_s_t_reg=loss_s_t_reg)
 
             if self.finetune_student:
-                loss_dict.update(
-                    s_loss_bbox=s_loss_bbox,
-                    s_loss_centerness=s_loss_centerness,
-                    s_loss_cls=s_loss_cls)
+                if not self.apply_data_free_mode:
+                    loss_dict.update(
+                        s_loss_bbox=s_loss_bbox,
+                        s_loss_centerness=s_loss_centerness,
+                        s_loss_cls=s_loss_cls)
                 if self.apply_iou_similarity:
                     assert self.spatial_ratio == 1
                     loss_iou_similiarity = self.loss_iou_similiarity(
@@ -840,7 +842,23 @@ class FCOSTSFullMaskHead(nn.Module):
                     cls_reg_dist_loss = self.cls_reg_distribution_hint_loss(
                         s_cls_reg_distance, t_cls_reg_distance)
                     loss_dict.update(cls_reg_dist_loss=cls_reg_dist_loss)
-
+                if self.apply_data_free_mode:
+                    df_t_pred_centerness = t_pred_centerness.sigmoid()
+                    df_t_labels = t_flatten_cls_scores.max(1)[1]
+                    df_avg_factor = df_t_labels.nonzero().shape[0]
+                    df_loss_bbox = self.loss_bbox(
+                        s_pred_bboxes,
+                        t_pred_bboxes,
+                        weight=df_t_pred_centerness,
+                        avg_factor=df_t_pred_centerness.sum())
+                    df_loss_cls = self.loss_cls(
+                        s_cls_scores, df_t_labels, avg_factor=df_avg_factor)
+                    df_loss_centerness = self.loss_centerness(
+                        s_pred_centerness, df_t_pred_centerness)
+                    loss_dict.update(
+                        df_loss_cls=df_loss_cls,
+                        df_loss_bbox=df_loss_bbox,
+                        df_loss_centerness=df_loss_centerness)
                 if self.train_teacher:
                     # currently duplicate
                     assert self.train_teacher != self.freeze_teacher
