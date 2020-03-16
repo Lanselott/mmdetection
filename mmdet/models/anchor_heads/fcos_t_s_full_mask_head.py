@@ -459,7 +459,7 @@ class FCOSTSFullMaskHead(nn.Module):
             img_metas,
             cfg,
             gt_bboxes_ignore=None)
-        s_hard_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, _, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness = self.loss_single(
+        s_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, _, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness = self.loss_single(
             s_cls_scores,
             s_bbox_preds,
             s_centernesses,
@@ -495,7 +495,7 @@ class FCOSTSFullMaskHead(nn.Module):
         assert self.fix_student_train_teacher != self.learn_when_train
 
         if self.learn_when_train:
-            loss_dict.update(s_hard_loss_cls=s_hard_loss_cls)
+            loss_dict.update(s_loss_cls=s_loss_cls)
             if self.apply_block_wise_alignment:
                 hint_pairs = hint_pairs[:4]  # Remove placeholder
                 for j, hint_feature in enumerate(hint_pairs):
@@ -712,7 +712,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 loss_dict.update(
                     s_loss_bbox=s_loss_bbox,
                     s_loss_centerness=s_loss_centerness,
-                    s_hard_loss_cls=s_hard_loss_cls)
+                    s_loss_cls=s_loss_cls)
                 if self.apply_iou_similarity:
                     assert self.spatial_ratio == 1
                     loss_iou_similiarity = self.loss_iou_similiarity(
@@ -838,7 +838,7 @@ class FCOSTSFullMaskHead(nn.Module):
         else:
             loss_dict.update(
                 loss_cls=loss_cls,
-                s_hard_loss_cls=s_hard_loss_cls,
+                s_loss_cls=s_loss_cls,
                 adaptive_distillation_loss=adaptive_distillation_loss,
                 loss_bbox=loss_bbox,
                 s_loss_bbox=s_loss_bbox,
