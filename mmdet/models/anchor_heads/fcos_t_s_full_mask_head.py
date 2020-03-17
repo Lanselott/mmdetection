@@ -60,7 +60,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_block_wise_alignment=False,
                  apply_pyramid_wise_alignment=False,
                  apply_data_free_mode=False,
-                 learn_from_missing_annotation=True,
+                 learn_from_missing_annotation=False,
                  pyramid_wise_attention=False,
                  apply_head_wise_alignment=False,
                  align_to_teacher_logits=False,
@@ -835,13 +835,12 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update(
                         recovered_loss_cls=recovered_loss_cls,
                         recovered_loss_bboxes=recovered_loss_bboxes)
-                if self.train_teacher:
-                    # currently duplicate
-                    assert self.train_teacher != self.freeze_teacher
+                if not self.freeze_teacher:
                     loss_dict.update(
                         loss_cls=loss_cls,
                         loss_bbox=loss_bbox,
                         loss_centerness=loss_centerness)
+
         elif self.fix_student_train_teacher:
             loss_dict.update(
                 loss_cls=loss_cls,
