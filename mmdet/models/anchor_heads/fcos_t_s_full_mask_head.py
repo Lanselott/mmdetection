@@ -60,6 +60,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_block_wise_alignment=False,
                  apply_pyramid_wise_alignment=False,
                  apply_data_free_mode=False,
+                 learn_from_missing_annotation=True,
                  pyramid_wise_attention=False,
                  apply_head_wise_alignment=False,
                  align_to_teacher_logits=False,
@@ -158,6 +159,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.temperature = temperature
         self.apply_feature_alignment = apply_feature_alignment
         self.apply_data_free_mode = apply_data_free_mode
+        self.learn_from_missing_annotation = learn_from_missing_annotation
         self.fix_student_train_teacher = fix_student_train_teacher
         self.train_student_only = train_student_only
         self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
@@ -424,7 +426,7 @@ class FCOSTSFullMaskHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, flatten_labels, t_iou_maps, t_pos_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _, t_pred_centerness = self.loss_single(
+        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, flatten_labels, t_iou_maps, t_pos_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _, t_pred_centerness, t_all_pred_bboxes = self.loss_single(
             cls_scores,
             bbox_preds,
             centernesses,
@@ -433,7 +435,7 @@ class FCOSTSFullMaskHead(nn.Module):
             img_metas,
             cfg,
             gt_bboxes_ignore=None)
-        s_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, _, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness = self.loss_single(
+        s_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, _, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness, s_all_pred_bboxes = self.loss_single(
             s_cls_scores,
             s_bbox_preds,
             s_centernesses,
@@ -506,6 +508,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
 
             if self.apply_head_wise_alignment:
+                # TODO: add to config
                 head_align_levels = [0]
                 if self.align_to_teacher_logits:
                     t_aligned_bbox_list = [
@@ -664,7 +667,8 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_cls_heads_feature_list, t_cls_heads_feature_list)
                     loss_dict.update(
                         {'reg_head_hint_loss': reg_head_hint_loss})
-                    loss_dict.update({'cls_head_hint_loss': cls_head_hint_loss})
+                    loss_dict.update(
+                        {'cls_head_hint_loss': cls_head_hint_loss})
 
             if self.finetune_student:
                 if not self.apply_data_free_mode:
@@ -798,6 +802,32 @@ class FCOSTSFullMaskHead(nn.Module):
                         df_loss_cls=df_loss_cls,
                         df_loss_bbox=df_loss_bbox,
                         df_loss_centerness=df_loss_centerness)
+                if self.learn_from_missing_annotation:
+                    t_cls_logits, t_learned_labels = t_flatten_cls_scores.sigmoid(
+                    ).max(1)
+                    t_learned_labels[t_pos_inds] = 0  # mask annotations
+                    t_missing_cls_anno_inds = t_learned_labels.nonzero(
+                    ).reshape(-1)
+                    recovered_anno_mask = t_missing_cls_anno_inds[(
+                        t_cls_logits[t_missing_cls_anno_inds] >=
+                        0.9).nonzero().reshape(-1)]
+                    recovered_pos_avg_factor = len(recovered_anno_mask)
+                    if recovered_pos_avg_factor == 0:
+                        recovered_loss_bboxes = t_all_pred_bboxes[
+                            recovered_anno_mask].sum()
+                        recovered_loss_cls = t_learned_labels[
+                            recovered_anno_mask].sum()
+                    else:
+                        recovered_loss_bboxes = self.loss_bbox(
+                            s_all_pred_bboxes[recovered_anno_mask],
+                            t_all_pred_bboxes[recovered_anno_mask])
+                        recovered_loss_cls = self.loss_cls(
+                            s_cls_scores[recovered_anno_mask],
+                            t_learned_labels[recovered_anno_mask],
+                            avg_factor=recovered_pos_avg_factor)
+                    loss_dict.update(
+                        recovered_loss_cls=recovered_loss_cls,
+                        recovered_loss_bboxes=recovered_loss_bboxes)
                 if self.train_teacher:
                     # currently duplicate
                     assert self.train_teacher != self.freeze_teacher
@@ -887,6 +917,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
         pos_bbox_preds = flatten_bbox_preds[pos_inds]
         pos_centerness = flatten_centerness[pos_inds]
+        decoded_bbox_preds = distance2bbox(flatten_points, flatten_bbox_preds)
 
         if num_pos > 0:
             pos_bbox_targets = flatten_bbox_targets[pos_inds]
@@ -914,7 +945,7 @@ class FCOSTSFullMaskHead(nn.Module):
             loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
 
-        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, flatten_labels, pos_iou_maps, pos_inds, pos_decoded_bbox_preds, pos_decoded_target_preds, block_distill_masks, pos_centerness_targets, pos_centerness
+        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, flatten_labels, pos_iou_maps, pos_inds, pos_decoded_bbox_preds, pos_decoded_target_preds, block_distill_masks, pos_centerness_targets, pos_centerness, decoded_bbox_preds
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,
