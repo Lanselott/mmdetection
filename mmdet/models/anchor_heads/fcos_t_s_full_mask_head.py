@@ -812,7 +812,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     ).reshape(-1)
                     recovered_anno_mask = t_missing_cls_anno_inds[(
                         t_cls_logits[t_missing_cls_anno_inds] >=
-                        0.9).nonzero().reshape(-1)]
+                        0.7).nonzero().reshape(-1)]
                     recovered_pos_avg_factor = len(recovered_anno_mask)
                     if recovered_pos_avg_factor == 0:
                         recovered_loss_bboxes = t_all_pred_bboxes[
