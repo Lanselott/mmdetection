@@ -787,7 +787,10 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update(cls_reg_dist_loss=cls_reg_dist_loss)
                 if self.apply_data_free_mode:
                     df_t_pred_centerness = t_pred_centerness.sigmoid()
-                    df_t_labels = t_flatten_cls_scores.max(1)[1]
+                    df_t_confidence, df_t_labels = t_flatten_cls_scores.sigmoid(
+                    ).max(1)
+                    # select high confidence
+                    df_t_labels[(df_t_confidence < 0.3).nonzero()] = 0
                     df_avg_factor = df_t_labels.nonzero().shape[0]
                     df_loss_bbox = self.loss_bbox(
                         s_pred_bboxes,
