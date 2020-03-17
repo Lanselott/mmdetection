@@ -494,6 +494,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                 t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
+
                 pyramid_hint_loss = self.pyramid_hint_loss(
                     s_pyramid_feature_list, t_pyramid_feature_list)
                 if self.pyramid_wise_attention:
