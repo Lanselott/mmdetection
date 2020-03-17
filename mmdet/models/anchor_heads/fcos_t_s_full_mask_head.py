@@ -803,7 +803,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         df_loss_bbox=df_loss_bbox,
                         df_loss_centerness=df_loss_centerness)
                 if self.learn_from_missing_annotation:
-                    # learn from high confidence predictions 
+                    # learn from high confidence predictions
                     # from teacher network without annotations
                     t_cls_logits, t_learned_labels = t_flatten_cls_scores.sigmoid(
                     ).max(1)
@@ -820,10 +820,11 @@ class FCOSTSFullMaskHead(nn.Module):
                         recovered_loss_cls = s_cls_scores[
                             recovered_anno_mask].sum()
                     else:
-                        recovered_loss_bboxes = self.loss_bbox(
+                        recovered_loss_weight = 0.1
+                        recovered_loss_bboxes = recovered_loss_weight * self.loss_bbox(
                             s_all_pred_bboxes[recovered_anno_mask],
                             t_all_pred_bboxes[recovered_anno_mask])
-                        recovered_loss_cls = self.loss_cls(
+                        recovered_loss_cls = recovered_loss_weight * self.loss_cls(
                             s_cls_scores[recovered_anno_mask],
                             t_learned_labels[recovered_anno_mask],
                             avg_factor=recovered_pos_avg_factor)
