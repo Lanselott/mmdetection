@@ -1,7 +1,7 @@
 # model settings
 ALIGN = False
 PYRAMID_ALIGN = True
-HEAD_ALIGN = True
+HEAD_ALIGN = False
 FREEZE_TEACHER = False
 RATIO = 2
 DOWNSAMPLE_RATIO = 1
@@ -56,7 +56,7 @@ model = dict(
         align_level=0,
         apply_block_wise_alignment=ALIGN,
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
-        apply_data_free_mode=True,
+        apply_data_free_mode=False,
         learn_from_missing_annotation=False,
         pyramid_wise_attention=False,
         apply_head_wise_alignment=HEAD_ALIGN,
@@ -70,9 +70,9 @@ model = dict(
         gamma=2,
         adap_distill_loss_weight=0.5,
         strides=[8, 16, 32, 64, 128],
-        pyramid_hint_loss=dict(type='MSELoss', loss_weight=10),
-        reg_head_hint_loss=dict(type='MSELoss', loss_weight=10),
-        cls_head_hint_loss=dict(type='MSELoss', loss_weight=10),
+        pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
+        reg_head_hint_loss=dict(type='MSELoss', loss_weight=1),
+        cls_head_hint_loss=dict(type='MSELoss', loss_weight=1),
         cls_reg_distribution_hint_loss=dict(type='MSELoss', loss_weight=1),
         loss_cls=dict(
             type='FocalLoss',

@@ -1,7 +1,7 @@
 # model settings
 BLOCK_ALIGN=False
 PYRAMID_ALIGN=True
-HEAD_ALIGN = True
+HEAD_ALIGN = False
 FREEZE_TEACHER=False
 RATIO=2
 model = dict(
@@ -16,7 +16,7 @@ model = dict(
         frozen_stages=1,
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe',
-        pyramid_hint_loss=dict(type='MSELoss', loss_weight=10),
+        pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
         apply_block_wise_alignment=BLOCK_ALIGN,
         freeze_teacher=FREEZE_TEACHER),
     neck=dict(
