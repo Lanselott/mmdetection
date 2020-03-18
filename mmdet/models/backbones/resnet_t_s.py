@@ -393,6 +393,7 @@ class ResTSNet(nn.Module):
                  style='pytorch',
                  pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
                  apply_block_wise_alignment=False,
+                 freeze_teacher=False,
                  frozen_stages=-1,
                  conv_cfg=None,
                  norm_cfg=dict(type='BN', requires_grad=True),
@@ -421,6 +422,7 @@ class ResTSNet(nn.Module):
         self.style = style
         self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
         self.apply_block_wise_alignment = apply_block_wise_alignment
+        self.freeze_teacher = freeze_teacher
         self.frozen_stages = frozen_stages
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
@@ -544,6 +546,11 @@ class ResTSNet(nn.Module):
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
     def _freeze_stages(self):
+        if self.freeze_teacher:
+            assert self.frozen_stages == 4
+        else:
+            assert self.frozen_stages == 1
+            
         if self.frozen_stages >= 0:
             self.norm1.eval()
             for m in [self.conv1, self.norm1]:
