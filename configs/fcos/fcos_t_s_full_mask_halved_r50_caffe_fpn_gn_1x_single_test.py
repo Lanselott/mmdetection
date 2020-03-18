@@ -50,7 +50,7 @@ model = dict(
         learn_when_train=True,
         finetune_student=True,
         train_teacher=False,
-        apply_iou_similarity=False,
+        apply_iou_similarity=True,
         apply_soft_regression_distill=False,
         temperature=1,
         align_level=0,
@@ -94,8 +94,9 @@ model = dict(
             loss_weight=1.0),
         loss_regression_distill=dict(type='IoULoss', loss_weight=1.0),
         reg_distill_threshold=0.5,
-        loss_iou_similiarity=dict(
-            type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
+        # loss_iou_similiarity=dict(
+        #     type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
+        loss_iou_similiarity=dict(type='MSELoss', loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings
@@ -192,6 +193,6 @@ total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
-load_from = 'work/dirs/fcos_t_s_scratch_model/fcos_t_s_finetune_halved_student_from_scratch_epoch_12.pth'
+load_from = None  #'work/dirs/fcos_t_s_scratch_model/fcos_t_s_finetune_halved_student_from_scratch_epoch_12.pth'
 resume_from = None
 workflow = [('train', 1)]

@@ -1,9 +1,9 @@
 # model settings
-BLOCK_ALIGN=False
-PYRAMID_ALIGN=True
+BLOCK_ALIGN = False
+PYRAMID_ALIGN = True
 HEAD_ALIGN = True
-FREEZE_TEACHER=False
-RATIO=2
+FREEZE_TEACHER = False
+RATIO = 2
 model = dict(
     type='FCOSTS',
     pretrained='open-mmlab://resnet50_caffe',
@@ -48,7 +48,7 @@ model = dict(
         finetune_student=True,
         apply_iou_similarity=False,
         apply_soft_cls_distill=False,
-        apply_feature_alignment=False, # regression
+        apply_feature_alignment=False,  # regression
         temperature=1,
         align_level=0,
         apply_block_wise_alignment=BLOCK_ALIGN,
@@ -57,11 +57,11 @@ model = dict(
         apply_head_wise_alignment=HEAD_ALIGN,
         freeze_teacher=FREEZE_TEACHER,
         block_teacher_attention=False,
-        attention_threshold=0.5, # duplicate
+        attention_threshold=0.5,  # duplicate
         # student distillation params
-        beta = 1.5,
-        gamma = 2,
-        adap_distill_loss_weight = 0.3,
+        beta=1.5,
+        gamma=2,
+        adap_distill_loss_weight=0.3,
         strides=[8, 16, 32, 64, 128],
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
         reg_head_hint_loss=dict(type='MSELoss', loss_weight=1),
@@ -79,8 +79,14 @@ model = dict(
         #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_s_t_cls=dict(type='MSELoss', loss_weight=5),
         loss_s_t_reg=dict(type='MSELoss', loss_weight=5),
-        t_s_distance = dict(type='CrossEntropyLoss', use_sigmoid=True, reduction='none', loss_weight=1.0),
-        loss_iou_similiarity = dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
+        t_s_distance=dict(
+            type='CrossEntropyLoss',
+            use_sigmoid=True,
+            reduction='none',
+            loss_weight=1.0),
+        # loss_iou_similiarity=dict(
+        #     type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
+        loss_iou_similiarity=dict(type='MSELoss', loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings
@@ -177,6 +183,6 @@ total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
-load_from = None #'./fcos_t_s_finetune_halved_student_from_scratch_epoch_12.pth'
+load_from = None  #'./fcos_t_s_finetune_halved_student_from_scratch_epoch_12.pth'
 resume_from = None
 workflow = [('train', 1)]
