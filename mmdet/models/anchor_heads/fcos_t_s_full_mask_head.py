@@ -497,19 +497,20 @@ class FCOSTSFullMaskHead(nn.Module):
                 t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
 
-                pyramid_hint_loss = self.pyramid_hint_loss(
-                    s_pyramid_feature_list, t_pyramid_feature_list)
-
                 if self.pyramid_wise_attention:
+                    attention_weight = bbox_overlaps(s_pred_bboxes, t_pred_bboxes, is_aligned=True)
                     attention_pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list[t_pos_inds],
                         t_pyramid_feature_list[t_pos_inds],
-                        weight=pos_centerness_targets)
+                        weight=attention_weight)
                     loss_dict.update({
                         'attention_pyramid_hint_loss':
                         attention_pyramid_hint_loss
                     })
-                loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
+                else:
+                    pyramid_hint_loss = self.pyramid_hint_loss(
+                        s_pyramid_feature_list, t_pyramid_feature_list)
+                    loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
 
             if self.apply_head_wise_alignment:
                 # TODO: add to config
@@ -684,7 +685,6 @@ class FCOSTSFullMaskHead(nn.Module):
                     assert self.spatial_ratio == 1
                     if self.apply_posprocessing_similarity:
                         # TODO: not done yet
-                        assert self.apply_posprocessing_similarity == False
                         pass
                     else:
                         loss_iou_similiarity = self.loss_iou_similiarity(
@@ -791,8 +791,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_cls_reg_distance = t_flatten_cls_scores[
                         t_pos_inds].sigmoid().max(
                             1)[0] * t_pred_centerness.sigmoid() - t_iou_maps
-                    s_cls_reg_distance = s_flatten_cls_scores[t_pos_inds].sigmoid(
-                    ).max(1)[0] * s_pred_centerness.sigmoid() - s_iou_maps
+                    s_cls_reg_distance = s_flatten_cls_scores[
+                        t_pos_inds].sigmoid().max(
+                            1)[0] * s_pred_centerness.sigmoid() - s_iou_maps
                     cls_reg_dist_loss = self.cls_reg_distribution_hint_loss(
                         s_cls_reg_distance, t_cls_reg_distance)
                     loss_dict.update(cls_reg_dist_loss=cls_reg_dist_loss)
@@ -809,7 +810,9 @@ class FCOSTSFullMaskHead(nn.Module):
                         weight=df_t_pred_centerness,
                         avg_factor=df_t_pred_centerness.sum())
                     df_loss_cls = self.loss_cls(
-                        s_flatten_cls_scores, df_t_labels, avg_factor=df_avg_factor)
+                        s_flatten_cls_scores,
+                        df_t_labels,
+                        avg_factor=df_avg_factor)
                     df_loss_centerness = self.loss_centerness(
                         s_pred_centerness, df_t_pred_centerness)
                     loss_dict.update(
@@ -945,10 +948,14 @@ class FCOSTSFullMaskHead(nn.Module):
             '''
             Generate IoU map of Teacher and Student model
             '''
+            if self.apply_posprocessing_similarity:
+                is_aligned = True
+            else:
+                is_aligned = False
             pos_iou_maps = bbox_overlaps(
                 pos_decoded_bbox_preds,
                 pos_decoded_target_preds,
-                is_aligned=False)
+                is_aligned=is_aligned)
             # centerness weighted iou loss
             loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds,
