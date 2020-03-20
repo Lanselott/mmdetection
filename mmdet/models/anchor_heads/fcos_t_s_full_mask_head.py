@@ -497,6 +497,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                 pyramid_hint_loss = self.pyramid_hint_loss(
                     s_pyramid_feature_list, t_pyramid_feature_list)
+                
                 if self.pyramid_wise_attention:
                     attention_pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list[t_pos_inds],
