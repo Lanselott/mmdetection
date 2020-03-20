@@ -48,6 +48,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  finetune_student=False,
                  train_teacher=False,
                  apply_iou_similarity=False,
+                 apply_posprocessing_similarity=False,
                  apply_soft_regression_distill=False,
                  choose_better_iou=False,
                  apply_soft_cls_distill=False,
@@ -152,6 +153,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.finetune_student = finetune_student
         self.train_teacher = train_teacher
         self.apply_iou_similarity = apply_iou_similarity
+        self.apply_posprocessing_similarity = apply_posprocessing_similarity
         self.apply_soft_regression_distill = apply_soft_regression_distill
         self.choose_better_iou = choose_better_iou
         self.apply_soft_cls_distill = apply_soft_cls_distill
@@ -435,7 +437,7 @@ class FCOSTSFullMaskHead(nn.Module):
             img_metas,
             cfg,
             gt_bboxes_ignore=None)
-        s_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_cls_scores, _, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness, s_all_pred_bboxes = self.loss_single(
+        s_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_flatten_cls_scores, _, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness, s_all_pred_bboxes = self.loss_single(
             s_cls_scores,
             s_bbox_preds,
             s_centernesses,
@@ -497,7 +499,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                 pyramid_hint_loss = self.pyramid_hint_loss(
                     s_pyramid_feature_list, t_pyramid_feature_list)
-                
+
                 if self.pyramid_wise_attention:
                     attention_pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list[t_pos_inds],
@@ -680,9 +682,16 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_loss_cls=s_loss_cls)
                 if self.apply_iou_similarity:
                     assert self.spatial_ratio == 1
-                    loss_iou_similiarity = self.loss_iou_similiarity(
-                        s_iou_maps, t_iou_maps.detach())
-                    loss_dict.update(loss_iou_similiarity=loss_iou_similiarity)
+                    if self.apply_posprocessing_similarity:
+                        # TODO: not done yet
+                        assert self.apply_posprocessing_similarity == False
+                        pass
+                    else:
+                        loss_iou_similiarity = self.loss_iou_similiarity(
+                            s_iou_maps, t_iou_maps.detach())
+                        loss_dict.update(
+                            loss_iou_similiarity=loss_iou_similiarity)
+
                 if self.apply_soft_regression_distill:
                     # calcuate iou of student boxes with teacher boxes and ground truths
                     # choose the better iou as guidance
@@ -729,7 +738,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         # upsample student to match the size
                         # TODO: currently not use
                         assert True
-                    s_tempered_cls_scores = s_cls_scores / self.temperature
+                    s_tempered_cls_scores = s_flatten_cls_scores / self.temperature
                     s_gt_labels = (t_flatten_cls_scores.detach() /
                                    self.temperature).sigmoid()
                     # CE(KL distance) between teacher and student
@@ -782,7 +791,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_cls_reg_distance = t_flatten_cls_scores[
                         t_pos_inds].sigmoid().max(
                             1)[0] * t_pred_centerness.sigmoid() - t_iou_maps
-                    s_cls_reg_distance = s_cls_scores[t_pos_inds].sigmoid(
+                    s_cls_reg_distance = s_flatten_cls_scores[t_pos_inds].sigmoid(
                     ).max(1)[0] * s_pred_centerness.sigmoid() - s_iou_maps
                     cls_reg_dist_loss = self.cls_reg_distribution_hint_loss(
                         s_cls_reg_distance, t_cls_reg_distance)
@@ -800,7 +809,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         weight=df_t_pred_centerness,
                         avg_factor=df_t_pred_centerness.sum())
                     df_loss_cls = self.loss_cls(
-                        s_cls_scores, df_t_labels, avg_factor=df_avg_factor)
+                        s_flatten_cls_scores, df_t_labels, avg_factor=df_avg_factor)
                     df_loss_centerness = self.loss_centerness(
                         s_pred_centerness, df_t_pred_centerness)
                     loss_dict.update(
@@ -822,7 +831,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     if recovered_pos_avg_factor == 0:
                         recovered_loss_bboxes = t_all_pred_bboxes[
                             recovered_anno_mask].sum()
-                        recovered_loss_cls = s_cls_scores[
+                        recovered_loss_cls = s_flatten_cls_scores[
                             recovered_anno_mask].sum()
                     else:
                         recovered_loss_weight = 1
@@ -830,7 +839,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             s_all_pred_bboxes[recovered_anno_mask],
                             t_all_pred_bboxes[recovered_anno_mask])
                         recovered_loss_cls = recovered_loss_weight * self.loss_cls(
-                            s_cls_scores[recovered_anno_mask],
+                            s_flatten_cls_scores[recovered_anno_mask],
                             t_learned_labels[recovered_anno_mask],
                             avg_factor=recovered_pos_avg_factor)
                     loss_dict.update(
@@ -939,7 +948,7 @@ class FCOSTSFullMaskHead(nn.Module):
             pos_iou_maps = bbox_overlaps(
                 pos_decoded_bbox_preds,
                 pos_decoded_target_preds,
-                is_aligned=True)
+                is_aligned=False)
             # centerness weighted iou loss
             loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds,
@@ -961,7 +970,8 @@ class FCOSTSFullMaskHead(nn.Module):
                    centernesses,
                    img_metas,
                    cfg,
-                   rescale=None):
+                   rescale=None,
+                   require_grad=False):
         assert len(cls_scores) == len(bbox_preds)
         num_levels = len(cls_scores)
 
@@ -975,22 +985,43 @@ class FCOSTSFullMaskHead(nn.Module):
             mlvl_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                           bbox_preds[0].device)
         result_list = []
-        for img_id in range(len(img_metas)):
-            cls_score_list = [
-                cls_scores[i][img_id].detach() for i in range(num_levels)
-            ]
-            bbox_pred_list = [
-                bbox_preds[i][img_id].detach() for i in range(num_levels)
-            ]
-            centerness_pred_list = [
-                centernesses[i][img_id].detach() for i in range(num_levels)
-            ]
-            img_shape = img_metas[img_id]['img_shape']
-            scale_factor = img_metas[img_id]['scale_factor']
-            det_bboxes = self.get_bboxes_single(cls_score_list, bbox_pred_list,
-                                                centerness_pred_list,
-                                                mlvl_points, img_shape,
-                                                scale_factor, cfg, rescale)
+        if require_grad:
+            for img_id in range(len(img_metas)):
+                cls_score_list = [
+                    cls_scores[i][img_id] for i in range(num_levels)
+                ]
+                bbox_pred_list = [
+                    bbox_preds[i][img_id] for i in range(num_levels)
+                ]
+                centerness_pred_list = [
+                    centernesses[i][img_id] for i in range(num_levels)
+                ]
+                img_shape = img_metas[img_id]['img_shape']
+                scale_factor = img_metas[img_id]['scale_factor']
+                det_bboxes = self.get_bboxes_single(cls_score_list,
+                                                    bbox_pred_list,
+                                                    centerness_pred_list,
+                                                    mlvl_points, img_shape,
+                                                    scale_factor, cfg, rescale)
+            result_list.append(det_bboxes)
+        else:
+            for img_id in range(len(img_metas)):
+                cls_score_list = [
+                    cls_scores[i][img_id].detach() for i in range(num_levels)
+                ]
+                bbox_pred_list = [
+                    bbox_preds[i][img_id].detach() for i in range(num_levels)
+                ]
+                centerness_pred_list = [
+                    centernesses[i][img_id].detach() for i in range(num_levels)
+                ]
+                img_shape = img_metas[img_id]['img_shape']
+                scale_factor = img_metas[img_id]['scale_factor']
+                det_bboxes = self.get_bboxes_single(cls_score_list,
+                                                    bbox_pred_list,
+                                                    centerness_pred_list,
+                                                    mlvl_points, img_shape,
+                                                    scale_factor, cfg, rescale)
             result_list.append(det_bboxes)
         return result_list
 
