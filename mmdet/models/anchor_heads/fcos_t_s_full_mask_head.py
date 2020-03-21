@@ -557,9 +557,9 @@ class FCOSTSFullMaskHead(nn.Module):
                             reg_head_pair[k][0])
                         if self.align_to_teacher_logits:
                             # learn from teacher logits
-                            # TODO: current implement may not efficient, update later
                             # TODO: consider spatio ratio version later
-                            for l in range(k, self.stacked_convs):
+                            # head_align_levels + 1
+                            for l in range(k + 1, self.stacked_convs):
                                 s_reg_head_feature = self.reg_convs[l](
                                     s_reg_head_feature)
                                 s_cls_head_feature = self.cls_convs[l](
