@@ -60,10 +60,12 @@ class FCOSTSFullMaskHead(nn.Module):
                  align_level=1,
                  apply_block_wise_alignment=False,
                  apply_pyramid_wise_alignment=False,
+                 apply_head_wise_alignment=False,
                  apply_data_free_mode=False,
                  learn_from_missing_annotation=False,
+                 block_wise_attention=False,
                  pyramid_wise_attention=False,
-                 apply_head_wise_alignment=False,
+                 head_wise_attention=False,
                  align_to_teacher_logits=False,
                  cosine_similarity=False,
                  block_teacher_attention=False,
@@ -134,7 +136,9 @@ class FCOSTSFullMaskHead(nn.Module):
         self.align_level = align_level
         self.apply_block_wise_alignment = apply_block_wise_alignment
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
+        self.block_wise_attention = block_wise_attention
         self.pyramid_wise_attention = pyramid_wise_attention
+        self.head_wise_attention = head_wise_attention
         self.apply_head_wise_alignment = apply_head_wise_alignment
         self.align_to_teacher_logits = align_to_teacher_logits
         self.cosine_similarity = cosine_similarity
@@ -498,7 +502,8 @@ class FCOSTSFullMaskHead(nn.Module):
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
 
                 if self.pyramid_wise_attention:
-                    attention_weight = bbox_overlaps(s_pred_bboxes, t_pred_bboxes, is_aligned=True)
+                    attention_weight = bbox_overlaps(
+                        s_pred_bboxes, t_pred_bboxes, is_aligned=True)
                     attention_pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list[t_pos_inds],
                         t_pyramid_feature_list[t_pos_inds],
