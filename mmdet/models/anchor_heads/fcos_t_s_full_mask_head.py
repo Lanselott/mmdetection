@@ -66,6 +66,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  learn_from_missing_annotation=False,
                  block_wise_attention=False,
                  pyramid_wise_attention=False,
+                 dynamic_weight=False,
                  head_wise_attention=False,
                  align_to_teacher_logits=False,
                  cosine_similarity=False,
@@ -139,6 +140,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
         self.block_wise_attention = block_wise_attention
         self.pyramid_wise_attention = pyramid_wise_attention
+        self.dynamic_weight = dynamic_weight
         self.head_wise_attention = head_wise_attention
         self.apply_head_wise_alignment = apply_head_wise_alignment
         self.head_align_levels = head_align_levels
@@ -503,9 +505,10 @@ class FCOSTSFullMaskHead(nn.Module):
                 t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
 
-                if self.pyramid_wise_attention:
+                if self.pyramid_wise_attention or self.dynamic_weight:
                     attention_weight = bbox_overlaps(
                         s_pred_bboxes, t_pred_bboxes, is_aligned=True)
+                if self.pyramid_wise_attention:
                     attention_pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list[t_pos_inds],
                         t_pyramid_feature_list[t_pos_inds],
@@ -515,6 +518,8 @@ class FCOSTSFullMaskHead(nn.Module):
                         attention_pyramid_hint_loss
                     })
                 else:
+                    if self.dynamic_weight:
+                        self.pyramid_hint_loss.loss_weight=attention_weight.mean()
                     pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list, t_pyramid_feature_list)
                     loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
