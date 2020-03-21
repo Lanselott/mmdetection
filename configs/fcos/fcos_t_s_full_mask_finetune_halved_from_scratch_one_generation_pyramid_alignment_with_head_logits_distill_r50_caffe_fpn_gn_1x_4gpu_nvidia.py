@@ -16,7 +16,7 @@ model = dict(
         frozen_stages=1,
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe',
-        pyramid_hint_loss=dict(type='MSELoss', loss_weight=2),
+        pyramid_hint_loss=dict(type='MSELoss', loss_weight=1.0),
         apply_block_wise_alignment=BLOCK_ALIGN,
         freeze_teacher=FREEZE_TEACHER),
     neck=dict(
@@ -66,7 +66,7 @@ model = dict(
         gamma = 2,
         adap_distill_loss_weight = 0.3,
         strides=[8, 16, 32, 64, 128],
-        pyramid_hint_loss=dict(type='MSELoss', loss_weight=2),
+        pyramid_hint_loss=dict(type='MSELoss', loss_weight=1.0),
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
@@ -85,8 +85,6 @@ model = dict(
         #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         # loss_s_t_reg=dict(
         #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-        loss_s_t_cls=dict(type='MSELoss', loss_weight=5),
-        loss_s_t_reg=dict(type='MSELoss', loss_weight=5),
         t_s_distance = dict(type='CrossEntropyLoss', use_sigmoid=True, reduction='none', loss_weight=1.0),
         loss_iou_similiarity = dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
         loss_centerness=dict(
