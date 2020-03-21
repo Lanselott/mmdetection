@@ -61,6 +61,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_block_wise_alignment=False,
                  apply_pyramid_wise_alignment=False,
                  apply_head_wise_alignment=False,
+                 head_align_levels=[0],
                  apply_data_free_mode=False,
                  learn_from_missing_annotation=False,
                  block_wise_attention=False,
@@ -140,6 +141,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.pyramid_wise_attention = pyramid_wise_attention
         self.head_wise_attention = head_wise_attention
         self.apply_head_wise_alignment = apply_head_wise_alignment
+        self.head_align_levels = head_align_levels
         self.align_to_teacher_logits = align_to_teacher_logits
         self.cosine_similarity = cosine_similarity
         self.block_teacher_attention = block_teacher_attention
@@ -518,14 +520,13 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
 
             if self.apply_head_wise_alignment:
-                # TODO: add to config
-                head_align_levels = [0]
+
                 if self.align_to_teacher_logits:
                     t_aligned_bbox_list = [
-                        [] for _ in range(len(head_align_levels))
+                        [] for _ in range(len(self.head_align_levels))
                     ]
                     t_aligned_cls_list = [
-                        [] for _ in range(len(head_align_levels))
+                        [] for _ in range(len(self.head_align_levels))
                     ]
                 else:
                     t_cls_heads_feature_list = []
@@ -544,7 +545,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_reg_head_feature_list = []
                     s_reg_head_feature_list = []
                     # towers
-                    for k in head_align_levels:
+                    for k in self.head_align_levels:
                         s_cls_head_feature = self.s_t_cls_head_align[k](
                             cls_head_pair[k][0])
                         s_reg_head_feature = self.s_t_reg_head_align[k](
@@ -553,7 +554,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             # learn from teacher logits
                             # TODO: current implement may not efficient, update later
                             # TODO: consider spatio ratio version later
-                            for l in head_align_levels:
+                            for l in range(k, self.stacked_convs):
                                 s_reg_head_feature = self.reg_convs[l](
                                     s_reg_head_feature)
                                 s_cls_head_feature = self.cls_convs[l](
@@ -582,28 +583,28 @@ class FCOSTSFullMaskHead(nn.Module):
                             torch.cat(t_cls_head_feature_list,
                                       1).permute(0, 2, 3, 1).reshape(
                                           -1,
-                                          len(head_align_levels) *
+                                          len(self.head_align_levels) *
                                           self.feat_channels))
                         s_cls_heads_feature_list.append(
                             torch.cat(s_cls_head_feature_list,
                                       1).permute(0, 2, 3, 1).reshape(
                                           -1,
-                                          len(head_align_levels) *
+                                          len(self.head_align_levels) *
                                           self.feat_channels))
                         t_reg_heads_feature_list.append(
                             torch.cat(t_reg_head_feature_list,
                                       1).permute(0, 2, 3, 1).reshape(
                                           -1,
-                                          len(head_align_levels) *
+                                          len(self.head_align_levels) *
                                           self.feat_channels))
                         s_reg_heads_feature_list.append(
                             torch.cat(s_reg_head_feature_list,
                                       1).permute(0, 2, 3, 1).reshape(
                                           -1,
-                                          len(head_align_levels) *
+                                          len(self.head_align_levels) *
                                           self.feat_channels))
                 if self.align_to_teacher_logits:
-                    for m in range(len(head_align_levels)):
+                    for m in range(len(self.head_align_levels)):
                         flatten_t_bbox_logits = torch.cat(
                             t_aligned_bbox_list[m])
                         flatten_t_cls_logits = torch.cat(t_aligned_cls_list[m])
@@ -611,7 +612,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         # mask at early stage
                         t_s_ious = bbox_overlaps(
                             t_pred_bboxes, s_pred_bboxes, is_aligned=True)
-                        t_s_ious_mask = (t_s_ious >= 0.9).nonzero().reshape(-1)
+                        t_s_ious_mask = (t_s_ious >= 0.0).nonzero().reshape(-1)
                         t_bbox_logits = flatten_t_bbox_logits[t_pos_inds][
                             t_s_ious_mask]
                         if len(t_s_ious_mask) != 0:
