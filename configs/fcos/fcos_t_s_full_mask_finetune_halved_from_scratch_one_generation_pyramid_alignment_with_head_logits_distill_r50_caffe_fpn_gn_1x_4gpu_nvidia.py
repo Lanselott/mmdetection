@@ -1,7 +1,7 @@
 # model settings
 BLOCK_ALIGN=False
 PYRAMID_ALIGN=True
-HEAD_ALIGN=True
+HEAD_ALIGN=False
 FREEZE_TEACHER=False
 RATIO=2
 model = dict(
