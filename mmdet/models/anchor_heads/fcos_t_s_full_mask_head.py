@@ -264,7 +264,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 self.s_feat_channels, self.feat_channels, 3, padding=1)
 
         if self.apply_head_wise_alignment:
-            for i in range(self.stacked_convs):
+            for i in range(self.stacked_convs + 1): # NOTE: head wise + learn from logits
                 # s->t
                 self.s_t_reg_head_align.append(
                     ConvModule(
@@ -626,9 +626,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     s_reg_head_feature = head_hint_pair[1][branch_level][0]
 
                     # align student/teacher tensor sizes
-                    s_cls_head_feature = self.s_t_cls_head_align[branch_level](
+                    s_cls_head_feature = self.s_t_cls_head_align[-1](
                         s_cls_head_feature)
-                    s_reg_head_feature = self.s_t_reg_head_align[branch_level](
+                    s_reg_head_feature = self.s_t_reg_head_align[-1](
                         s_reg_head_feature)
 
                     for cls_conv, reg_conv in zip(self.cls_convs,

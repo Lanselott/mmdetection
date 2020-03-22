@@ -1,7 +1,7 @@
 # model settings
 BLOCK_ALIGN=False
 PYRAMID_ALIGN=True
-HEAD_ALIGN=False
+HEAD_ALIGN=True
 FREEZE_TEACHER=False
 RATIO=2
 model = dict(
@@ -80,7 +80,7 @@ model = dict(
             gamma=2.0,
             alpha=0.25,
             loss_weight=0.1),
-        loss_t_logits_bbox=dict(type='IoULoss', loss_weight=0.1),
+        loss_t_logits_bbox=dict(type='IoULoss', loss_weight=1.0),
         # loss_s_t_cls=dict(
         #     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         # loss_s_t_reg=dict(
