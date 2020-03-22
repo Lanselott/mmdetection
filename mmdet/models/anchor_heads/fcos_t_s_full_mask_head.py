@@ -519,7 +519,8 @@ class FCOSTSFullMaskHead(nn.Module):
                     })
                 else:
                     if self.dynamic_weight:
-                        self.pyramid_hint_loss.loss_weight=attention_weight.mean()
+                        self.pyramid_hint_loss.loss_weight=attention_weight.mean() * 10
+                        # print("self.pyramid_hint_loss.loss_weight:", self.pyramid_hint_loss.loss_weight)
                     pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list, t_pyramid_feature_list)
                     loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})

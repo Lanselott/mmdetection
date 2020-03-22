@@ -2,7 +2,7 @@
 ALIGN = False
 PYRAMID_ALIGN = True
 HEAD_ALIGN = True
-FREEZE_TEACHER = True
+FREEZE_TEACHER = False
 RATIO = 2
 DOWNSAMPLE_RATIO = 1
 model = dict(
@@ -15,7 +15,7 @@ model = dict(
         spatial_ratio=DOWNSAMPLE_RATIO,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
-        frozen_stages=4,
+        frozen_stages=1,
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe',
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
@@ -59,13 +59,13 @@ model = dict(
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         apply_data_free_mode=False,
         learn_from_missing_annotation=False,
-        block_wise_attention=True,
+        block_wise_attention=False,
         pyramid_wise_attention=False,
         dynamic_weight=True,
-        head_wise_attention=True,
+        head_wise_attention=False,
         apply_head_wise_alignment=HEAD_ALIGN,
         head_align_levels=[0],
-        align_to_teacher_logits=True,
+        align_to_teacher_logits=False,
         block_teacher_attention=False,
         head_teacher_reg_attention=False,
         consider_cls_reg_distribution=False,
