@@ -16,7 +16,8 @@ model = dict(
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe',
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=10),
-        apply_block_wise_alignment=BLOCK_ALIGN),
+        apply_block_wise_alignment=BLOCK_ALIGN,
+        freeze_teacher=FREEZE_TEACHER),
     neck=dict(
         type='FPNTS',
         in_channels=[256, 512, 1024, 2048],
