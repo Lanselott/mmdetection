@@ -436,7 +436,7 @@ class FCOSTSFullMaskHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, flatten_labels, t_iou_maps, t_pos_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _, t_pred_centerness, t_all_pred_bboxes = self.loss_single(
+        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, flatten_labels, t_iou_maps, t_pos_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _, t_pred_centerness, t_all_pred_bboxes, t_pos_points = self.loss_single(
             cls_scores,
             bbox_preds,
             centernesses,
@@ -445,7 +445,7 @@ class FCOSTSFullMaskHead(nn.Module):
             img_metas,
             cfg,
             gt_bboxes_ignore=None)
-        s_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_flatten_cls_scores, _, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness, s_all_pred_bboxes = self.loss_single(
+        s_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_flatten_cls_scores, _, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness, s_all_pred_bboxes, _ = self.loss_single(
             s_cls_scores,
             s_bbox_preds,
             s_centernesses,
@@ -651,13 +651,15 @@ class FCOSTSFullMaskHead(nn.Module):
                 ]
                 flatten_t_cls_scores = torch.cat(flatten_t_cls_scores)
                 flatten_t_bbox_preds = torch.cat(flatten_t_bbox_preds)
+                t_pos_logits_bboxes = flatten_t_bbox_preds[t_pos_inds]
+                t_pos_logits_bboxes = distance2bbox(t_pos_points, t_pos_logits_bboxes)
 
                 t_logits_cls = self.loss_cls(
                     flatten_t_cls_scores,
                     flatten_labels,
                     avg_factor=cls_avg_factor)
                 t_logits_reg = self.loss_bbox(
-                    flatten_t_bbox_preds[t_pos_inds],
+                    t_pos_logits_bboxes,
                     t_gt_bboxes,
                     weight=pos_centerness_targets,
                     avg_factor=pos_centerness_targets.sum())
@@ -957,7 +959,7 @@ class FCOSTSFullMaskHead(nn.Module):
             loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
 
-        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, flatten_labels, pos_iou_maps, pos_inds, pos_decoded_bbox_preds, pos_decoded_target_preds, block_distill_masks, pos_centerness_targets, pos_centerness, decoded_bbox_preds
+        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, flatten_labels, pos_iou_maps, pos_inds, pos_decoded_bbox_preds, pos_decoded_target_preds, block_distill_masks, pos_centerness_targets, pos_centerness, decoded_bbox_preds, pos_points
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,
