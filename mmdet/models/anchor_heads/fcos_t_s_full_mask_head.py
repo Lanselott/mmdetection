@@ -508,7 +508,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                 if self.pyramid_wise_attention:
                     attention_weight = bbox_overlaps(
-                        s_pred_bboxes, t_pred_bboxes, is_aligned=True)
+                        s_pred_bboxes, t_pred_bboxes, is_aligned=True).detach()
                     attention_pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list[t_pos_inds],
                         t_pyramid_feature_list[t_pos_inds],
