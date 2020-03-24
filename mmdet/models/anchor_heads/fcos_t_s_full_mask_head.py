@@ -621,10 +621,10 @@ class FCOSTSFullMaskHead(nn.Module):
                 t_bbox_preds_list = []
                 branch_level = 0
                 # pyramids
-                for j, head_hint_pair in enumerate(head_hint_pairs):
-                    s_cls_head_feature = head_hint_pair[0][branch_level][0]
-                    s_reg_head_feature = head_hint_pair[1][branch_level][0]
-
+                for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
+                    s_cls_head_feature = pyramid_hint_pair[0]
+                    s_reg_head_feature = pyramid_hint_pair[0]
+                    
                     # align student/teacher tensor sizes
                     s_cls_head_feature = self.s_t_cls_head_align[-1](
                         s_cls_head_feature)
@@ -639,7 +639,6 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_cls_logits_list.append(self.fcos_cls(s_cls_head_feature))
                     t_bbox_preds_list.append(self.scales[j](
                         self.fcos_reg(s_reg_head_feature)).float().exp())
-
                 flatten_t_cls_scores = [
                     t_cls_logits.permute(0, 2, 3,
                                          1).reshape(-1, self.cls_out_channels)
