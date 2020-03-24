@@ -66,6 +66,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  learn_from_missing_annotation=False,
                  block_wise_attention=False,
                  pyramid_wise_attention=False,
+                 attention_factor=2,
                  dynamic_weight=False,
                  head_wise_attention=False,
                  align_to_teacher_logits=False,
@@ -140,6 +141,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
         self.block_wise_attention = block_wise_attention
         self.pyramid_wise_attention = pyramid_wise_attention
+        self.attention_factor = attention_factor
         self.dynamic_weight = dynamic_weight
         self.head_wise_attention = head_wise_attention
         self.apply_head_wise_alignment = apply_head_wise_alignment
@@ -509,6 +511,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 if self.pyramid_wise_attention:
                     attention_weight = bbox_overlaps(
                         s_pred_bboxes, t_pred_bboxes, is_aligned=True).detach()
+                    attention_weight *= self.attention_factor 
                     attention_pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list[t_pos_inds],
                         t_pyramid_feature_list[t_pos_inds],

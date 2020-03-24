@@ -54,6 +54,7 @@ model = dict(
         apply_block_wise_alignment=BLOCK_ALIGN,
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         pyramid_wise_attention=True,
+        attention_factor=2,
         apply_data_free_mode=False,
         apply_head_wise_alignment=HEAD_ALIGN,
         freeze_teacher=FREEZE_TEACHER,
