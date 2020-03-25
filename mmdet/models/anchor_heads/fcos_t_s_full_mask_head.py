@@ -190,7 +190,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.loss_regression_distill = build_loss(loss_regression_distill)
         self.reg_distill_threshold = reg_distill_threshold
         self.loss_iou_similiarity = nn.BCELoss(
-        )  #build_loss(loss_iou_similiarity)
+        )  # build_loss(loss_iou_similiarity)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
@@ -266,7 +266,8 @@ class FCOSTSFullMaskHead(nn.Module):
                 self.s_feat_channels, self.feat_channels, 3, padding=1)
 
         if self.apply_head_wise_alignment:
-            for i in range(self.stacked_convs + 1): # NOTE: head wise + learn from logits
+            # NOTE: head wise + learn from logits
+            for i in range(self.stacked_convs + 1):
                 # s->t
                 self.s_t_reg_head_align.append(
                     ConvModule(
@@ -509,16 +510,27 @@ class FCOSTSFullMaskHead(nn.Module):
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
 
                 if self.pyramid_wise_attention:
-                    attention_weight = bbox_overlaps(
+                    t_pred_cls = t_flatten_cls_scores.max(1)[1]
+                    s_pred_cls = s_flatten_cls_scores.max(1)[1]
+                    cls_attention_weight = (t_pred_cls == s_pred_cls).float()
+                    cls_attention_weight *= self.attention_factor
+                    iou_attention_weight = bbox_overlaps(
                         s_pred_bboxes, t_pred_bboxes, is_aligned=True).detach()
-                    attention_weight *= self.attention_factor 
-                    attention_pyramid_hint_loss = self.pyramid_hint_loss(
+                    iou_attention_weight *= self.attention_factor
+                    attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list[t_pos_inds],
                         t_pyramid_feature_list[t_pos_inds],
-                        weight=attention_weight)
+                        weight=iou_attention_weight)
+                    attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
+                        s_pyramid_feature_list,
+                        t_pyramid_feature_list,
+                        weight=cls_attention_weight
+                    )
                     loss_dict.update({
-                        'attention_pyramid_hint_loss':
-                        attention_pyramid_hint_loss
+                        'attention_cls_pyramid_hint_loss':
+                        attention_cls_pyramid_hint_loss,
+                        'attention_iou_pyramid_hint_loss':
+                        attention_iou_pyramid_hint_loss
                     })
 
                 pyramid_hint_loss = self.pyramid_hint_loss(
@@ -627,7 +639,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
                     s_cls_head_feature = pyramid_hint_pair[0]
                     s_reg_head_feature = pyramid_hint_pair[0]
-                    
+
                     # align student/teacher tensor sizes
                     s_cls_head_feature = self.s_t_cls_head_align[-1](
                         s_cls_head_feature)
@@ -654,7 +666,8 @@ class FCOSTSFullMaskHead(nn.Module):
                 flatten_t_cls_scores = torch.cat(flatten_t_cls_scores)
                 flatten_t_bbox_preds = torch.cat(flatten_t_bbox_preds)
                 t_pos_logits_bboxes = flatten_t_bbox_preds[t_pos_inds]
-                t_pos_logits_bboxes = distance2bbox(t_pos_points, t_pos_logits_bboxes)
+                t_pos_logits_bboxes = distance2bbox(
+                    t_pos_points, t_pos_logits_bboxes)
 
                 t_logits_cls = self.loss_cls(
                     flatten_t_cls_scores,
@@ -912,7 +925,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                                 0).float()
+                    0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
@@ -1147,7 +1160,7 @@ class FCOSTSFullMaskHead(nn.Module):
         num_gts = gt_labels.size(0)
         if num_gts == 0:
             return gt_labels.new_zeros(num_points), \
-                   gt_bboxes.new_zeros((num_points, 4))
+                gt_bboxes.new_zeros((num_points, 4))
 
         areas = (gt_bboxes[:, 2] - gt_bboxes[:, 0] + 1) * (
             gt_bboxes[:, 3] - gt_bboxes[:, 1] + 1)
