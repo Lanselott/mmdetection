@@ -56,6 +56,7 @@ model = dict(
         apply_data_free_mode=False,
         apply_head_wise_alignment=HEAD_ALIGN,
         simple_pyramid_alignment=False,
+        attention_factor=5,
         freeze_teacher=FREEZE_TEACHER,
         block_teacher_attention=False,
         attention_threshold=0.5,  # duplicate

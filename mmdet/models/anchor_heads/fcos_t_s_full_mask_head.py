@@ -269,11 +269,11 @@ class FCOSTSFullMaskHead(nn.Module):
                 self.s_feat_channels, self.feat_channels, 3, padding=1)
             if not self.simple_pyramid_alignment:
                 # squeeze excitation block
-                self.channel_squeeze = nn.Linear(
-                    self.feat_channels, self.s_feat_channels)
+                self.channel_squeeze = nn.Linear(self.feat_channels,
+                                                 self.s_feat_channels)
                 self.se_relu = nn.ReLU(inplace=True)
-                self.channel_excitation = nn.Linear(
-                    self.s_feat_channels, self.feat_channels)
+                self.channel_excitation = nn.Linear(self.s_feat_channels,
+                                                    self.feat_channels)
 
         if self.apply_head_wise_alignment:
             # NOTE: head wise + learn from logits
@@ -529,7 +529,8 @@ class FCOSTSFullMaskHead(nn.Module):
                     excited_channel_weight = self.channel_excitation(
                         squeezed_channel_weight).softmax(0)
                     excited_channel_weight = excited_channel_weight.expand(
-                        t_pyramid_feature_list.shape[0], self.feat_channels)
+                        t_pyramid_feature_list.shape[0],
+                        self.feat_channels) * self.attention_factor
 
                 if self.pyramid_wise_attention:
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
@@ -537,7 +538,8 @@ class FCOSTSFullMaskHead(nn.Module):
                     cls_attention_weight = (t_pred_cls == s_pred_cls).float()
                     # cls_attention_weight *= self.attention_factor
                     iou_attention_weight = bbox_overlaps(
-                        s_pred_bboxes, t_pred_bboxes, is_aligned=True).detach()
+                        s_pred_bboxes, t_pred_bboxes,
+                        is_aligned=True).detach()
                     iou_attention_weight *= self.attention_factor
                     attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list[t_pos_inds],
@@ -546,8 +548,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list,
                         t_pyramid_feature_list,
-                        weight=cls_attention_weight
-                    )
+                        weight=cls_attention_weight)
                     loss_dict.update({
                         'attention_cls_pyramid_hint_loss':
                         attention_cls_pyramid_hint_loss,
@@ -556,7 +557,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     })
                 if not self.simple_pyramid_alignment:
                     pyramid_hint_loss = self.pyramid_hint_loss(
-                        s_pyramid_feature_list, t_pyramid_feature_list, weight=excited_channel_weight)
+                        s_pyramid_feature_list,
+                        t_pyramid_feature_list,
+                        weight=excited_channel_weight)
                 else:
                     pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list, t_pyramid_feature_list)
@@ -692,8 +695,8 @@ class FCOSTSFullMaskHead(nn.Module):
                 flatten_t_cls_scores = torch.cat(flatten_t_cls_scores)
                 flatten_t_bbox_preds = torch.cat(flatten_t_bbox_preds)
                 t_pos_logits_bboxes = flatten_t_bbox_preds[t_pos_inds]
-                t_pos_logits_bboxes = distance2bbox(
-                    t_pos_points, t_pos_logits_bboxes)
+                t_pos_logits_bboxes = distance2bbox(t_pos_points,
+                                                    t_pos_logits_bboxes)
 
                 t_logits_cls = self.loss_cls(
                     flatten_t_cls_scores,
@@ -951,7 +954,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                    0).float()
+                                 0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
