@@ -327,6 +327,10 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_centerness, std=0.01)
         if self.apply_pyramid_wise_alignment:
             normal_init(self.t_s_pyramid_align, std=0.01)
+            if not self.simple_pyramid_alignment:
+                normal_init(self.channel_squeeze, std=0.01)
+                normal_init(self.channel_excitation, std=0.01)
+                
         if self.apply_head_wise_alignment:
             for m in self.s_t_cls_head_align:
                 normal_init(m.conv, std=0.01)
