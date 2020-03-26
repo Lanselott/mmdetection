@@ -269,9 +269,11 @@ class FCOSTSFullMaskHead(nn.Module):
                 self.s_feat_channels, self.feat_channels, 3, padding=1)
             if not self.simple_pyramid_alignment:
                 # squeeze excitation block
-                self.channel_squeeze = nn.Linear(self.feat_channels, self.s_feat_channels)
+                self.channel_squeeze = nn.Linear(
+                    self.feat_channels, self.s_feat_channels)
                 self.se_relu = nn.ReLU(inplace=True)
-                self.channel_excitation = nn.Linear(self.s_feat_channels, self.feat_channels)
+                self.channel_excitation = nn.Linear(
+                    self.s_feat_channels, self.feat_channels)
 
         if self.apply_head_wise_alignment:
             # NOTE: head wise + learn from logits
@@ -520,11 +522,14 @@ class FCOSTSFullMaskHead(nn.Module):
 
                 t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
-                
+
                 if not self.simple_pyramid_alignment:
-                    squeezed_channel_weight = self.se_relu(self.channel_squeeze(t_pyramid_feature_list.max(0)[0]))
-                    excited_channel_weight = self.channel_excitation(squeezed_channel_weight).softmax(0)
-                    weighted_t_pyramid_feature_list = t_pyramid_feature_list * excited_channel_weight
+                    squeezed_channel_weight = self.se_relu(
+                        self.channel_squeeze(t_pyramid_feature_list.max(0)[0]))
+                    excited_channel_weight = self.channel_excitation(
+                        squeezed_channel_weight).softmax(0)
+                    excited_channel_weight = excited_channel_weight.expand(
+                        t_pyramid_feature_list.shape[0], self.feat_channels)
 
                 if self.pyramid_wise_attention:
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
@@ -551,11 +556,11 @@ class FCOSTSFullMaskHead(nn.Module):
                     })
                 if not self.simple_pyramid_alignment:
                     pyramid_hint_loss = self.pyramid_hint_loss(
-                        s_pyramid_feature_list, weighted_t_pyramid_feature_list)
+                        s_pyramid_feature_list, t_pyramid_feature_list, weight=excited_channel_weight)
                 else:
                     pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list, t_pyramid_feature_list)
-                       
+
                 loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
             # NOTE: head wise alignment
             if self.apply_head_wise_alignment:
