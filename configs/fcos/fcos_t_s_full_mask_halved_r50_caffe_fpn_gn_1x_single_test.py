@@ -58,6 +58,7 @@ model = dict(
         apply_block_wise_alignment=ALIGN,
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         apply_data_free_mode=False,
+        simple_pyramid_alignment=False,
         learn_from_missing_annotation=False,
         block_wise_attention=False,
         pyramid_wise_attention=True,

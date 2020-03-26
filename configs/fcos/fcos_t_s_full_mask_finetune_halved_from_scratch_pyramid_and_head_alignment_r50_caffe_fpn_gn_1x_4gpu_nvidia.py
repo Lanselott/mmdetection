@@ -55,6 +55,7 @@ model = dict(
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         apply_data_free_mode=False,
         apply_head_wise_alignment=HEAD_ALIGN,
+        simple_pyramid_alignment=False,
         freeze_teacher=FREEZE_TEACHER,
         block_teacher_attention=False,
         attention_threshold=0.5,  # duplicate

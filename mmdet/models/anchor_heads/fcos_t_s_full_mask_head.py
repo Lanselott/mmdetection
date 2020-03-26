@@ -61,6 +61,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_block_wise_alignment=False,
                  apply_pyramid_wise_alignment=False,
                  apply_head_wise_alignment=False,
+                 simple_pyramid_alignment=False,
                  head_align_levels=[0],
                  apply_data_free_mode=False,
                  learn_from_missing_annotation=False,
@@ -139,6 +140,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.align_level = align_level
         self.apply_block_wise_alignment = apply_block_wise_alignment
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
+        self.simple_pyramid_alignment = simple_pyramid_alignment
         self.block_wise_attention = block_wise_attention
         self.pyramid_wise_attention = pyramid_wise_attention
         self.attention_factor = attention_factor
@@ -262,8 +264,14 @@ class FCOSTSFullMaskHead(nn.Module):
         # Align student feature to teacher
         '''
         if self.apply_pyramid_wise_alignment:
+            # simple conv layer
             self.t_s_pyramid_align = nn.Conv2d(
                 self.s_feat_channels, self.feat_channels, 3, padding=1)
+            if not self.simple_pyramid_alignment:
+                # squeeze excitation block
+                self.channel_squeeze = nn.Linear(self.feat_channels, self.s_feat_channels)
+                self.se_relu = nn.ReLU(inplace=True)
+                self.channel_excitation = nn.Linear(self.s_feat_channels, self.feat_channels)
 
         if self.apply_head_wise_alignment:
             # NOTE: head wise + learn from logits
@@ -508,6 +516,11 @@ class FCOSTSFullMaskHead(nn.Module):
 
                 t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
+                
+                if not self.simple_pyramid_alignment:
+                    squeezed_channel_weight = self.se_relu(self.channel_squeeze(t_pyramid_feature_list.max(0)[0]))
+                    excited_channel_weight = self.channel_excitation(squeezed_channel_weight).softmax(0)
+                    t_pyramid_feature_list = t_pyramid_feature_list * excited_channel_weight
 
                 if self.pyramid_wise_attention:
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
