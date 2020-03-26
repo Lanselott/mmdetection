@@ -519,9 +519,9 @@ class FCOSTSFullMaskHead(nn.Module):
                 
                 if not self.simple_pyramid_alignment:
                     squeezed_channel_weight = self.se_relu(self.channel_squeeze(t_pyramid_feature_list.max(0)[0]))
-                    excited_channel_weight = self.channel_excitation(squeezed_channel_weight).sigmoid()
+                    excited_channel_weight = self.channel_excitation(squeezed_channel_weight).softmax(0)
                     weighted_t_pyramid_feature_list = t_pyramid_feature_list * excited_channel_weight
-
+                    
                 if self.pyramid_wise_attention:
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
                     s_pred_cls = s_flatten_cls_scores.max(1)[1]
