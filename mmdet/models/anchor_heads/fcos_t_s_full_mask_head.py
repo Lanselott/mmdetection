@@ -330,7 +330,7 @@ class FCOSTSFullMaskHead(nn.Module):
             if not self.simple_pyramid_alignment:
                 normal_init(self.channel_squeeze, std=0.01)
                 normal_init(self.channel_excitation, std=0.01)
-                
+
         if self.apply_head_wise_alignment:
             for m in self.s_t_cls_head_align:
                 normal_init(m.conv, std=0.01)
@@ -525,7 +525,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     squeezed_channel_weight = self.se_relu(self.channel_squeeze(t_pyramid_feature_list.max(0)[0]))
                     excited_channel_weight = self.channel_excitation(squeezed_channel_weight).softmax(0)
                     weighted_t_pyramid_feature_list = t_pyramid_feature_list * excited_channel_weight
-                    
+
                 if self.pyramid_wise_attention:
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
                     s_pred_cls = s_flatten_cls_scores.max(1)[1]
@@ -551,10 +551,10 @@ class FCOSTSFullMaskHead(nn.Module):
                     })
                 if not self.simple_pyramid_alignment:
                     pyramid_hint_loss = self.pyramid_hint_loss(
-                        s_pyramid_feature_list, t_pyramid_feature_list)
+                        s_pyramid_feature_list, weighted_t_pyramid_feature_list)
                 else:
                     pyramid_hint_loss = self.pyramid_hint_loss(
-                        s_pyramid_feature_list, weighted_t_pyramid_feature_list)
+                        s_pyramid_feature_list, t_pyramid_feature_list)
                        
                 loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
             # NOTE: head wise alignment
