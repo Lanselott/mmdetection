@@ -62,6 +62,7 @@ model = dict(
         learn_from_missing_annotation=False,
         block_wise_attention=False,
         pyramid_wise_attention=True,
+        pyramid_cls_reg_consistent=True,
         dynamic_weight=True,
         head_wise_attention=False,
         apply_head_wise_alignment=HEAD_ALIGN,

@@ -67,6 +67,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  learn_from_missing_annotation=False,
                  block_wise_attention=False,
                  pyramid_wise_attention=False,
+                 pyramid_cls_reg_consistent=False,
                  attention_factor=2,
                  dynamic_weight=False,
                  head_wise_attention=False,
@@ -143,6 +144,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.simple_pyramid_alignment = simple_pyramid_alignment
         self.block_wise_attention = block_wise_attention
         self.pyramid_wise_attention = pyramid_wise_attention
+        self.pyramid_cls_reg_consistent = pyramid_cls_reg_consistent
         self.attention_factor = attention_factor
         self.dynamic_weight = dynamic_weight
         self.head_wise_attention = head_wise_attention
@@ -275,13 +277,6 @@ class FCOSTSFullMaskHead(nn.Module):
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
-            if not self.simple_pyramid_alignment:
-                # squeeze excitation block
-                self.channel_squeeze = nn.Linear(self.feat_channels,
-                                                 self.s_feat_channels)
-                self.se_relu = nn.ReLU(inplace=True)
-                self.channel_excitation = nn.Linear(self.s_feat_channels,
-                                                    self.feat_channels)
 
         if self.apply_head_wise_alignment:
             # NOTE: head wise + learn from logits
@@ -338,9 +333,6 @@ class FCOSTSFullMaskHead(nn.Module):
         if self.apply_pyramid_wise_alignment:
             for m in self.t_s_pyramid_align:
                 normal_init(m.conv, std=0.01)
-            if not self.simple_pyramid_alignment:
-                normal_init(self.channel_squeeze, std=0.01)
-                normal_init(self.channel_excitation, std=0.01)
 
         if self.apply_head_wise_alignment:
             for m in self.s_t_cls_head_align:
@@ -532,15 +524,6 @@ class FCOSTSFullMaskHead(nn.Module):
                 t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
 
-                if not self.simple_pyramid_alignment:
-                    squeezed_channel_weight = self.se_relu(
-                        self.channel_squeeze(t_pyramid_feature_list.max(0)[0]))
-                    excited_channel_weight = self.channel_excitation(
-                        squeezed_channel_weight).softmax(0)
-                    excited_channel_weight = excited_channel_weight.expand(
-                        t_pyramid_feature_list.shape[0],
-                        self.feat_channels) * self.attention_factor
-
                 if self.pyramid_wise_attention:
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
                     s_pred_cls = s_flatten_cls_scores.max(1)[1]
@@ -550,28 +533,35 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_pred_bboxes, t_pred_bboxes,
                         is_aligned=True).detach()
                     iou_attention_weight *= self.attention_factor
-                    attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
-                        s_pyramid_feature_list[t_pos_inds],
-                        t_pyramid_feature_list[t_pos_inds],
-                        weight=iou_attention_weight)
-                    attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
-                        s_pyramid_feature_list,
-                        t_pyramid_feature_list,
-                        weight=cls_attention_weight)
-                    loss_dict.update({
-                        'attention_cls_pyramid_hint_loss':
-                        attention_cls_pyramid_hint_loss,
-                        'attention_iou_pyramid_hint_loss':
-                        attention_iou_pyramid_hint_loss
-                    })
-                if not self.simple_pyramid_alignment:
-                    pyramid_hint_loss = self.pyramid_hint_loss(
-                        s_pyramid_feature_list,
-                        t_pyramid_feature_list,
-                        weight=excited_channel_weight)
-                else:
-                    pyramid_hint_loss = self.pyramid_hint_loss(
-                        s_pyramid_feature_list, t_pyramid_feature_list)
+                    if self.pyramid_cls_reg_consistent:
+                        attention_weight = cls_attention_weight[
+                            t_pos_inds] * iou_attention_weight
+                        attention_iou_cls_pyramid_hint_loss = self.pyramid_hint_loss(
+                            s_pyramid_feature_list[t_pos_inds],
+                            t_pyramid_feature_list[t_pos_inds],
+                            weight=attention_weight)
+                        loss_dict.update({
+                            'attention_iou_cls_pyramid_hint_loss':
+                            attention_iou_cls_pyramid_hint_loss
+                        })
+                    else:
+                        attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
+                            s_pyramid_feature_list[t_pos_inds],
+                            t_pyramid_feature_list[t_pos_inds],
+                            weight=iou_attention_weight)
+                        attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
+                            s_pyramid_feature_list,
+                            t_pyramid_feature_list,
+                            weight=cls_attention_weight)
+                        loss_dict.update({
+                            'attention_cls_pyramid_hint_loss':
+                            attention_cls_pyramid_hint_loss,
+                            'attention_iou_pyramid_hint_loss':
+                            attention_iou_pyramid_hint_loss
+                        })
+              
+                pyramid_hint_loss = self.pyramid_hint_loss(
+                    s_pyramid_feature_list, t_pyramid_feature_list)
 
                 loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
             # NOTE: head wise alignment
