@@ -237,6 +237,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
         self.s_t_reg_head_align = nn.ModuleList()
         self.s_t_cls_head_align = nn.ModuleList()
+        self.t_s_pyramid_align = nn.ModuleList()
 
         for i in range(self.stacked_convs):
             chn = self.s_in_channels if i == 0 else self.s_feat_channels
@@ -264,9 +265,16 @@ class FCOSTSFullMaskHead(nn.Module):
         # Align student feature to teacher
         '''
         if self.apply_pyramid_wise_alignment:
-            # simple conv layer
-            self.t_s_pyramid_align = nn.Conv2d(
-                self.s_feat_channels, self.feat_channels, 3, padding=1)
+            self.t_s_pyramid_align.append(
+                ConvModule(
+                    chn,
+                    self.s_feat_channels,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=self.norm_cfg is None))
             if not self.simple_pyramid_alignment:
                 # squeeze excitation block
                 self.channel_squeeze = nn.Linear(self.feat_channels,
@@ -328,7 +336,8 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_reg, std=0.01)
         normal_init(self.fcos_s_centerness, std=0.01)
         if self.apply_pyramid_wise_alignment:
-            normal_init(self.t_s_pyramid_align, std=0.01)
+            for m in self.t_s_pyramid_align:
+                normal_init(m.conv, std=0.01)
             if not self.simple_pyramid_alignment:
                 normal_init(self.channel_squeeze, std=0.01)
                 normal_init(self.channel_excitation, std=0.01)
@@ -504,13 +513,13 @@ class FCOSTSFullMaskHead(nn.Module):
                 s_pyramid_feature_list = []
                 for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
                     if self.spatial_ratio > 1:
-                        s_pyramid_feature = self.t_s_pyramid_align(
+                        s_pyramid_feature = self.t_s_pyramid_align[0](
                             F.interpolate(
                                 pyramid_hint_pair[0],
                                 size=pyramid_hint_pair[1].shape[2:],
                                 mode='nearest'))
                     else:
-                        s_pyramid_feature = self.t_s_pyramid_align(
+                        s_pyramid_feature = self.t_s_pyramid_align[0](
                             pyramid_hint_pair[0])
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
                     t_pyramid_feature_list.append(
