@@ -267,8 +267,8 @@ class FCOSTSFullMaskHead(nn.Module):
         if self.apply_pyramid_wise_alignment:
             self.t_s_pyramid_align.append(
                 ConvModule(
-                    chn,
                     self.s_feat_channels,
+                    self.feat_channels,
                     3,
                     stride=1,
                     padding=1,
