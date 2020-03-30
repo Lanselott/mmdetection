@@ -239,7 +239,6 @@ class FCOSTSFullMaskHead(nn.Module):
 
         self.s_t_reg_head_align = nn.ModuleList()
         self.s_t_cls_head_align = nn.ModuleList()
-        self.t_s_pyramid_align = nn.ModuleList()
 
         for i in range(self.stacked_convs):
             chn = self.s_in_channels if i == 0 else self.s_feat_channels
@@ -267,16 +266,8 @@ class FCOSTSFullMaskHead(nn.Module):
         # Align student feature to teacher
         '''
         if self.apply_pyramid_wise_alignment:
-            self.t_s_pyramid_align.append(
-                ConvModule(
-                    self.s_feat_channels,
-                    self.feat_channels,
-                    3,
-                    stride=1,
-                    padding=1,
-                    conv_cfg=self.conv_cfg,
-                    norm_cfg=self.norm_cfg,
-                    bias=self.norm_cfg is None))
+            self.t_s_pyramid_align = nn.Conv2d(
+            self.s_feat_channels, self.feat_channels, 3, padding=1)
 
         if self.apply_head_wise_alignment:
             # NOTE: head wise + learn from logits
@@ -331,8 +322,7 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_reg, std=0.01)
         normal_init(self.fcos_s_centerness, std=0.01)
         if self.apply_pyramid_wise_alignment:
-            for m in self.t_s_pyramid_align:
-                normal_init(m.conv, std=0.01)
+            normal_init(self.t_s_pyramid_align, std=0.01)
 
         if self.apply_head_wise_alignment:
             for m in self.s_t_cls_head_align:
@@ -505,13 +495,13 @@ class FCOSTSFullMaskHead(nn.Module):
                 s_pyramid_feature_list = []
                 for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
                     if self.spatial_ratio > 1:
-                        s_pyramid_feature = self.t_s_pyramid_align[0](
+                        s_pyramid_feature = self.t_s_pyramid_align(
                             F.interpolate(
                                 pyramid_hint_pair[0],
                                 size=pyramid_hint_pair[1].shape[2:],
                                 mode='nearest'))
                     else:
-                        s_pyramid_feature = self.t_s_pyramid_align[0](
+                        s_pyramid_feature = self.t_s_pyramid_align(
                             pyramid_hint_pair[0])
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
                     t_pyramid_feature_list.append(
@@ -559,9 +549,75 @@ class FCOSTSFullMaskHead(nn.Module):
                             'attention_iou_pyramid_hint_loss':
                             attention_iou_pyramid_hint_loss
                         })
-              
+
                 pyramid_hint_loss = self.pyramid_hint_loss(
                     s_pyramid_feature_list, t_pyramid_feature_list)
+                # '''
+                # instance levels mask
+                # '''
+                # dist_conf_mask_list = []
+                # bbox_mean_list = [[], []]
+                # bbox_var_list = [[], []]
+                # # generate instance levels index
+                # instance_counter = torch.zeros(
+                #     len(t_pos_inds), device=flatten_labels.device)
+                # remove = torch.zeros(
+                #     len(t_pos_inds), device=flatten_labels.device)
+                # obj_id = 0
+
+                # # NOTE: get mask for each obj
+                # for i in range(len(t_gt_bboxes)):
+                #     if remove[i] == 0:
+                #         current_bbox = t_gt_bboxes[i]
+                #         mask = ((t_gt_bboxes == current_bbox).sum(1) == 4
+                #                 ).nonzero()
+                #         instance_counter[mask] = obj_id
+                #         remove[mask] = 1
+                #         obj_id += 1
+
+                # instance_counter = instance_counter.int()
+                # obj_ids = torch.bincount(instance_counter).nonzero().int()
+
+                # for obj_id in obj_ids:
+                #     dist_conf_mask_list.append(
+                #         (instance_counter == obj_id).float())
+
+                # for dist_conf_mask in dist_conf_mask_list:
+                #     obj_mask_inds = dist_conf_mask.nonzero().reshape(-1)
+                #     instance_t_gt_bboxes = t_gt_bboxes[obj_mask_inds]
+                #     effective_instance_sample_inds = (
+                #         bbox_overlaps(
+                #             s_pred_bboxes[obj_mask_inds],
+                #             t_pred_bboxes[obj_mask_inds],
+                #             is_aligned=True) >= 0.9)
+                #     if effective_instance_sample_inds.sum() == 0:
+                #         continue
+
+                #     instance_t_pred_bboxes = t_pred_bboxes[obj_mask_inds[
+                #         effective_instance_sample_inds]].detach() / (
+                #             instance_t_gt_bboxes[effective_instance_sample_inds] + 1)
+                #     instance_s_pred_bboxes = s_pred_bboxes[
+                #         obj_mask_inds[effective_instance_sample_inds]] / (
+                #             instance_t_gt_bboxes[effective_instance_sample_inds] + 1)
+                #     # print("instance_s_pred_bboxes:{}".format(instance_s_pred_bboxes))
+                #     # print("instance_t_gt_bboxes:{}".format(instance_t_gt_bboxes))
+                #     bbox_mean_list[0].append(instance_s_pred_bboxes.mean(0))
+                #     bbox_var_list[0].append(instance_s_pred_bboxes.var(0))
+                #     bbox_mean_list[1].append(instance_t_pred_bboxes.mean(0))
+                #     bbox_var_list[1].append(instance_t_pred_bboxes.var(0))
+                
+                # if len(bbox_var_list[0]) != 0:
+                #     s_bbox_means = torch.cat(bbox_mean_list[0])
+                #     t_bbox_means = torch.cat(bbox_mean_list[1])
+                #     s_bbox_vars = torch.cat(bbox_var_list[0])
+                #     t_bbox_vars = torch.cat(bbox_var_list[1])
+                #     bboxes_mean_loss = self.pyramid_hint_loss(
+                #         s_bbox_means, t_bbox_means)
+                #     bboxes_var_loss = self.pyramid_hint_loss(
+                #         s_bbox_vars, t_bbox_vars)
+
+                #     loss_dict.update({'bboxes_mean_loss': bboxes_mean_loss})
+                #     loss_dict.update({'bboxes_var_loss': bboxes_var_loss})
 
                 loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
             # NOTE: head wise alignment
