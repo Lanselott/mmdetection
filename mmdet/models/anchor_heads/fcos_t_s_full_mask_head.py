@@ -558,6 +558,9 @@ class FCOSTSFullMaskHead(nn.Module):
 
                             s_nms_weight[obj_mask_inds] = bbox_overlaps(
                                 s_pred_bboxes[obj_mask_inds], t_best_pred_ref, is_aligned=True)
+                        s_nms_weight = s_nms_weight.detach()
+                        s_nms_weight *= self.attention_factor
+
                         nms_pyramid_hint_loss = self.pyramid_hint_loss(
                             s_pyramid_feature_list[t_pos_inds],
                             t_pyramid_feature_list[t_pos_inds],
