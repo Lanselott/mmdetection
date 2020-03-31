@@ -519,94 +519,41 @@ class FCOSTSFullMaskHead(nn.Module):
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
 
                 if self.pyramid_wise_attention:
-                    assert self.pyramid_cls_reg_consistent != self.pyramid_nms_aware
-                    if self.pyramid_nms_aware:
-                        '''
-                        instance levels mask
-                        '''
-                        dist_conf_mask_list = []
-                        # generate instance levels index
-                        instance_counter = torch.zeros(
-                            len(t_pos_inds), device=flatten_labels.device)
-                        remove = torch.zeros(
-                            len(t_pos_inds), device=flatten_labels.device)
-                        obj_id = 0
-
-                        # NOTE: get mask for each obj
-                        for i in range(len(t_gt_bboxes)):
-                            if remove[i] == 0:
-                                current_bbox = t_gt_bboxes[i]
-                                mask = ((t_gt_bboxes == current_bbox).sum(1) == 4
-                                        ).nonzero()
-                                instance_counter[mask] = obj_id
-                                remove[mask] = 1
-                                obj_id += 1
-
-                        instance_counter = instance_counter.int()
-                        obj_ids = torch.bincount(
-                            instance_counter).nonzero().int()
-
-                        for obj_id in obj_ids:
-                            dist_conf_mask_list.append(
-                                (instance_counter == obj_id).float())
-
-                        s_nms_weight = torch.zeros_like(t_pred_bboxes[:, 0])
-                        for dist_conf_mask in dist_conf_mask_list:
-                            obj_mask_inds = dist_conf_mask.nonzero().reshape(-1)
-                            instance_ious = bbox_overlaps(
-                                t_pred_bboxes[obj_mask_inds], t_gt_bboxes[obj_mask_inds], is_aligned=True)
-                            t_best_pred_ref = t_pred_bboxes[instance_ious.max(
-                                0)[1]].expand_as(t_pred_bboxes[obj_mask_inds])
-
-                            s_nms_weight[obj_mask_inds] = bbox_overlaps(
-                                s_pred_bboxes[obj_mask_inds], t_best_pred_ref, is_aligned=True)
-                        s_nms_weight = s_nms_weight.detach()
-                        s_nms_weight *= self.attention_factor
-
-                        nms_pyramid_hint_loss = self.pyramid_hint_loss(
+                    t_pred_cls = t_flatten_cls_scores.max(1)[1]
+                    s_pred_cls = s_flatten_cls_scores.max(1)[1]
+                    cls_attention_weight = (
+                        t_pred_cls == s_pred_cls).float()
+                    # cls_attention_weight *= self.attention_factor
+                    iou_attention_weight = bbox_overlaps(
+                        s_pred_bboxes, t_pred_bboxes,
+                        is_aligned=True).detach()
+                    iou_attention_weight *= self.attention_factor
+                    if self.pyramid_cls_reg_consistent:
+                        attention_weight = cls_attention_weight[
+                            t_pos_inds] * iou_attention_weight
+                        attention_iou_cls_pyramid_hint_loss = self.pyramid_hint_loss(
                             s_pyramid_feature_list[t_pos_inds],
                             t_pyramid_feature_list[t_pos_inds],
-                            weight=s_nms_weight)
+                            weight=attention_weight)
                         loss_dict.update({
-                            'nms_pyramid_hint_loss':
-                            nms_pyramid_hint_loss
+                            'attention_iou_cls_pyramid_hint_loss':
+                            attention_iou_cls_pyramid_hint_loss
                         })
                     else:
-                        t_pred_cls = t_flatten_cls_scores.max(1)[1]
-                        s_pred_cls = s_flatten_cls_scores.max(1)[1]
-                        cls_attention_weight = (
-                            t_pred_cls == s_pred_cls).float()
-                        # cls_attention_weight *= self.attention_factor
-                        iou_attention_weight = bbox_overlaps(
-                            s_pred_bboxes, t_pred_bboxes,
-                            is_aligned=True).detach()
-                        iou_attention_weight *= self.attention_factor
-                        if self.pyramid_cls_reg_consistent:
-                            attention_weight = cls_attention_weight[
-                                t_pos_inds] * iou_attention_weight
-                            attention_iou_cls_pyramid_hint_loss = self.pyramid_hint_loss(
-                                s_pyramid_feature_list[t_pos_inds],
-                                t_pyramid_feature_list[t_pos_inds],
-                                weight=attention_weight)
-                            loss_dict.update({
-                                'attention_iou_cls_pyramid_hint_loss':
-                                attention_iou_cls_pyramid_hint_loss
-                            })
-                        else:
-                            attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
-                                s_pyramid_feature_list[t_pos_inds],
-                                t_pyramid_feature_list[t_pos_inds],
-                                weight=iou_attention_weight)
-                            attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
-                                s_pyramid_feature_list,
-                                t_pyramid_feature_list,
-                                weight=cls_attention_weight)
-                            loss_dict.update({
-                                'attention_cls_pyramid_hint_loss':
-                                attention_cls_pyramid_hint_loss,
-                                'attention_iou_pyramid_hint_loss':
-                                attention_iou_pyramid_hint_loss
-                            })
+                        attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
+                            s_pyramid_feature_list[t_pos_inds],
+                            t_pyramid_feature_list[t_pos_inds],
+                            weight=iou_attention_weight)
+                        attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
+                            s_pyramid_feature_list,
+                            t_pyramid_feature_list,
+                            weight=cls_attention_weight)
+                        loss_dict.update({
+                            'attention_cls_pyramid_hint_loss':
+                            attention_cls_pyramid_hint_loss,
+                            'attention_iou_pyramid_hint_loss':
+                            attention_iou_pyramid_hint_loss
+                        })
                 if self.pyramid_learn_from_each:
                     s_gt_ious = bbox_overlaps(
                         s_pred_bboxes, t_gt_bboxes, is_aligned=True)
@@ -618,9 +565,10 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_pyramid_hint = self.pyramid_hint_loss(
                         s_pyramid_feature_list, t_pyramid_feature_list, weight=t_better)
                     # learn from student
-                    t_pyramid_feature_list.requires_grad = True
+                    t_pyramid_feature_list_cloned = t_pyramid_feature_list.clone().requires_grad_(True)
+                    s_pyramid_feature_list_cloned = s_pyramid_feature_list.clone().detach()
                     s_pyramid_hint = self.pyramid_hint_loss(
-                        t_pyramid_feature_list, s_pyramid_feature_list.detach(), weight=s_better)
+                        t_pyramid_feature_list_cloned, s_pyramid_feature_list_cloned, weight=s_better)
                     pyramid_hint_loss = t_pyramid_hint + s_pyramid_hint
                 else:
                     pyramid_hint_loss = self.pyramid_hint_loss(
