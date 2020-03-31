@@ -67,6 +67,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  learn_from_missing_annotation=False,
                  block_wise_attention=False,
                  pyramid_wise_attention=False,
+                 pyramid_learn_from_each=False,
                  pyramid_cls_reg_consistent=False,
                  pyramid_nms_aware=False,
                  attention_factor=2,
@@ -145,6 +146,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.simple_pyramid_alignment = simple_pyramid_alignment
         self.block_wise_attention = block_wise_attention
         self.pyramid_wise_attention = pyramid_wise_attention
+        self.pyramid_learn_from_each = pyramid_learn_from_each
         self.pyramid_cls_reg_consistent = pyramid_cls_reg_consistent
         self.pyramid_nms_aware = pyramid_nms_aware
         self.attention_factor = attention_factor
@@ -605,9 +607,24 @@ class FCOSTSFullMaskHead(nn.Module):
                                 'attention_iou_pyramid_hint_loss':
                                 attention_iou_pyramid_hint_loss
                             })
-
-                pyramid_hint_loss = self.pyramid_hint_loss(
-                    s_pyramid_feature_list, t_pyramid_feature_list)
+                if self.pyramid_learn_from_each:
+                    s_gt_ious = bbox_overlaps(
+                        s_pred_bboxes, t_gt_bboxes, is_aligned=True)
+                    t_gt_ious = bbox_overlaps(
+                        t_pred_bboxes, t_gt_bboxes, is_aligned=True)
+                    t_better = (t_gt_ious >= s_gt_ious).float()
+                    s_better = (t_gt_ious < s_gt_ious).float()
+                    # learn from teacher
+                    t_pyramid_hint = self.pyramid_hint_loss(
+                        s_pyramid_feature_list, t_pyramid_feature_list, weight=t_better)
+                    # learn from student
+                    t_pyramid_feature_list.requires_grad = True
+                    s_pyramid_hint = self.pyramid_hint_loss(
+                        t_pyramid_feature_list, s_pyramid_feature_list.detach(), weight=s_better)
+                    pyramid_hint_loss = t_pyramid_hint + s_pyramid_hint
+                else:
+                    pyramid_hint_loss = self.pyramid_hint_loss(
+                        s_pyramid_feature_list, t_pyramid_feature_list)
                 # '''
                 # instance levels mask
                 # '''
