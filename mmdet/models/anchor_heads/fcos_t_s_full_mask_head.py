@@ -561,18 +561,21 @@ class FCOSTSFullMaskHead(nn.Module):
                         t_pred_bboxes, t_gt_bboxes, is_aligned=True)
                     t_better = (t_gt_ious >= s_gt_ious).float()
                     s_better = (t_gt_ious < s_gt_ious).float()
+
                     # learn from teacher
                     t_pyramid_hint = self.pyramid_hint_loss(
                         s_pyramid_feature_list, t_pyramid_feature_list, weight=t_better)
                     # learn from student
-                    t_pyramid_feature_list_cloned = t_pyramid_feature_list.clone().requires_grad_(True)
-                    s_pyramid_feature_list_cloned = s_pyramid_feature_list.clone().detach()
+                    t_pyramid_feature_list_cloned = t_pyramid_feature_list[t_pos_inds].clone().requires_grad_(True)
+                    s_pyramid_feature_list_cloned = s_pyramid_feature_list[t_pos_inds].clone().detach()
+               
                     s_pyramid_hint = self.pyramid_hint_loss(
                         t_pyramid_feature_list_cloned, s_pyramid_feature_list_cloned, weight=s_better)
-                    pyramid_hint_loss = t_pyramid_hint + s_pyramid_hint
-                else:
-                    pyramid_hint_loss = self.pyramid_hint_loss(
-                        s_pyramid_feature_list, t_pyramid_feature_list)
+                    lfe_hint_loss = t_pyramid_hint + s_pyramid_hint
+                    loss_dict.update({'lfe_hint_loss': lfe_hint_loss})
+
+                pyramid_hint_loss = self.pyramid_hint_loss(
+                    s_pyramid_feature_list, t_pyramid_feature_list)
                 # '''
                 # instance levels mask
                 # '''
