@@ -273,12 +273,6 @@ class DDBV3NPHead(nn.Module):
                 regression_reduced_threshold = pos_centerness_obj.mean()
                 classification_reduced_threshold = pos_scores_obj.mean()
 
-                if self.apply_conditional_consistency_on_regression:
-                    if regression_reduced_threshold < 0.7:
-                        # if instance ious performs bad (especially at early epoches),
-                        # we train all
-                        regression_reduced_threshold = 0
-
                 regression_mask = pos_centerness_obj < regression_reduced_threshold
                 classification_mask = pos_scores_obj < classification_reduced_threshold
 
@@ -400,78 +394,32 @@ class DDBV3NPHead(nn.Module):
             '''
             # NOTE: the grad of sorted branch is in sort order, diff from origin
             '''
-            downgrade_threshold = 0.8
             if self.apply_iou_cache:
                 sort_gradient_mask = (_bd_sort_iou >
                                       (_bd_iou - self.iou_delta)).float()
-            elif self.origin_bbox_loss_downgrade:
-                sort_gradient_mask = (((_bd_sort_iou > _bd_iou) +
-                                       (_bd_iou < downgrade_threshold)) >
-                                      0).float()  # or
-            else:
-                sort_gradient_mask = (_bd_sort_iou >
-                                      (_bd_iou + self.iou_delta)).float()
-            if self.mask_sort:
-                sort_gradient_mask[..., 0] = sort_gradient_mask[
-                    pos_gradient_update_mapping[..., 0], 0]
-                sort_gradient_mask[..., 1] = sort_gradient_mask[
-                    pos_gradient_update_mapping[..., 1], 1]
-                sort_gradient_mask[..., 2] = sort_gradient_mask[
-                    pos_gradient_update_mapping[..., 2], 2]
-                sort_gradient_mask[..., 3] = sort_gradient_mask[
-                    pos_gradient_update_mapping[..., 3], 3]
-            if self.apply_iou_cache:
                 origin_gradient_mask = ((_bd_sort_iou - self.iou_delta) <=
                                         _bd_iou).float()
-            elif self.origin_bbox_loss_downgrade:
-                origin_gradient_mask = (
-                    ((_bd_sort_iou <= _bd_iou) +
-                     (_bd_iou <= downgrade_threshold)) == 2).float()  # and
-            else:
-                origin_gradient_mask = (_bd_sort_iou <=
-                                        (_bd_iou + self.iou_delta)).float()
+
             # apply hook to mask origin/sort gradients
-            if self.weighted_mask:
-                pos_decoded_sort_bbox_preds.register_hook(
-                    lambda grad: grad * sort_gradient_mask)
-                pos_decoded_bbox_preds.register_hook(
-                    lambda grad: grad * origin_gradient_mask)
-            elif self.mask_origin_bbox_loss:
-                if ious_weights.mean() >= 0.8:  # default:0.4
-                    origin_gradient_mask = torch.zeros_like(
-                        origin_gradient_mask)
-
-                pos_decoded_bbox_preds.register_hook(
-                    lambda grad: grad * origin_gradient_mask)
-            else:
-                pos_decoded_sort_bbox_preds.register_hook(
-                    lambda grad: grad * sort_gradient_mask)
-                pos_decoded_bbox_preds.register_hook(
-                    lambda grad: grad * origin_gradient_mask)
-
-            if self.consistency_weight is True:
-                sorted_pos_centerness_targets = torch.max(
-                    _bd_sort_iou, _bd_iou)
-                sorted_pos_centerness_targets = sorted_pos_centerness_targets.max(
-                    1)[0]
-                # sorted bboxes
-                loss_sorted_bbox = self.loss_sorted_bbox(
-                    pos_decoded_sort_bbox_preds,
-                    pos_decoded_target_preds,
-                    weight=sorted_pos_centerness_targets,
-                    avg_factor=sorted_pos_centerness_targets.sum())
-                # origin boxes
-                loss_bbox = self.loss_bbox(pos_decoded_bbox_preds,
-                                           pos_decoded_target_preds)
-                # weight=pos_centerness_targets,
-                # avg_factor=pos_centerness_targets.sum())
-            else:
-                # sorted bboxes
-                loss_sorted_bbox = self.loss_sorted_bbox(
-                    pos_decoded_sort_bbox_preds, pos_decoded_target_preds)
-                # origin boxes
-                loss_bbox = self.loss_bbox(pos_decoded_bbox_preds,
-                                           pos_decoded_target_preds)
+            pos_decoded_sort_bbox_preds.register_hook(
+                lambda grad: grad * sort_gradient_mask)
+            pos_decoded_bbox_preds.register_hook(
+                lambda grad: grad * origin_gradient_mask)
+            # loss bbox weights
+            sorted_bbox_weight = _bd_sort_iou.max(1)[0]
+            bbox_weight = _bd_iou.max(1)[0]
+            # sorted bboxes
+            loss_sorted_bbox = self.loss_sorted_bbox(
+                pos_decoded_sort_bbox_preds,
+                pos_decoded_target_preds,
+                weight=sorted_bbox_weight,
+                avg_factor=sorted_bbox_weight.sum())
+            # origin boxes
+            loss_bbox = self.loss_bbox(
+                pos_decoded_bbox_preds,
+                pos_decoded_target_preds,
+                weight=bbox_weight,
+                avg_factor=bbox_weight.sum())
 
             loss_cls = self.loss_cls(
                 flatten_cls_scores,
