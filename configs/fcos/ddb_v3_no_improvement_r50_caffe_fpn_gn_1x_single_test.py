@@ -29,7 +29,7 @@ model = dict(
         apply_conditional_consistency_on_regression=True,
         mask_origin_bbox_loss=False,
         iou_delta=0.0,
-        apply_iou_cache=False,
+        apply_iou_cache=True,
         origin_bbox_loss_downgrade=False,
         mask_sort=False,
         weighted_mask=False,
@@ -40,8 +40,8 @@ model = dict(
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
-        loss_bbox=dict(type='GIoULoss', loss_weight=1.0),
-        loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
+        loss_bbox=dict(type='IoULoss', loss_weight=1.0),
+        loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),
         loss_dist_scores=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_centerness=dict(
