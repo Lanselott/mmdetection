@@ -67,7 +67,6 @@ class FCOSTSFullMaskHead(nn.Module):
                  learn_from_missing_annotation=False,
                  block_wise_attention=False,
                  pyramid_wise_attention=False,
-                 pyramid_learn_from_each=False,
                  pyramid_cls_reg_consistent=False,
                  pyramid_nms_aware=False,
                  attention_factor=2,
@@ -146,7 +145,6 @@ class FCOSTSFullMaskHead(nn.Module):
         self.simple_pyramid_alignment = simple_pyramid_alignment
         self.block_wise_attention = block_wise_attention
         self.pyramid_wise_attention = pyramid_wise_attention
-        self.pyramid_learn_from_each = pyramid_learn_from_each
         self.pyramid_cls_reg_consistent = pyramid_cls_reg_consistent
         self.pyramid_nms_aware = pyramid_nms_aware
         self.attention_factor = attention_factor
@@ -527,54 +525,21 @@ class FCOSTSFullMaskHead(nn.Module):
                     iou_attention_weight = bbox_overlaps(
                         s_pred_bboxes, t_pred_bboxes,
                         is_aligned=True).detach()
-                    iou_attention_weight *= self.attention_factor
-                    if self.pyramid_cls_reg_consistent:
-                        attention_weight = cls_attention_weight[
-                            t_pos_inds] * iou_attention_weight
-                        attention_iou_cls_pyramid_hint_loss = self.pyramid_hint_loss(
-                            s_pyramid_feature_list[t_pos_inds],
-                            t_pyramid_feature_list[t_pos_inds],
-                            weight=attention_weight)
-                        loss_dict.update({
-                            'attention_iou_cls_pyramid_hint_loss':
-                            attention_iou_cls_pyramid_hint_loss
-                        })
-                    else:
-                        attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
-                            s_pyramid_feature_list[t_pos_inds],
-                            t_pyramid_feature_list[t_pos_inds],
-                            weight=iou_attention_weight)
-                        attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
-                            s_pyramid_feature_list,
-                            t_pyramid_feature_list,
-                            weight=cls_attention_weight)
-                        loss_dict.update({
-                            'attention_cls_pyramid_hint_loss':
-                            attention_cls_pyramid_hint_loss,
-                            'attention_iou_pyramid_hint_loss':
-                            attention_iou_pyramid_hint_loss
-                        })
-                if self.pyramid_learn_from_each:
-                    s_gt_ious = bbox_overlaps(
-                        s_pred_bboxes, t_gt_bboxes, is_aligned=True)
-                    t_gt_ious = bbox_overlaps(
-                        t_pred_bboxes, t_gt_bboxes, is_aligned=True)
-                    t_better = (t_gt_ious >= s_gt_ious).float().nonzero().reshape(-1)
-                    s_better = (t_gt_ious < s_gt_ious).float().nonzero().reshape(-1)
-                    s_pyramid_feature = s_pyramid_feature_list[t_pos_inds]
-                    t_pyramid_feature = t_pyramid_feature_list[t_pos_inds]
-
-                    # learn from teacher
-                    t_pyramid_hint = self.pyramid_hint_loss(
-                        s_pyramid_feature[t_better], t_pyramid_feature[t_better])
-                    # learn from student
-                    t_pyramid_feature_cloned = t_pyramid_feature.clone().requires_grad_(True)
-                    s_pyramid_feature_cloned = s_pyramid_feature.clone().detach()
-               
-                    s_pyramid_hint = self.pyramid_hint_loss(
-                        t_pyramid_feature_cloned[s_better], s_pyramid_feature_cloned[s_better])
-                    lfe_hint_loss = t_pyramid_hint + s_pyramid_hint
-                    loss_dict.update({'lfe_hint_loss': lfe_hint_loss})
+                    attention_iou_pyramid_hint_loss = self.attention_factor * self.pyramid_hint_loss(
+                        s_pyramid_feature_list[t_pos_inds],
+                        t_pyramid_feature_list[t_pos_inds],
+                        weight=iou_attention_weight,
+                        avg_factor=iou_attention_weight.sum())
+                    # attention_cls_pyramid_hint_loss = self.attention_factor * self.pyramid_hint_loss(
+                    #     s_pyramid_feature_list,
+                    #     t_pyramid_feature_list,
+                    #     weight=cls_attention_weight)
+                    loss_dict.update({
+                        # 'attention_cls_pyramid_hint_loss':
+                        # attention_cls_pyramid_hint_loss,
+                        'attention_iou_pyramid_hint_loss':
+                        attention_iou_pyramid_hint_loss
+                    })
 
                 pyramid_hint_loss = self.pyramid_hint_loss(
                     s_pyramid_feature_list, t_pyramid_feature_list)
