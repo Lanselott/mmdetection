@@ -634,7 +634,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             cls_head_pair[k][0])
                         s_reg_head_feature = self.s_t_reg_head_align[k](
                             reg_head_pair[k][0])
-
+                        embed()
                         t_cls_head_feature = cls_head_pair[k][1].detach()
                         t_reg_head_feature = reg_head_pair[k][1].detach()
                         # learn from intermediate layers
