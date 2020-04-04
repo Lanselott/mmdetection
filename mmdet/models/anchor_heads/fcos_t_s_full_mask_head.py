@@ -69,11 +69,10 @@ class FCOSTSFullMaskHead(nn.Module):
                  pyramid_wise_attention=False,
                  pyramid_cls_reg_consistent=False,
                  pyramid_nms_aware=False,
-                 attention_factor=2,
+                 attention_factor=1,
                  dynamic_weight=False,
                  head_wise_attention=False,
                  align_to_teacher_logits=False,
-                 cosine_similarity=False,
                  block_teacher_attention=False,
                  head_teacher_reg_attention=False,
                  consider_cls_reg_distribution=False,
@@ -153,7 +152,6 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_head_wise_alignment = apply_head_wise_alignment
         self.head_align_levels = head_align_levels
         self.align_to_teacher_logits = align_to_teacher_logits
-        self.cosine_similarity = cosine_similarity
         self.block_teacher_attention = block_teacher_attention
         self.head_teacher_reg_attention = head_teacher_reg_attention
         self.consider_cls_reg_distribution = consider_cls_reg_distribution
@@ -519,8 +517,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 if self.pyramid_wise_attention:
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
                     s_pred_cls = s_flatten_cls_scores.max(1)[1]
-                    cls_attention_weight = (
-                        t_pred_cls == s_pred_cls).float()
+                    cls_attention_weight = (t_pred_cls == s_pred_cls).float()
                     # cls_attention_weight *= self.attention_factor
                     iou_attention_weight = bbox_overlaps(
                         s_pred_bboxes, t_pred_bboxes,
@@ -634,7 +631,6 @@ class FCOSTSFullMaskHead(nn.Module):
                             cls_head_pair[k][0])
                         s_reg_head_feature = self.s_t_reg_head_align[k](
                             reg_head_pair[k][0])
-                        embed()
                         t_cls_head_feature = cls_head_pair[k][1].detach()
                         t_reg_head_feature = reg_head_pair[k][1].detach()
                         # learn from intermediate layers
@@ -675,36 +671,45 @@ class FCOSTSFullMaskHead(nn.Module):
                                                      0)
                 s_reg_heads_feature_list = torch.cat(s_reg_heads_feature_list,
                                                      0)
-                if not self.head_teacher_reg_attention:
-                    reg_head_hint_loss = self.reg_head_hint_loss(
-                        s_reg_heads_feature_list, t_reg_heads_feature_list)
-                else:
-                    pos_t_reg_heads_feature = t_reg_heads_feature_list[
-                        t_pos_inds]
-                    pos_s_reg_heads_feature = s_reg_heads_feature_list[
-                        t_pos_inds]
-                    select_update_reg_inds = (t_iou_maps >
-                                              s_iou_maps).nonzero().reshape(-1)
-                    if self.cosine_similarity is True:
-                        self.reg_head_hint_loss = torch.nn.CosineEmbeddingLoss(
-                            margin=0.2, reduction='mean')
-                        reg_head_hint_loss = self.reg_head_hint_loss(
-                            pos_s_reg_heads_feature, pos_t_reg_heads_feature,
-                            torch.ones_like(pos_t_reg_heads_feature[:, 0]))
-                    else:
-                        if len(select_update_reg_inds) > 0:
-                            reg_head_hint_loss = self.reg_head_hint_loss(
-                                pos_s_reg_heads_feature[
-                                    select_update_reg_inds],
-                                pos_t_reg_heads_feature[select_update_reg_inds]
-                            )
-                        else:
-                            reg_head_hint_loss = pos_t_reg_heads_feature[
-                                select_update_reg_inds].sum()
-                cls_head_hint_loss = self.cls_head_hint_loss(
+
+                pos_t_reg_heads_feature = t_reg_heads_feature_list[t_pos_inds]
+                pos_s_reg_heads_feature = s_reg_heads_feature_list[t_pos_inds]
+                select_update_reg_inds = (t_iou_maps >
+                                          s_iou_maps).nonzero().reshape(-1)
+                iou_attention_weight = bbox_overlaps(
+                    s_pred_bboxes, t_pred_bboxes, is_aligned=True).detach()
+                t_pred_cls = t_flatten_cls_scores.max(1)[1]
+                s_pred_cls = s_flatten_cls_scores.max(1)[1]
+                cls_attention_weight = (t_pred_cls == s_pred_cls).float()
+
+                if self.head_wise_attention:
+                    # head attention loss
+                    cls_head_attention_hint_loss = self.attention_factor * self.cls_head_hint_loss(
+                        s_cls_heads_feature_list,
+                        t_cls_heads_feature_list,
+                        weight=cls_attention_weight,
+                        avg_factor=cls_attention_weight.sum())
+                    reg_head_attention_hint_loss = self.attention_factor * self.reg_head_hint_loss(
+                        pos_s_reg_heads_feature,
+                        pos_t_reg_heads_feature,
+                        weight=iou_attention_weight,
+                        avg_factor=iou_attention_weight.sum())
+                    loss_dict.update({
+                        'reg_head_attention_hint_loss':
+                        reg_head_attention_hint_loss
+                    })
+                    loss_dict.update({
+                        'cls_head_attention_hint_loss':
+                        cls_head_attention_hint_loss
+                    })
+
+                cls_head_hint_loss = self.attention_factor * self.cls_head_hint_loss(
                     s_cls_heads_feature_list, t_cls_heads_feature_list)
+                reg_head_hint_loss = self.attention_factor * self.reg_head_hint_loss(
+                    s_reg_heads_feature_list, t_reg_heads_feature_list)
                 loss_dict.update({'reg_head_hint_loss': reg_head_hint_loss})
                 loss_dict.update({'cls_head_hint_loss': cls_head_hint_loss})
+
             # NOTE: learn from logits
             if self.align_to_teacher_logits:
                 t_cls_logits_list = []
@@ -1000,7 +1005,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                    0).float()
+                                 0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
