@@ -672,23 +672,22 @@ class FCOSTSFullMaskHead(nn.Module):
                 s_reg_heads_feature_list = torch.cat(s_reg_heads_feature_list,
                                                      0)
 
-                pos_t_reg_heads_feature = t_reg_heads_feature_list[t_pos_inds]
-                pos_s_reg_heads_feature = s_reg_heads_feature_list[t_pos_inds]
-                select_update_reg_inds = (t_iou_maps >
-                                          s_iou_maps).nonzero().reshape(-1)
-                iou_attention_weight = bbox_overlaps(
-                    s_pred_bboxes, t_pred_bboxes, is_aligned=True).detach()
-                t_pred_cls = t_flatten_cls_scores.max(1)[1]
-                s_pred_cls = s_flatten_cls_scores.max(1)[1]
-                cls_attention_weight = (t_pred_cls == s_pred_cls).float()
-
                 if self.head_wise_attention:
+                    pos_t_reg_heads_feature = t_reg_heads_feature_list[
+                        t_pos_inds]
+                    pos_s_reg_heads_feature = s_reg_heads_feature_list[
+                        t_pos_inds]
+                    iou_attention_weight = bbox_overlaps(
+                        s_pred_bboxes, t_pred_bboxes,
+                        is_aligned=True).detach()
+                    t_pred_cls = t_flatten_cls_scores.max(1)[1]
+                    s_pred_cls = s_flatten_cls_scores.max(1)[1]
+                    cls_attention_inds = (
+                        t_pred_cls == s_pred_cls).nonzero().reshape(-1)
                     # head attention loss
                     cls_head_attention_hint_loss = self.attention_factor * self.cls_head_hint_loss(
-                        s_cls_heads_feature_list,
-                        t_cls_heads_feature_list,
-                        weight=cls_attention_weight,
-                        avg_factor=cls_attention_weight.sum())
+                        s_cls_heads_feature_list[cls_attention_inds],
+                        t_cls_heads_feature_list[cls_attention_inds])
                     reg_head_attention_hint_loss = self.attention_factor * self.reg_head_hint_loss(
                         pos_s_reg_heads_feature,
                         pos_t_reg_heads_feature,
