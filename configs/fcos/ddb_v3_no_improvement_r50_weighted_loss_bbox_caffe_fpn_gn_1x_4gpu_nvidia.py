@@ -32,6 +32,7 @@ model = dict(
         iou_delta = 0.15,
         apply_iou_cache=True,
         consistency_weight=False,
+        box_weighted=True,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
