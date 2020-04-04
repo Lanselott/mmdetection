@@ -422,8 +422,8 @@ class DDBV3NPHead(nn.Module):
                     weight=bbox_weight,
                     avg_factor=bbox_weight.sum())
             else:
-                origin_gradient_mask *= _bd_iou
-                sort_gradient_mask *= _bd_sort_iou
+                origin_gradient_mask *= _bd_iou / _bd_iou.max()
+                sort_gradient_mask *= _bd_sort_iou / _bd_sort_iou.max()
                 # apply hook to mask origin/sort gradients
                 pos_decoded_sort_bbox_preds.register_hook(
                     lambda grad: grad * sort_gradient_mask)
