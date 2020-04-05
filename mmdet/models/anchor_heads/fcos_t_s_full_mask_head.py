@@ -521,6 +521,10 @@ class FCOSTSFullMaskHead(nn.Module):
                     s_pred_cls = s_flatten_cls_scores.max(1)[1]
                     cls_attention_weight = (t_pred_cls == s_pred_cls).float()
                     # cls_attention_weight *= self.pyramid_attention_factor
+                    s_pred_bbox_quality = bbox_overlaps(
+                        s_pred_bboxes, t_gt_bboxes,
+                        is_aligned=True).detach().mean()
+                    self.pyramid_attention_factor = 4 * s_pred_bbox_quality
                     iou_attention_weight = bbox_overlaps(
                         s_pred_bboxes, t_pred_bboxes,
                         is_aligned=True).detach()

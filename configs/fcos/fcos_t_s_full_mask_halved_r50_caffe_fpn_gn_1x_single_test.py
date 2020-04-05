@@ -1,6 +1,6 @@
 # model settings
 ALIGN = False
-PYRAMID_ALIGN = False
+PYRAMID_ALIGN = True
 HEAD_ALIGN = True
 FREEZE_TEACHER = False
 RATIO = 2
@@ -62,6 +62,8 @@ model = dict(
         learn_from_missing_annotation=False,
         block_wise_attention=False,
         pyramid_wise_attention=True,
+        pyramid_attention_factor=2,
+        head_attention_factor=1,
         pyramid_cls_reg_consistent=False,
         pyramid_nms_aware=False,
         dynamic_weight=False,
