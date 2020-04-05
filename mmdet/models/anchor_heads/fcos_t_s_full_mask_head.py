@@ -69,7 +69,8 @@ class FCOSTSFullMaskHead(nn.Module):
                  pyramid_wise_attention=False,
                  pyramid_cls_reg_consistent=False,
                  pyramid_nms_aware=False,
-                 attention_factor=1,
+                 pyramid_attention_factor=1,
+                 head_attention_factor=1,
                  dynamic_weight=False,
                  head_wise_attention=False,
                  align_to_teacher_logits=False,
@@ -146,7 +147,8 @@ class FCOSTSFullMaskHead(nn.Module):
         self.pyramid_wise_attention = pyramid_wise_attention
         self.pyramid_cls_reg_consistent = pyramid_cls_reg_consistent
         self.pyramid_nms_aware = pyramid_nms_aware
-        self.attention_factor = attention_factor
+        self.pyramid_attention_factor = pyramid_attention_factor
+        self.head_attention_factor = head_attention_factor
         self.dynamic_weight = dynamic_weight
         self.head_wise_attention = head_wise_attention
         self.apply_head_wise_alignment = apply_head_wise_alignment
@@ -518,16 +520,16 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
                     s_pred_cls = s_flatten_cls_scores.max(1)[1]
                     cls_attention_weight = (t_pred_cls == s_pred_cls).float()
-                    # cls_attention_weight *= self.attention_factor
+                    # cls_attention_weight *= self.pyramid_attention_factor
                     iou_attention_weight = bbox_overlaps(
                         s_pred_bboxes, t_pred_bboxes,
                         is_aligned=True).detach()
-                    attention_iou_pyramid_hint_loss = self.attention_factor * self.pyramid_hint_loss(
+                    attention_iou_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
                         s_pyramid_feature_list[t_pos_inds],
                         t_pyramid_feature_list[t_pos_inds],
                         weight=iou_attention_weight,
                         avg_factor=iou_attention_weight.sum())
-                    # attention_cls_pyramid_hint_loss = self.attention_factor * self.pyramid_hint_loss(
+                    # attention_cls_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
                     #     s_pyramid_feature_list,
                     #     t_pyramid_feature_list,
                     #     weight=cls_attention_weight)
@@ -685,10 +687,10 @@ class FCOSTSFullMaskHead(nn.Module):
                     cls_attention_inds = (
                         t_pred_cls == s_pred_cls).nonzero().reshape(-1)
                     # head attention loss
-                    cls_head_attention_hint_loss = self.attention_factor * self.cls_head_hint_loss(
+                    cls_head_attention_hint_loss = self.head_attention_factor * self.cls_head_hint_loss(
                         s_cls_heads_feature_list[cls_attention_inds],
                         t_cls_heads_feature_list[cls_attention_inds])
-                    reg_head_attention_hint_loss = self.attention_factor * self.reg_head_hint_loss(
+                    reg_head_attention_hint_loss = self.head_attention_factor * self.reg_head_hint_loss(
                         pos_s_reg_heads_feature,
                         pos_t_reg_heads_feature,
                         weight=iou_attention_weight,
@@ -702,9 +704,9 @@ class FCOSTSFullMaskHead(nn.Module):
                         cls_head_attention_hint_loss
                     })
 
-                cls_head_hint_loss = self.attention_factor * self.cls_head_hint_loss(
+                cls_head_hint_loss = self.head_attention_factor * self.cls_head_hint_loss(
                     s_cls_heads_feature_list, t_cls_heads_feature_list)
-                reg_head_hint_loss = self.attention_factor * self.reg_head_hint_loss(
+                reg_head_hint_loss = self.head_attention_factor * self.reg_head_hint_loss(
                     s_reg_heads_feature_list, t_reg_heads_feature_list)
                 loss_dict.update({'reg_head_hint_loss': reg_head_hint_loss})
                 loss_dict.update({'cls_head_hint_loss': cls_head_hint_loss})
