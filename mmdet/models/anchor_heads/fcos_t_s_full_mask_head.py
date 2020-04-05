@@ -67,6 +67,8 @@ class FCOSTSFullMaskHead(nn.Module):
                  learn_from_missing_annotation=False,
                  block_wise_attention=False,
                  pyramid_wise_attention=False,
+                 corr_out_channels=32,
+                 pyramid_correlation=False,
                  pyramid_cls_reg_consistent=False,
                  pyramid_nms_aware=False,
                  pyramid_attention_factor=1,
@@ -145,6 +147,8 @@ class FCOSTSFullMaskHead(nn.Module):
         self.simple_pyramid_alignment = simple_pyramid_alignment
         self.block_wise_attention = block_wise_attention
         self.pyramid_wise_attention = pyramid_wise_attention
+        self.pyramid_correlation = pyramid_correlation
+        self.corr_out_channels = corr_out_channels
         self.pyramid_cls_reg_consistent = pyramid_cls_reg_consistent
         self.pyramid_nms_aware = pyramid_nms_aware
         self.pyramid_attention_factor = pyramid_attention_factor
@@ -267,9 +271,21 @@ class FCOSTSFullMaskHead(nn.Module):
         '''
         # Align student feature to teacher
         '''
+        self.t_s_correlation_conv = nn.ModuleList()
         if self.apply_pyramid_wise_alignment:
             self.t_s_pyramid_align = nn.Conv2d(
                 self.s_feat_channels, self.feat_channels, 3, padding=1)
+        if self.pyramid_correlation:
+            self.t_s_correlation_conv.append(
+                ConvModule(
+                    self.corr_out_channels,
+                    32,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=self.norm_cfg is None))
 
         if self.apply_head_wise_alignment:
             # NOTE: head wise + learn from logits
@@ -325,6 +341,9 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_centerness, std=0.01)
         if self.apply_pyramid_wise_alignment:
             normal_init(self.t_s_pyramid_align, std=0.01)
+        if self.pyramid_correlation:
+            for m in self.t_s_correlation_conv:
+                normal_init(m.conv, std=0.01)
 
         if self.apply_head_wise_alignment:
             for m in self.s_t_cls_head_align:
@@ -381,6 +400,21 @@ class FCOSTSFullMaskHead(nn.Module):
             pyramid_hint_pairs.append(s_x)
             pyramid_hint_pairs.append(t_x)
 
+        if self.pyramid_correlation:
+            corr_pairs = []
+            corr_pairs.append(
+                self.t_s_correlation_conv[0](
+                    F.interpolate(
+                        s_x.permute(0, 2, 3, 1),
+                        size=[s_x.shape[3], self.corr_out_channels],
+                        mode='nearest').permute(0, 3, 1, 2)))
+            corr_pairs.append(
+                self.t_s_correlation_conv[0](
+                    F.interpolate(
+                        t_x.permute(0, 2, 3, 1),
+                        size=[t_x.shape[3], self.corr_out_channels],
+                        mode='nearest').permute(0, 3, 1, 2)))
+
         for i in range(len(self.cls_convs)):
             cls_layer = self.cls_convs[i]
             cls_s_layer = self.s_cls_convs[i]
@@ -417,13 +451,13 @@ class FCOSTSFullMaskHead(nn.Module):
 
         if self.training:
             if self.apply_pyramid_wise_alignment and not self.apply_head_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs
             elif self.apply_head_wise_alignment and not self.apply_pyramid_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, head_hint_pairs
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, head_hint_pairs, None
             elif self.apply_pyramid_wise_alignment and self.apply_head_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, head_hint_pairs
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, head_hint_pairs, corr_pairs
             else:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None, corr_pairs
         else:
             if self.eval_student:
                 return s_cls_score, s_bbox_pred, s_centerness
@@ -441,6 +475,7 @@ class FCOSTSFullMaskHead(nn.Module):
              hint_pairs,
              pyramid_hint_pairs,
              head_hint_pairs,
+             corr_pairs,
              gt_bboxes,
              gt_labels,
              img_metas,
@@ -543,9 +578,24 @@ class FCOSTSFullMaskHead(nn.Module):
                         'attention_iou_pyramid_hint_loss':
                         attention_iou_pyramid_hint_loss
                     })
-
                 pyramid_hint_loss = self.pyramid_hint_loss(
                     s_pyramid_feature_list, t_pyramid_feature_list)
+                loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
+            # NOTE: apply pyramid correlation
+            if self.pyramid_correlation:
+                s_corr_feature_list = []
+                t_corr_feature_list = []
+                for j, corr_pair in enumerate(corr_pairs):
+                    s_corr_feature_list.append(corr_pair[0].permute(
+                        0, 2, 3, 1).reshape(-1, 32))
+                    t_corr_feature_list.append(corr_pair[1].permute(
+                        0, 2, 3, 1).reshape(-1, 32))
+                t_corr_feature_list = torch.cat(t_corr_feature_list)
+                s_corr_feature_list = torch.cat(s_corr_feature_list)
+                pyramid_corr_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
+                    s_corr_feature_list, t_corr_feature_list.detach())
+                loss_dict.update({'pyramid_corr_loss': pyramid_corr_loss})
+
                 # '''
                 # instance levels mask
                 # '''
@@ -613,7 +663,6 @@ class FCOSTSFullMaskHead(nn.Module):
                 #     loss_dict.update({'bboxes_mean_loss': bboxes_mean_loss})
                 #     loss_dict.update({'bboxes_var_loss': bboxes_var_loss})
 
-                loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
             # NOTE: head wise alignment
             if self.apply_head_wise_alignment:
                 t_cls_heads_feature_list = []
