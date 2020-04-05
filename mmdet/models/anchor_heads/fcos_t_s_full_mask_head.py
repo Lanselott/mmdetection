@@ -413,7 +413,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     F.interpolate(
                         t_x.permute(0, 2, 3, 1),
                         size=[t_x.shape[3], self.corr_out_channels],
-                        mode='nearest').permute(0, 3, 1, 2)))
+                        mode='nearest').permute(0, 3, 1, 2).detach()))
 
         for i in range(len(self.cls_convs)):
             cls_layer = self.cls_convs[i]
@@ -592,7 +592,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         0, 2, 3, 1).reshape(-1, 32))
                 t_corr_feature_list = torch.cat(t_corr_feature_list)
                 s_corr_feature_list = torch.cat(s_corr_feature_list)
-                pyramid_corr_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
+                pyramid_corr_loss = self.pyramid_hint_loss(
                     s_corr_feature_list, t_corr_feature_list.detach())
                 loss_dict.update({'pyramid_corr_loss': pyramid_corr_loss})
 
