@@ -67,6 +67,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  learn_from_missing_annotation=False,
                  block_wise_attention=False,
                  pyramid_wise_attention=False,
+                 pyramid_full_attention=False,
                  corr_out_channels=32,
                  pyramid_correlation=False,
                  pyramid_cls_reg_consistent=False,
@@ -147,6 +148,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.simple_pyramid_alignment = simple_pyramid_alignment
         self.block_wise_attention = block_wise_attention
         self.pyramid_wise_attention = pyramid_wise_attention
+        self.pyramid_full_attention = pyramid_full_attention
         self.pyramid_correlation = pyramid_correlation
         self.corr_out_channels = corr_out_channels
         self.pyramid_cls_reg_consistent = pyramid_cls_reg_consistent
@@ -400,20 +402,16 @@ class FCOSTSFullMaskHead(nn.Module):
             pyramid_hint_pairs.append(s_x)
             pyramid_hint_pairs.append(t_x)
 
+        corr_pairs = []
         if self.pyramid_correlation:
-            corr_pairs = []
-            corr_pairs.append(
-                self.t_s_correlation_conv[0](
-                    F.interpolate(
-                        s_x.permute(0, 2, 3, 1),
-                        size=[s_x.shape[3], self.corr_out_channels],
-                        mode='nearest').permute(0, 3, 1, 2)))
-            corr_pairs.append(
-                self.t_s_correlation_conv[0](
-                    F.interpolate(
-                        t_x.permute(0, 2, 3, 1),
-                        size=[t_x.shape[3], self.corr_out_channels],
-                        mode='nearest').permute(0, 3, 1, 2).detach()))
+            corr_pairs.append(self.t_s_correlation_conv[0](F.interpolate(
+                s_x.permute(0, 2, 3, 1),
+                size=[s_x.shape[3], self.corr_out_channels],
+                mode='nearest').permute(0, 3, 1, 2)))
+            corr_pairs.append(self.t_s_correlation_conv[0](F.interpolate(
+                t_x.permute(0, 2, 3, 1),
+                size=[t_x.shape[3], self.corr_out_channels],
+                mode='nearest').permute(0, 3, 1, 2)))
 
         for i in range(len(self.cls_convs)):
             cls_layer = self.cls_convs[i]
@@ -559,15 +557,24 @@ class FCOSTSFullMaskHead(nn.Module):
                     s_pred_bbox_quality = bbox_overlaps(
                         s_pred_bboxes, t_gt_bboxes,
                         is_aligned=True).detach().mean()
-                    self.pyramid_attention_factor = 4 * s_pred_bbox_quality
-                    iou_attention_weight = bbox_overlaps(
-                        s_pred_bboxes, t_pred_bboxes,
-                        is_aligned=True).detach()
-                    attention_iou_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
-                        s_pyramid_feature_list[t_pos_inds],
-                        t_pyramid_feature_list[t_pos_inds],
-                        weight=iou_attention_weight,
-                        avg_factor=iou_attention_weight.sum())
+                    if self.pyramid_full_attention:
+                        iou_attention_weight = bbox_overlaps(
+                            s_all_pred_bboxes, t_all_pred_bboxes,
+                            is_aligned=True).detach()
+                        attention_iou_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
+                            s_pyramid_feature_list,
+                            t_pyramid_feature_list,
+                            weight=iou_attention_weight,
+                            avg_factor=iou_attention_weight.sum())
+                    else:
+                        iou_attention_weight = bbox_overlaps(
+                            s_pred_bboxes, t_pred_bboxes,
+                            is_aligned=True).detach()
+                        attention_iou_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
+                            s_pyramid_feature_list[t_pos_inds],
+                            t_pyramid_feature_list[t_pos_inds],
+                            weight=iou_attention_weight,
+                            avg_factor=iou_attention_weight.sum())
                     # attention_cls_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
                     #     s_pyramid_feature_list,
                     #     t_pyramid_feature_list,
@@ -592,10 +599,12 @@ class FCOSTSFullMaskHead(nn.Module):
                         0, 2, 3, 1).reshape(-1, 32))
                 t_corr_feature_list = torch.cat(t_corr_feature_list)
                 s_corr_feature_list = torch.cat(s_corr_feature_list)
-                pyramid_corr_loss = self.pyramid_hint_loss(
+                s_pyramid_corr_loss = self.pyramid_hint_loss(
                     s_corr_feature_list, t_corr_feature_list.detach())
-                loss_dict.update({'pyramid_corr_loss': pyramid_corr_loss})
-
+                t_pyramid_corr_loss = self.pyramid_hint_loss(
+                    t_corr_feature_list, s_corr_feature_list.detach())
+                loss_dict.update({'s_pyramid_corr_loss': s_pyramid_corr_loss})
+                loss_dict.update({'t_pyramid_corr_loss': t_pyramid_corr_loss})
                 # '''
                 # instance levels mask
                 # '''
