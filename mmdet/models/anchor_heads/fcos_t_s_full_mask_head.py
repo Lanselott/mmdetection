@@ -607,7 +607,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 s_corr_map_range = s_corr_map.max() - s_corr_map.min()
                 s_corr_map = (s_corr_map - s_corr_map.min()) / s_corr_map_range
 
-                corr_loss = 100 * self.pyramid_hint_loss(s_corr_map, t_corr_map)
+                corr_loss = 20 * self.pyramid_hint_loss(s_corr_map, t_corr_map)
                 loss_dict.update({'corr_loss': corr_loss})
 
             # NOTE: head wise alignment
