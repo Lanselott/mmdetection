@@ -170,9 +170,9 @@ class FPNTS(nn.Module):
         s_outs = self.single_forward(inputs[1], self.s_fpn_convs, self.s_lateral_convs)
         if self.apply_block_wise_alignment:
             # push hint loss to head
-            return tuple(t_outs), tuple(s_outs), tuple(inputs[2])
+            return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(inputs[1]), tuple(inputs[2])
         else:
-            return tuple(t_outs), tuple(s_outs)
+            return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(inputs[1])
 
     @auto_fp16()
     def single_forward(self, single_input, fpn_convs, lateral_convs):
