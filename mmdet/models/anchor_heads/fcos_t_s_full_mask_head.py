@@ -250,7 +250,6 @@ class FCOSTSFullMaskHead(nn.Module):
         self.s_t_reg_head_align = nn.ModuleList()
         self.s_t_cls_head_align = nn.ModuleList()
         self.t_s_pri_pyramid_align = nn.ModuleList()
-        self.s_t_pri_pyramid_align = nn.ModuleList()
 
         for i in range(self.stacked_convs):
             chn = self.s_in_channels if i == 0 else self.s_feat_channels
@@ -285,9 +284,7 @@ class FCOSTSFullMaskHead(nn.Module):
         if self.apply_pri_pyramid_wise_alignment:
             for level in range(1, 3):
                 self.t_s_pri_pyramid_align.append(nn.Conv2d(
-                    self.s_feat_channels * 2**level, self.feat_channels, 3, padding=1))
-                self.s_t_pri_pyramid_align.append(nn.Conv2d(
-                    self.feat_channels * 2**level, self.feat_channels, 3, padding=1))
+                    self.s_feat_channels * 2**level, self.feat_channels * 2**level, 3, padding=1))
 
         if self.apply_head_wise_alignment:
             # NOTE: head wise + learn from logits
@@ -345,9 +342,8 @@ class FCOSTSFullMaskHead(nn.Module):
             normal_init(self.t_s_pyramid_align, std=0.01)
 
         if self.apply_pri_pyramid_wise_alignment:
-            for t_s_pri_pyramid_convs, s_t_pri_pyramid_convs in [self.t_s_pri_pyramid_align, self.s_t_pri_pyramid_align]:
+            for t_s_pri_pyramid_convs in self.t_s_pri_pyramid_align:
                 normal_init(t_s_pri_pyramid_convs, std=0.01)
-                normal_init(s_t_pri_pyramid_convs, std=0.01)
 
         if self.apply_head_wise_alignment:
             for m in self.s_t_cls_head_align:
@@ -608,23 +604,24 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_pri_pyramid_feature = self.t_s_pri_pyramid_align[level - 1](
                             pri_pyramid_hint_pair[0])
 
-                    t_pri_pyramid_feature = self.s_t_pri_pyramid_align[level - 1](
-                        pri_pyramid_hint_pair[1].detach())
+                    t_pri_pyramid_feature = pri_pyramid_hint_pair[1].detach()
                     t_pri_pyramid_feature_list.append(
                         t_pri_pyramid_feature.permute(0, 2, 3, 1).reshape(
                             -1, self.feat_channels))
                     s_pri_pyramid_feature_list.append(
                         s_pri_pyramid_feature.permute(0, 2, 3, 1).reshape(
                             -1, self.feat_channels))
-
+                # TODO: Dimension of bottom-up pyramid is different,[256, 512, 1024, 2048]
+                # Should be aligned in attention mode
                 t_pri_pyramid_feature_list = torch.cat(
                     t_pri_pyramid_feature_list)
                 s_pri_pyramid_feature_list = torch.cat(
                     s_pri_pyramid_feature_list)
                 pri_pyramid_hint_loss = self.pyramid_hint_loss(
                     s_pri_pyramid_feature_list, t_pri_pyramid_feature_list)
-                loss_dict.update({'pri_pyramid_hint_loss': pri_pyramid_hint_loss})
-                
+                loss_dict.update(
+                    {'pri_pyramid_hint_loss': pri_pyramid_hint_loss})
+
             # NOTE: apply pyramid correlation
             if self.pyramid_correlation:
                 '''
