@@ -283,8 +283,12 @@ class FCOSTSFullMaskHead(nn.Module):
 
         if self.apply_pri_pyramid_wise_alignment:
             for level in range(1, 3):
-                self.t_s_pri_pyramid_align.append(nn.Conv2d(
-                    self.s_feat_channels * 2**level, self.feat_channels * 2**level, 3, padding=1))
+                self.t_s_pri_pyramid_align.append(
+                    nn.Conv2d(
+                        self.s_feat_channels * 2**level,
+                        self.feat_channels * 2**level,
+                        3,
+                        padding=1))
 
         if self.apply_head_wise_alignment:
             # NOTE: head wise + learn from logits
@@ -385,13 +389,22 @@ class FCOSTSFullMaskHead(nn.Module):
         if self.apply_block_wise_alignment:
             hint_pairs = feats[4]
             hint_pairs += tuple('N')
-            return multi_apply(self.forward_single, t_feats, s_feats, t_pri_feats, s_pri_feats,
-                               self.scales, self.s_scales, hint_pairs)
+            return multi_apply(self.forward_single, t_feats, s_feats,
+                               t_pri_feats, s_pri_feats, self.scales,
+                               self.s_scales, hint_pairs)
         else:
-            return multi_apply(self.forward_single, t_feats, s_feats, t_pri_feats, s_pri_feats,
-                               self.scales, self.s_scales)
+            return multi_apply(self.forward_single, t_feats, s_feats,
+                               t_pri_feats, s_pri_feats, self.scales,
+                               self.s_scales)
 
-    def forward_single(self, t_x, s_x, t_pri_x, s_pri_x, scale, s_scale, hint_pairs=None):
+    def forward_single(self,
+                       t_x,
+                       s_x,
+                       t_pri_x,
+                       s_pri_x,
+                       scale,
+                       s_scale,
+                       hint_pairs=None):
         t_cls_feat = t_x
         t_reg_feat = t_x
         # student head model
@@ -558,7 +571,8 @@ class FCOSTSFullMaskHead(nn.Module):
                         is_aligned=True).detach().mean()
                     if self.pyramid_full_attention:
                         iou_attention_weight = bbox_overlaps(
-                            s_all_pred_bboxes, t_all_pred_bboxes,
+                            s_all_pred_bboxes,
+                            t_all_pred_bboxes,
                             is_aligned=True).detach()
                         attention_iou_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
                             s_pyramid_feature_list,
@@ -601,8 +615,9 @@ class FCOSTSFullMaskHead(nn.Module):
                                 size=pri_pyramid_hint_pair[1].shape[2:],
                                 mode='nearest'))
                     else:
-                        s_pri_pyramid_feature = self.t_s_pri_pyramid_align[level - 1](
-                            pri_pyramid_hint_pair[0])
+                        s_pri_pyramid_feature = self.t_s_pri_pyramid_align[
+                            level - 1](
+                                pri_pyramid_hint_pair[0])
 
                     t_pri_pyramid_feature = pri_pyramid_hint_pair[1].detach()
                     t_pri_pyramid_feature_list.append(
@@ -624,50 +639,50 @@ class FCOSTSFullMaskHead(nn.Module):
 
             # NOTE: apply pyramid correlation
             if self.pyramid_correlation:
-                '''
-                affinity_size = t_pos_inds.shape[0]
-                t_affinity_matrix = torch.zeros(
-                    [affinity_size, affinity_size, self.feat_channels], dtype=t_pyramid_feature_list.dtype, device=t_pyramid_feature_list.device)
-                s_affinity_matrix = torch.zeros(
-                    [affinity_size, affinity_size, self.feat_channels], dtype=s_pyramid_feature_list.dtype, device=s_pyramid_feature_list.device)
+                # affinity_size = t_pos_inds.shape[0]
+                t_affinity_list = []
+                s_affinity_list = []
+                t_boxes_quality = bbox_overlaps(
+                    t_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
+                high_quality_inds = (t_boxes_quality >=
+                                     0.7).nonzero().reshape(-1)
+                t_pos_pyramid_feats = t_pyramid_feature_list[
+                    t_pos_inds[high_quality_inds]]
+                s_pos_pyramid_feats = s_pyramid_feature_list[
+                    t_pos_inds[high_quality_inds]]
+                affinity_size = len(high_quality_inds)
 
-                for i, t_pyramid_feat_i in enumerate(t_pyramid_feature_list[t_pos_inds]):
-                    for j, t_pyramid_feat_j in enumerate(t_pyramid_feature_list[t_pos_inds]):
-                        # get distance for pyramid pixel-wise features
-                        # of inner/intra instances, a affinity matrix
-                        t_affinity_matrix[i][j] = t_pyramid_feat_i - \
-                            t_pyramid_feat_j
+                if affinity_size == 0:
+                    corr_affinity_loss = t_pos_pyramid_feats.sum()
+                else:
+                    for i in range(affinity_size):
+                        for j in range(i, affinity_size):
+                            # get distance for pyramid pixel-wise features
+                            # of inner/intra instances, a affinity matrix
+                            affinity_distance = t_pos_pyramid_feats[
+                                i] - t_pos_pyramid_feats[j]
+                            t_affinity_list.append(
+                                torch.norm(affinity_distance /
+                                           (affinity_distance.max() +
+                                            1e-6)).reshape(-1))
+                    t_affinity_list = torch.cat(t_affinity_list)
 
-                t_affinity_matrix = t_affinity_matrix / \
-                    (t_affinity_matrix.max(2)[0].unsqueeze(2) + 1e-6)
-                t_affinity_matrix = torch.norm(t_affinity_matrix, dim=2)
+                    for i in range(affinity_size):
+                        for j in range(i, affinity_size):
+                            # get distance for pyramid pixel-wise features
+                            # of inner/intra instances, a affinity matrix
+                            affinity_distance = s_pos_pyramid_feats[
+                                i] - s_pos_pyramid_feats[j]
+                            s_affinity_list.append(
+                                torch.norm(affinity_distance /
+                                           (affinity_distance.max() +
+                                            1e-6)).reshape(-1))
+                    s_affinity_list = torch.cat(s_affinity_list)
 
-                for i, s_pyramid_feat_i in enumerate(s_pyramid_feature_list[t_pos_inds]):
-                    for j, s_pyramid_feat_j in enumerate(s_pyramid_feature_list[t_pos_inds]):
-                        # get distance for pyramid pixel-wise features
-                        # of inner/intra instances, a affinity matrix
-                        s_affinity_matrix[i][j] = s_pyramid_feat_i - \
-                            s_pyramid_feat_j
+                    corr_affinity_loss = self.pyramid_hint_loss(
+                        s_affinity_list, t_affinity_list)
 
-                s_affinity_matrix = s_affinity_matrix / \
-                    (s_affinity_matrix.max(2)[0].unsqueeze(2) + 1e-6)
-                s_affinity_matrix = torch.norm(s_affinity_matrix, dim=2)
-
-                corr_affinity_loss = self.pyramid_hint_loss(
-                    s_affinity_matrix, t_affinity_matrix)
                 loss_dict.update({'corr_affinity_loss': corr_affinity_loss})
-                '''
-                t_corr_map = torch.mm(
-                    t_pyramid_feature_list[t_pos_inds], t_pyramid_feature_list[t_pos_inds].permute(1, 0))
-                t_corr_map_range = t_corr_map.max() - t_corr_map.min()
-                t_corr_map = (t_corr_map - t_corr_map.min()) / t_corr_map_range
-                s_corr_map = torch.mm(
-                    s_pyramid_feature_list[t_pos_inds], s_pyramid_feature_list[t_pos_inds].permute(1, 0))
-                s_corr_map_range = s_corr_map.max() - s_corr_map.min()
-                s_corr_map = (s_corr_map - s_corr_map.min()) / s_corr_map_range
-
-                corr_loss = 20 * self.pyramid_hint_loss(s_corr_map, t_corr_map)
-                loss_dict.update({'corr_loss': corr_loss})
 
             # NOTE: head wise alignment
             if self.apply_head_wise_alignment:
@@ -1065,7 +1080,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                    0).float()
+                                 0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))

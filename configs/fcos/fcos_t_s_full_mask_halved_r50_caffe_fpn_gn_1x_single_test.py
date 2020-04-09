@@ -1,7 +1,7 @@
 # model settings
 ALIGN = False
 PYRAMID_ALIGN = True
-PRI_PYRAMID_ALIGN = True
+PRI_PYRAMID_ALIGN = False
 HEAD_ALIGN = False
 FREEZE_TEACHER = False
 RATIO = 2
