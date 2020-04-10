@@ -645,7 +645,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 t_boxes_quality = bbox_overlaps(
                     t_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
                 high_quality_inds = (t_boxes_quality >=
-                                     0.7).nonzero().reshape(-1)
+                                     0.8).nonzero().reshape(-1)
                 t_pos_pyramid_feats = t_pyramid_feature_list[
                     t_pos_inds[high_quality_inds]]
                 s_pos_pyramid_feats = s_pyramid_feature_list[
