@@ -659,24 +659,20 @@ class FCOSTSFullMaskHead(nn.Module):
                         for j in range(i, affinity_size):
                             # get distance for pyramid pixel-wise features
                             # of inner/intra instances, a affinity matrix
-                            affinity_distance = t_pos_pyramid_feats[
+                            t_affinity_distance = t_pos_pyramid_feats[
                                 i] - t_pos_pyramid_feats[j]
-                            t_affinity_list.append(
-                                torch.norm(affinity_distance /
-                                           (affinity_distance.max() +
-                                            1e-6)).reshape(-1))
-                    t_affinity_list = torch.cat(t_affinity_list)
-
-                    for i in range(affinity_size):
-                        for j in range(i, affinity_size):
-                            # get distance for pyramid pixel-wise features
-                            # of inner/intra instances, a affinity matrix
-                            affinity_distance = s_pos_pyramid_feats[
+                            s_affinity_distance = s_pos_pyramid_feats[
                                 i] - s_pos_pyramid_feats[j]
-                            s_affinity_list.append(
-                                torch.norm(affinity_distance /
-                                           (affinity_distance.max() +
+                            t_affinity_list.append(
+                                torch.norm(t_affinity_distance /
+                                           (t_affinity_distance.max() +
                                             1e-6)).reshape(-1))
+                            s_affinity_list.append(
+                                torch.norm(s_affinity_distance /
+                                           (s_affinity_distance.max() +
+                                            1e-6)).reshape(-1))
+
+                    t_affinity_list = torch.cat(t_affinity_list)
                     s_affinity_list = torch.cat(s_affinity_list)
 
                     corr_affinity_loss = self.pyramid_hint_loss(
