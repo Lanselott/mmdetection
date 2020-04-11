@@ -685,7 +685,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         t_affinity_list, 1)  # [affinity_size, affinity_size]
                     s_affinity_list = torch.cat(
                         s_affinity_list, 1)  # [affinity_size, affinity_size]
-                    corr_affinity_loss = 50 * self.pyramid_hint_loss(
+                    corr_affinity_loss = 10 * self.pyramid_hint_loss(
                         s_affinity_list, t_affinity_list)
 
                 loss_dict.update({'corr_affinity_loss': corr_affinity_loss})
