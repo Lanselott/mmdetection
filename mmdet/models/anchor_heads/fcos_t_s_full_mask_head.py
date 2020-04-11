@@ -60,6 +60,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  align_level=1,
                  apply_block_wise_alignment=False,
                  apply_pyramid_wise_alignment=False,
+                 multi_pyramid_alignment=False,
                  apply_pri_pyramid_wise_alignment=False,
                  apply_head_wise_alignment=False,
                  simple_pyramid_alignment=False,
@@ -146,6 +147,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.align_level = align_level
         self.apply_block_wise_alignment = apply_block_wise_alignment
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
+        self.multi_pyramid_alignment = multi_pyramid_alignment
         self.apply_pri_pyramid_wise_alignment = apply_pri_pyramid_wise_alignment
         self.simple_pyramid_alignment = simple_pyramid_alignment
         self.block_wise_attention = block_wise_attention
@@ -281,6 +283,10 @@ class FCOSTSFullMaskHead(nn.Module):
             self.t_s_pyramid_align = nn.Conv2d(
                 self.s_feat_channels, self.feat_channels, 3, padding=1)
 
+            if self.multi_pyramid_alignment:
+                self.t_s_pyramid_align_extension = nn.Conv2d(
+                    self.feat_channels, self.feat_channels, 3, padding=1)
+
         if self.apply_pri_pyramid_wise_alignment:
             for level in range(1, 3):
                 self.t_s_pri_pyramid_align.append(
@@ -344,6 +350,8 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_centerness, std=0.01)
         if self.apply_pyramid_wise_alignment:
             normal_init(self.t_s_pyramid_align, std=0.01)
+            if self.multi_pyramid_alignment:
+                normal_init(self.t_s_pyramid_align_extension, std=0.01)
 
         if self.apply_pri_pyramid_wise_alignment:
             for t_s_pri_pyramid_convs in self.t_s_pri_pyramid_align:
@@ -550,6 +558,10 @@ class FCOSTSFullMaskHead(nn.Module):
                     else:
                         s_pyramid_feature = self.t_s_pyramid_align(
                             pyramid_hint_pair[0])
+                    
+                    if self.multi_pyramid_alignment:
+                        s_pyramid_feature = self.t_s_pyramid_align_extension(s_pyramid_feature)
+
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
                     t_pyramid_feature_list.append(
                         t_pyramid_feature.permute(0, 2, 3, 1).reshape(
