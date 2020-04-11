@@ -649,9 +649,9 @@ class FCOSTSFullMaskHead(nn.Module):
                 # if affinity_size > len(t_pos_inds):
                 affinity_size = len(t_pos_inds)
 
-                t_pos_pyramid_feats = t_pyramid_feature_list[t_pos_inds]
-                s_pos_pyramid_feats = s_pyramid_feature_list[t_pos_inds]
-
+                t_pos_pyramid_feats = t_pyramid_feature_list[t_pos_inds].sum(1)
+                s_pos_pyramid_feats = s_pyramid_feature_list[t_pos_inds].sum(1)
+                
                 if affinity_size == 0:
                     corr_affinity_loss = t_pos_pyramid_feats.sum()
                 else:
@@ -663,29 +663,28 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_affinity_distance = s_pos_pyramid_feats[
                             i] - s_pos_pyramid_feats
                         t_affinity_distance -= t_affinity_distance.min(
-                            1)[0].reshape(-1, 1)
+                            0)[0]
                         s_affinity_distance -= s_affinity_distance.min(
-                            1)[0].reshape(-1, 1)
+                            0)[0]
 
                         t_affinity_distance = (
                             t_affinity_distance /
-                            (t_affinity_distance.max(1)[0].reshape(-1, 1) -
-                             t_affinity_distance.min(1)[0].reshape(-1, 1) +
-                             1e-6)).sum(1)
+                            (t_affinity_distance.max(0)[0].reshape(-1) -
+                             t_affinity_distance.min(0)[0].reshape(-1) +
+                             1e-6))
                         s_affinity_distance = (
                             s_affinity_distance /
-                            (s_affinity_distance.max(1)[0].reshape(-1, 1) -
-                             s_affinity_distance.min(1)[0].reshape(-1, 1) +
-                             1e-6)).sum(1)
-                        t_affinity_distance = t_affinity_distance / t_affinity_distance.max()
-                        s_affinity_distance = s_affinity_distance / s_affinity_distance.max()
+                            (s_affinity_distance.max(0)[0].reshape(-1) -
+                             s_affinity_distance.min(0)[0].reshape(-1) +
+                             1e-6))
 
                         t_affinity_list.append(
                             t_affinity_distance.reshape(-1, 1))
                         s_affinity_list.append(
                             s_affinity_distance.reshape(-1, 1))
-                    t_affinity_list = torch.cat(t_affinity_list, 1)
-                    s_affinity_list = torch.cat(s_affinity_list, 1)
+                    
+                    t_affinity_list = torch.cat(t_affinity_list, 1) # [affinity_size, affinity_size]
+                    s_affinity_list = torch.cat(s_affinity_list, 1) # [affinity_size, affinity_size]
                     corr_affinity_loss = 100 * self.pyramid_hint_loss(
                         s_affinity_list, t_affinity_list)
 
