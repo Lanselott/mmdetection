@@ -72,6 +72,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  pyramid_full_attention=False,
                  corr_out_channels=32,
                  pyramid_correlation=False,
+                 pyramid_learn_high_quality=False,
                  pyramid_cls_reg_consistent=False,
                  pyramid_nms_aware=False,
                  pyramid_attention_factor=1,
@@ -154,6 +155,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.pyramid_wise_attention = pyramid_wise_attention
         self.pyramid_full_attention = pyramid_full_attention
         self.pyramid_correlation = pyramid_correlation
+        self.pyramid_learn_high_quality = pyramid_learn_high_quality
         self.corr_out_channels = corr_out_channels
         self.pyramid_cls_reg_consistent = pyramid_cls_reg_consistent
         self.pyramid_nms_aware = pyramid_nms_aware
@@ -558,9 +560,10 @@ class FCOSTSFullMaskHead(nn.Module):
                     else:
                         s_pyramid_feature = self.t_s_pyramid_align(
                             pyramid_hint_pair[0])
-                    
+
                     if self.multi_pyramid_alignment:
-                        s_pyramid_feature = self.t_s_pyramid_align_extension(s_pyramid_feature)
+                        s_pyramid_feature = self.t_s_pyramid_align_extension(
+                            s_pyramid_feature)
 
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
                     t_pyramid_feature_list.append(
@@ -573,14 +576,22 @@ class FCOSTSFullMaskHead(nn.Module):
                 t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
 
+                t_pred_bboxes_ious = bbox_overlaps(
+                    t_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
+                t_high_quality_bboxes_inds = (
+                    t_pred_bboxes_ious >=
+                    t_pred_bboxes_ious.mean()).nonzero().reshape(-1)
+
+                if self.pyramid_learn_high_quality:
+                    # Assume that the knowledge from low quality boxes
+                    # does not help student learning
+                    t_pos_inds = t_pos_inds[t_high_quality_bboxes_inds]
+
                 if self.pyramid_wise_attention:
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
                     s_pred_cls = s_flatten_cls_scores.max(1)[1]
                     cls_attention_weight = (t_pred_cls == s_pred_cls).float()
                     # cls_attention_weight *= self.pyramid_attention_factor
-                    s_pred_bbox_quality = bbox_overlaps(
-                        s_pred_bboxes, t_gt_bboxes,
-                        is_aligned=True).detach().mean()
                     if self.pyramid_full_attention:
                         iou_attention_weight = bbox_overlaps(
                             s_all_pred_bboxes,
