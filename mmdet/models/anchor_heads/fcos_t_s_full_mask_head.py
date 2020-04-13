@@ -73,6 +73,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  corr_out_channels=32,
                  pyramid_correlation=False,
                  pyramid_learn_high_quality=False,
+                 pyramid_attention_only=False,
                  pyramid_cls_reg_consistent=False,
                  pyramid_nms_aware=False,
                  pyramid_attention_factor=1,
@@ -156,6 +157,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.pyramid_full_attention = pyramid_full_attention
         self.pyramid_correlation = pyramid_correlation
         self.pyramid_learn_high_quality = pyramid_learn_high_quality
+        self.pyramid_attention_only = pyramid_attention_only
         self.corr_out_channels = corr_out_channels
         self.pyramid_cls_reg_consistent = pyramid_cls_reg_consistent
         self.pyramid_nms_aware = pyramid_nms_aware
@@ -623,7 +625,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     })
                 pyramid_hint_loss = self.pyramid_hint_loss(
                     s_pyramid_feature_list, t_pyramid_feature_list)
-                loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
+
+                if not self.pyramid_attention_only:
+                    loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
 
             # NOTE: pri (bottom-up pyramid) 1-3 levels
             if self.apply_pri_pyramid_wise_alignment:
