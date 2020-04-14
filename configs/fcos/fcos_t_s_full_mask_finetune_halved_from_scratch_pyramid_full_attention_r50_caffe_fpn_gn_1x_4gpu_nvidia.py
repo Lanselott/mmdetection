@@ -55,6 +55,7 @@ model = dict(
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         pyramid_wise_attention=True,
         pyramid_full_attention=True,
+        pyramid_attention_only=True,
         pyramid_attention_factor=1,
         apply_data_free_mode=False,
         apply_head_wise_alignment=HEAD_ALIGN,

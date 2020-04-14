@@ -606,15 +606,23 @@ class FCOSTSFullMaskHead(nn.Module):
                             t_pred_cls == s_pred_cls).float()
                         # cls_attention_weight *= self.pyramid_attention_factor
                         if self.pyramid_full_attention:
-                            iou_attention_weight = bbox_overlaps(
+                            assert self.pyramid_full_attention == self.pyramid_attention_only
+                            t_s_pred_ious = bbox_overlaps(
                                 s_all_pred_bboxes,
                                 t_all_pred_bboxes,
                                 is_aligned=True).detach()
+                            iou_attention_weight = torch.ones_like(
+                                t_s_pred_ious)
+                            iou_attention_weight[
+                                t_pos_inds] = 1 + t_s_pred_ious[t_pos_inds]
+                            iou_attention_weight[
+                                t_neg_inds] = 1 - t_s_pred_ious[t_neg_inds]
                             attention_iou_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
                                 s_pyramid_feature_list,
                                 t_pyramid_feature_list,
                                 weight=iou_attention_weight,
                                 avg_factor=iou_attention_weight.sum())
+                            # print("attention_iou_pyramid_hint_loss:", attention_iou_pyramid_hint_loss)
                         else:
                             iou_attention_weight = bbox_overlaps(
                                 s_pred_bboxes, t_pred_bboxes,
