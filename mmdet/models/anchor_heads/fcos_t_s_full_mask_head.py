@@ -503,7 +503,7 @@ class FCOSTSFullMaskHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, flatten_labels, t_iou_maps, t_pos_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _, t_pred_centerness, t_all_pred_bboxes, t_pos_points = self.loss_single(
+        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, flatten_labels, t_iou_maps, t_pos_inds, t_neg_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _, t_pred_centerness, t_all_pred_bboxes, t_pos_points = self.loss_single(
             cls_scores,
             bbox_preds,
             centernesses,
@@ -512,7 +512,7 @@ class FCOSTSFullMaskHead(nn.Module):
             img_metas,
             cfg,
             gt_bboxes_ignore=None)
-        s_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_flatten_cls_scores, _, s_iou_maps, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness, s_all_pred_bboxes, _ = self.loss_single(
+        s_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_flatten_cls_scores, _, s_iou_maps, _, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness, s_all_pred_bboxes, _ = self.loss_single(
             s_cls_scores,
             s_bbox_preds,
             s_centernesses,
@@ -580,49 +580,66 @@ class FCOSTSFullMaskHead(nn.Module):
 
                 t_pred_bboxes_ious = bbox_overlaps(
                     t_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
-                t_high_quality_bboxes_inds = (
-                    t_pred_bboxes_ious >=
-                    t_pred_bboxes_ious.mean()).nonzero().reshape(-1)
+                t_high_quality_bboxes_inds = (t_pred_bboxes_ious >=
+                                              0.7).nonzero().reshape(-1)
 
                 if self.pyramid_learn_high_quality:
-                    # Assume that the knowledge from low quality boxes
+                    # NOTE: Assume that the knowledge from low quality boxes
                     # does not help student learning
                     t_pos_inds = t_pos_inds[t_high_quality_bboxes_inds]
 
+                # TODO: implement pos/neg alignment together
+                # t_pos_bboxes_ious = bbox_overlaps(
+                #     s_all_pred_bboxes[t_pos_inds],
+                #     t_all_pred_bboxes[t_pos_inds],
+                #     is_aligned=True).detach()
+                # t_neg_bboxes_ious = bbox_overlaps(
+                #     s_all_pred_bboxes[t_neg_inds],
+                #     t_all_pred_bboxes[t_neg_inds],
+                #     is_aligned=True).detach()
+
                 if self.pyramid_wise_attention:
-                    t_pred_cls = t_flatten_cls_scores.max(1)[1]
-                    s_pred_cls = s_flatten_cls_scores.max(1)[1]
-                    cls_attention_weight = (t_pred_cls == s_pred_cls).float()
-                    # cls_attention_weight *= self.pyramid_attention_factor
-                    if self.pyramid_full_attention:
-                        iou_attention_weight = bbox_overlaps(
-                            s_all_pred_bboxes,
-                            t_all_pred_bboxes,
-                            is_aligned=True).detach()
-                        attention_iou_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
-                            s_pyramid_feature_list,
-                            t_pyramid_feature_list,
-                            weight=iou_attention_weight,
-                            avg_factor=iou_attention_weight.sum())
+                    if len(t_pos_inds) != 0:
+                        t_pred_cls = t_flatten_cls_scores.max(1)[1]
+                        s_pred_cls = s_flatten_cls_scores.max(1)[1]
+                        cls_attention_weight = (
+                            t_pred_cls == s_pred_cls).float()
+                        # cls_attention_weight *= self.pyramid_attention_factor
+                        if self.pyramid_full_attention:
+                            iou_attention_weight = bbox_overlaps(
+                                s_all_pred_bboxes,
+                                t_all_pred_bboxes,
+                                is_aligned=True).detach()
+                            attention_iou_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
+                                s_pyramid_feature_list,
+                                t_pyramid_feature_list,
+                                weight=iou_attention_weight,
+                                avg_factor=iou_attention_weight.sum())
+                        else:
+                            iou_attention_weight = bbox_overlaps(
+                                s_pred_bboxes, t_pred_bboxes,
+                                is_aligned=True).detach()
+                            attention_iou_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
+                                s_pyramid_feature_list[t_pos_inds],
+                                t_pyramid_feature_list[t_pos_inds],
+                                weight=iou_attention_weight,
+                                avg_factor=iou_attention_weight.sum())
+                        # attention_cls_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
+                        #     s_pyramid_feature_list,
+                        #     t_pyramid_feature_list,
+                        #     weight=cls_attention_weight)
                     else:
-                        iou_attention_weight = bbox_overlaps(
-                            s_pred_bboxes, t_pred_bboxes,
-                            is_aligned=True).detach()
-                        attention_iou_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
-                            s_pyramid_feature_list[t_pos_inds],
-                            t_pyramid_feature_list[t_pos_inds],
-                            weight=iou_attention_weight,
-                            avg_factor=iou_attention_weight.sum())
-                    # attention_cls_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
-                    #     s_pyramid_feature_list,
-                    #     t_pyramid_feature_list,
-                    #     weight=cls_attention_weight)
+                        attention_iou_pyramid_hint_loss = s_pyramid_feature_list[
+                            t_pos_inds].sum()
+                    # print("attention_iou_pyramid_hint_loss:",
+                    #       attention_iou_pyramid_hint_loss)
                     loss_dict.update({
                         # 'attention_cls_pyramid_hint_loss':
                         # attention_cls_pyramid_hint_loss,
                         'attention_iou_pyramid_hint_loss':
                         attention_iou_pyramid_hint_loss
                     })
+
                 pyramid_hint_loss = self.pyramid_hint_loss(
                     s_pyramid_feature_list, t_pyramid_feature_list)
 
@@ -1122,6 +1139,7 @@ class FCOSTSFullMaskHead(nn.Module):
             block_distill_masks = (block_distill_masks > 0).float()
 
         pos_inds = flatten_labels.nonzero().reshape(-1)
+        neg_inds = (flatten_labels == 0).nonzero().reshape(-1)
         num_pos = len(pos_inds)
         cls_avg_factor = num_pos + num_imgs
         loss_cls = self.loss_cls(
@@ -1162,7 +1180,7 @@ class FCOSTSFullMaskHead(nn.Module):
             loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
 
-        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, flatten_labels, pos_iou_maps, pos_inds, pos_decoded_bbox_preds, pos_decoded_target_preds, block_distill_masks, pos_centerness_targets, pos_centerness, decoded_bbox_preds, pos_points
+        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, flatten_labels, pos_iou_maps, pos_inds, neg_inds, pos_decoded_bbox_preds, pos_decoded_target_preds, block_distill_masks, pos_centerness_targets, pos_centerness, decoded_bbox_preds, pos_points
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,
