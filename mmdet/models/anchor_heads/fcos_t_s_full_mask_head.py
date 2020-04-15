@@ -604,7 +604,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_pred_cls = s_flatten_cls_scores.max(1)[1]
                         cls_attention_weight = (
                             t_pred_cls == s_pred_cls).float()
-                        # cls_attention_weight *= self.pyramid_attention_factor
+
                         if self.pyramid_full_attention:
                             assert self.pyramid_full_attention == self.pyramid_attention_only
                             t_s_pred_ious = bbox_overlaps(
@@ -617,7 +617,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                 t_pos_inds] = 1 + t_s_pred_ious[t_pos_inds]
                             iou_attention_weight[
                                 t_neg_inds] = 1 - t_s_pred_ious[t_neg_inds]
-                            attention_iou_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
+                            iou_attention_weight *= self.pyramid_attention_factor
+                            attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
                                 s_pyramid_feature_list,
                                 t_pyramid_feature_list,
                                 weight=iou_attention_weight,
@@ -627,12 +628,12 @@ class FCOSTSFullMaskHead(nn.Module):
                             iou_attention_weight = bbox_overlaps(
                                 s_pred_bboxes, t_pred_bboxes,
                                 is_aligned=True).detach()
-                            attention_iou_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
+                            attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
                                 s_pyramid_feature_list[t_pos_inds],
                                 t_pyramid_feature_list[t_pos_inds],
                                 weight=iou_attention_weight,
                                 avg_factor=iou_attention_weight.sum())
-                        # attention_cls_pyramid_hint_loss = self.pyramid_attention_factor * self.pyramid_hint_loss(
+                        # attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
                         #     s_pyramid_feature_list,
                         #     t_pyramid_feature_list,
                         #     weight=cls_attention_weight)
@@ -1138,7 +1139,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                                 0).float()
+                    0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
