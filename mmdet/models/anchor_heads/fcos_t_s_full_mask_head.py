@@ -900,61 +900,25 @@ class FCOSTSFullMaskHead(nn.Module):
 
             if self.finetune_student:
                 if not self.apply_data_free_mode:
-                    loss_dict.update(
-                        s_loss_bbox=s_loss_bbox,
-                        s_loss_centerness=s_loss_centerness,
-                        s_loss_cls=s_loss_cls)
-                if self.apply_iou_similarity:
-                    assert self.spatial_ratio == 1
-                    if self.apply_posprocessing_similarity:
-                        # TODO: not done yet
-                        pass
-                    else:
-                        loss_iou_similiarity = self.loss_iou_similiarity(
-                            s_iou_maps, t_iou_maps.detach())
-                        loss_dict.update(
-                            loss_iou_similiarity=loss_iou_similiarity)
-
-                if self.apply_soft_regression_distill:
-                    # calcuate iou of student boxes with teacher boxes and ground truths
-                    # choose the better iou as guidance
-                    t_s_ious = bbox_overlaps(
-                        s_pred_bboxes, t_pred_bboxes, is_aligned=True)
-                    gt_s_ious = bbox_overlaps(
-                        s_pred_bboxes, s_gt_bboxes, is_aligned=True)
-                    t_iou_inds = (t_s_ious > gt_s_ious).nonzero().reshape(-1)
-                    gt_iou_inds = (t_s_ious <= gt_s_ious).nonzero().reshape(-1)
-
-                    if len(t_iou_inds) > 0:
-                        # learn from teacher
-                        s_distill_loss_bbox = self.loss_bbox(
-                            s_pred_bboxes[t_iou_inds],
-                            t_pred_bboxes[t_iou_inds],
-                            weight=pos_centerness_targets[t_iou_inds],
-                            avg_factor=pos_centerness_targets[t_iou_inds].sum(
-                            ))
-                    else:
-                        s_distill_loss_bbox = t_pred_bboxes[t_iou_inds].sum()
-
-                    if self.choose_better_iou:
-                        if len(gt_iou_inds) > 0:
-                            # learn from ground truth
-                            s_loss_bbox = self.loss_bbox(
-                                s_pred_bboxes[gt_iou_inds],
-                                s_gt_bboxes[gt_iou_inds],
-                                weight=pos_centerness_targets[gt_iou_inds],
-                                avg_factor=pos_centerness_targets[gt_iou_inds].
-                                sum())
-                        else:
-                            s_loss_bbox = s_gt_bboxes[gt_iou_inds].sum()
-                    else:
-                        s_loss_bbox = self.loss_bbox(
+                    if self.apply_soft_regression_distill:
+                        t_s_pos_centerness = bbox_overlaps(
+                            s_pred_bboxes, t_pred_bboxes,
+                            is_aligned=True).detach()
+                        # print("t_s_pos_centerness shape:", t_s_pos_centerness.shape)
+                        # print("s_pred_bboxes shape:", s_pred_bboxes.shape)
+                        s_soft_loss_bbox = self.loss_bbox(
                             s_pred_bboxes,
-                            s_gt_bboxes,
-                            weight=pos_centerness_targets,
-                            avg_factor=pos_centerness_targets.sum())
-                    loss_dict.update(s_distill_loss_bbox=s_distill_loss_bbox)
-                    loss_dict.update(s_loss_bbox=s_loss_bbox)
+                            t_gt_bboxes,
+                            weight=t_s_pos_centerness,
+                            avg_factor=t_s_pos_centerness.sum())
+                        loss_dict.update(s_loss_bbox=s_loss_bbox,
+                            s_loss_centerness=s_loss_centerness,
+                            s_loss_cls=s_loss_cls)
+                    else:
+                        loss_dict.update(
+                            s_loss_bbox=s_loss_bbox,
+                            s_loss_centerness=s_loss_centerness,
+                            s_loss_cls=s_loss_cls)
 
                 if self.apply_soft_cls_distill:
                     if self.spatial_ratio > 1:
