@@ -613,9 +613,8 @@ class FCOSTSFullMaskHead(nn.Module):
                             iou_attention_weight = torch.ones_like(
                                 t_s_pred_ious)
                             iou_attention_weight[
-                                t_pos_inds] = 1 + t_s_pred_ious[t_pos_inds]
-                            iou_attention_weight[
-                                t_neg_inds] = 1 - t_s_pred_ious[t_neg_inds]
+                                t_pos_inds] = 1 + t_s_pred_ious
+                          
                             iou_attention_weight *= self.pyramid_attention_factor
 
                             attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
