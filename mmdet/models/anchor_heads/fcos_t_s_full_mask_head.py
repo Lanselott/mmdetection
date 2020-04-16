@@ -617,6 +617,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             iou_attention_weight[
                                 t_neg_inds] = 1 - t_s_pred_ious[t_neg_inds]
                             iou_attention_weight *= self.pyramid_attention_factor
+
                             attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
                                 s_pyramid_feature_list,
                                 t_pyramid_feature_list,
@@ -659,10 +660,9 @@ class FCOSTSFullMaskHead(nn.Module):
                 t_pri_pyramid_feature_list = []
                 s_pri_pyramid_feature_list = []
                 for level in range(1, 3):
-                    # TODO: should not use t_s_pyramid_align!!
                     pri_pyramid_hint_pair = pri_pyramid_hint_pairs[level]
                     if self.spatial_ratio > 1:
-                        s_pri_pyramid_feature = self.t_s_pyramid_align(
+                        s_pri_pyramid_feature = self.t_s_pri_pyramid_align[level - 1](
                             F.interpolate(
                                 pri_pyramid_hint_pair[0],
                                 size=pri_pyramid_hint_pair[1].shape[2:],
