@@ -289,8 +289,12 @@ class FCOSTSFullMaskHead(nn.Module):
                 channel_delta = (self.feat_channels -
                                  self.s_feat_channels) // self.multi_levels
 
-                self.t_s_pyramid_align.append(nn.Conv2d(
-                    self.s_feat_channels + channel_delta * i, self.s_feat_channels + channel_delta * (i+1), 3, padding=1))
+                self.t_s_pyramid_align.append(
+                    nn.Conv2d(
+                        self.s_feat_channels + channel_delta * i,
+                        self.s_feat_channels + channel_delta * (i + 1),
+                        3,
+                        padding=1))
 
         if self.apply_pri_pyramid_wise_alignment:
             for level in range(1, 3):
@@ -612,9 +616,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                 is_aligned=True).detach()
                             iou_attention_weight = torch.ones_like(
                                 t_s_pred_ious)
-                            iou_attention_weight[
-                                t_pos_inds] = 1 + t_s_pred_ious
-                          
+                            iou_attention_weight = 1 + t_s_pred_ious
+
                             iou_attention_weight *= self.pyramid_attention_factor
 
                             attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
@@ -661,11 +664,12 @@ class FCOSTSFullMaskHead(nn.Module):
                 for level in range(1, 3):
                     pri_pyramid_hint_pair = pri_pyramid_hint_pairs[level]
                     if self.spatial_ratio > 1:
-                        s_pri_pyramid_feature = self.t_s_pri_pyramid_align[level - 1](
-                            F.interpolate(
-                                pri_pyramid_hint_pair[0],
-                                size=pri_pyramid_hint_pair[1].shape[2:],
-                                mode='nearest'))
+                        s_pri_pyramid_feature = self.t_s_pri_pyramid_align[
+                            level - 1](
+                                F.interpolate(
+                                    pri_pyramid_hint_pair[0],
+                                    size=pri_pyramid_hint_pair[1].shape[2:],
+                                    mode='nearest'))
                     else:
                         s_pri_pyramid_feature = self.t_s_pri_pyramid_align[
                             level - 1](
@@ -1138,7 +1142,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                    0).float()
+                                 0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
