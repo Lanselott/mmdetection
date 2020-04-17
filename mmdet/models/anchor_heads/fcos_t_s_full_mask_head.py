@@ -61,7 +61,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_block_wise_alignment=False,
                  apply_pyramid_wise_alignment=False,
                  copy_teacher_fpn=False,
-                 multi_levels=2,
+                 multi_levels=1,
                  apply_pri_pyramid_wise_alignment=False,
                  apply_head_wise_alignment=False,
                  simple_pyramid_alignment=False,
