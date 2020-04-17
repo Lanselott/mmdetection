@@ -60,6 +60,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  align_level=1,
                  apply_block_wise_alignment=False,
                  apply_pyramid_wise_alignment=False,
+                 copy_teacher_fpn=False,
                  multi_levels=2,
                  apply_pri_pyramid_wise_alignment=False,
                  apply_head_wise_alignment=False,
@@ -149,6 +150,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.align_level = align_level
         self.apply_block_wise_alignment = apply_block_wise_alignment
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
+        self.copy_teacher_fpn = copy_teacher_fpn
         self.multi_levels = multi_levels
         self.apply_pri_pyramid_wise_alignment = apply_pri_pyramid_wise_alignment
         self.simple_pyramid_alignment = simple_pyramid_alignment
@@ -396,6 +398,7 @@ class FCOSTSFullMaskHead(nn.Module):
         t_feats = feats[0]
         s_feats = feats[1]
 
+        # TODO: remove pri features
         t_pri_feats = feats[2]
         s_pri_feats = feats[3]
         t_pri_feats += tuple('N')
@@ -408,6 +411,12 @@ class FCOSTSFullMaskHead(nn.Module):
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
                                self.s_scales, hint_pairs)
+        elif self.copy_teacher_fpn:
+            t_fpn_features = feats[4]
+            placeholder = tuple('N') * 5
+            return multi_apply(self.forward_single, t_feats, s_feats,
+                               t_pri_feats, s_pri_feats, self.scales,
+                               self.s_scales, placeholder, t_fpn_features)
         else:
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
@@ -420,7 +429,8 @@ class FCOSTSFullMaskHead(nn.Module):
                        s_pri_x,
                        scale,
                        s_scale,
-                       hint_pairs=None):
+                       hint_pairs=None,
+                       t_fpn_feat=None):
         t_cls_feat = t_x
         t_reg_feat = t_x
         # student head model
@@ -428,6 +438,10 @@ class FCOSTSFullMaskHead(nn.Module):
         s_reg_feat = s_x
         cls_hint_pairs = []
         reg_hint_pairs = []
+
+        if self.copy_teacher_fpn:
+            t_fpn_cls_feat = t_fpn_feat
+            t_fpn_reg_feat = t_fpn_feat
 
         if self.apply_pyramid_wise_alignment:
             pyramid_hint_pairs = []
@@ -442,17 +456,24 @@ class FCOSTSFullMaskHead(nn.Module):
 
         for i in range(len(self.cls_convs)):
             cls_layer = self.cls_convs[i]
-            cls_s_layer = self.s_cls_convs[i]
+            s_cls_layer = self.s_cls_convs[i]
             t_cls_feat = cls_layer(t_cls_feat)
-            s_cls_feat = cls_s_layer(s_cls_feat)
+            s_cls_feat = s_cls_layer(s_cls_feat)
 
             if self.apply_head_wise_alignment:
                 cls_hint_pairs.append([s_cls_feat, t_cls_feat])
+            if self.copy_teacher_fpn:
+                t_fpn_cls_feat = s_cls_layer(t_fpn_cls_feat)
 
         cls_score = self.fcos_cls(t_cls_feat)
         s_cls_score = self.fcos_s_cls(s_cls_feat)
+
         centerness = self.fcos_centerness(t_cls_feat)
         s_centerness = self.fcos_s_centerness(s_cls_feat)
+
+        if self.copy_teacher_fpn:
+            t_fpn_cls_score = self.fcos_s_cls(t_fpn_cls_feat)
+            t_fpn_centerness = self.fcos_s_centerness(t_fpn_cls_feat)
 
         for j in range(len(self.reg_convs)):
             reg_layer = self.reg_convs[j]
@@ -462,6 +483,8 @@ class FCOSTSFullMaskHead(nn.Module):
 
             if self.apply_head_wise_alignment:
                 reg_hint_pairs.append([s_reg_feat, t_reg_feat])
+            if self.copy_teacher_fpn:
+                t_fpn_reg_feat = s_reg_layer(t_fpn_reg_feat)
 
         # wrap reg/cls head features
         if self.apply_head_wise_alignment:
@@ -474,15 +497,22 @@ class FCOSTSFullMaskHead(nn.Module):
         bbox_pred = scale(self.fcos_reg(t_reg_feat)).float().exp()
         s_bbox_pred = s_scale(self.fcos_s_reg(s_reg_feat)).float().exp()
 
+        if self.copy_teacher_fpn:
+            t_fpn_bbox_pred = s_scale(
+                self.fcos_s_reg(t_fpn_reg_feat)).float().exp()
+
         if self.training:
             if self.apply_pyramid_wise_alignment and not self.apply_head_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs
+                if self.copy_teacher_fpn:
+                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, t_fpn_bbox_pred, t_fpn_cls_score, t_fpn_centerness
+                else:
+                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None
             elif self.apply_head_wise_alignment and not self.apply_pyramid_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, head_hint_pairs, None, None
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, head_hint_pairs, None, None, None, None, None
             elif self.apply_pyramid_wise_alignment and self.apply_head_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, head_hint_pairs, corr_pairs, pri_pyramid_hint_pairs
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, head_hint_pairs, corr_pairs, pri_pyramid_hint_pairs, None, None, None
             else:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None, corr_pairs, None
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None, corr_pairs, None, None, None, None
         else:
             if self.eval_student:
                 return s_cls_score, s_bbox_pred, s_centerness
@@ -502,11 +532,16 @@ class FCOSTSFullMaskHead(nn.Module):
              head_hint_pairs,
              corr_pairs,
              pri_pyramid_hint_pairs,
+             t_fpn_bbox_pred,
+             t_fpn_cls_score,
+             t_fpn_centerness,
              gt_bboxes,
              gt_labels,
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
+
+        loss_dict = {}
         loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, flatten_labels, t_iou_maps, t_pos_inds, t_neg_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _, t_pred_centerness, t_all_pred_bboxes, t_pos_points = self.loss_single(
             cls_scores,
             bbox_preds,
@@ -526,8 +561,23 @@ class FCOSTSFullMaskHead(nn.Module):
             cfg,
             gt_bboxes_ignore=None,
             spatial_ratio=self.spatial_ratio)
+        if self.copy_teacher_fpn:
+            t_fpn_loss_cls, t_fpn_loss_bbox, t_fpn_loss_centerness, cls_avg_factor, t_fpn_flatten_cls_scores, _, t_fpn_iou_maps, _, _, t_fpn_pred_bboxes, t_fpn_gt_bboxes, _, _, t_fpn_pred_centerness, t_fpn_all_pred_bboxes, _ = self.loss_single(
+                t_fpn_cls_score,
+                t_fpn_bbox_pred,
+                t_fpn_centerness,
+                gt_bboxes,
+                gt_labels,
+                img_metas,
+                cfg,
+                gt_bboxes_ignore=None,
+                spatial_ratio=self.spatial_ratio)
+            loss_dict.update({
+                't_fpn_loss_cls': t_fpn_loss_cls,
+                't_fpn_loss_bbox': t_fpn_loss_bbox,
+                't_fpn_loss_centerness': t_fpn_loss_centerness
+            })
 
-        loss_dict = {}
         assert self.fix_student_train_teacher != self.learn_when_train
 
         if self.learn_when_train:
@@ -906,7 +956,8 @@ class FCOSTSFullMaskHead(nn.Module):
                             t_gt_bboxes,
                             weight=t_s_pos_centerness,
                             avg_factor=t_s_pos_centerness.sum())
-                        loss_dict.update(s_loss_bbox=s_loss_bbox,
+                        loss_dict.update(
+                            s_loss_bbox=s_loss_bbox,
                             s_loss_centerness=s_loss_centerness,
                             s_loss_cls=s_loss_cls)
                     else:
