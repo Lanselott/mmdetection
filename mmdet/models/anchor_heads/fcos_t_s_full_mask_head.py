@@ -586,11 +586,6 @@ class FCOSTSFullMaskHead(nn.Module):
                 t_high_quality_bboxes_inds = (t_pred_bboxes_ious >=
                                               0.7).nonzero().reshape(-1)
 
-                if self.pyramid_learn_high_quality:
-                    # NOTE: Assume that the knowledge from low quality boxes
-                    # does not help student learning
-                    t_pos_inds = t_pos_inds[t_high_quality_bboxes_inds]
-
                 # TODO: implement pos/neg alignment together
                 # t_pos_bboxes_ious = bbox_overlaps(
                 #     s_all_pred_bboxes[t_pos_inds],
