@@ -190,5 +190,5 @@ dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
 load_from = None  #'./fcos_t_s_finetune_halved_student_from_scratch_epoch_12.pth'
-resume_from = './t_fpn_copy_epoch_12.pth'
+resume_from = './fcos_t_s_t_fpn_copy_epoch_7.pth'
 workflow = [('train', 1)]
