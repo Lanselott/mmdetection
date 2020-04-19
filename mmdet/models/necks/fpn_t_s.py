@@ -154,8 +154,17 @@ class FPNTS(nn.Module):
             self.t_copy_lateral_convs = nn.ModuleList()
             self.t_copy_fpn_convs = nn.ModuleList()
             self.align_t_copy_fpn_conv = nn.ModuleList()
-            self.align_t_copy_back_conv = nn.Conv2d(
-                self.out_channels, self.s_out_channels, 3, padding=1)
+            self.align_t_copy_back_conv = nn.ModuleList()
+            self.align_t_copy_back_conv.append(
+                ConvModule(
+                    self.out_channels,
+                    self.s_out_channels,
+                    3,
+                    padding=1,
+                    conv_cfg=conv_cfg,
+                    norm_cfg=norm_cfg,
+                    activation=self.activation,
+                    inplace=False))
 
             for i in range(self.start_level, self.backbone_end_level):
                 l_conv = ConvModule(
@@ -179,11 +188,15 @@ class FPNTS(nn.Module):
                 self.t_copy_lateral_convs.append(l_conv)
                 self.t_copy_fpn_convs.append(fpn_conv)
                 self.align_t_copy_fpn_conv.append(
-                    nn.Conv2d(
+                    ConvModule(
                         self.s_in_channels[i - self.start_level],
                         self.in_channels[i - self.start_level],
                         3,
-                        padding=1))
+                        padding=1,
+                        conv_cfg=conv_cfg,
+                        norm_cfg=norm_cfg,
+                        activation=self.activation,
+                        inplace=False))
             # add extra conv layers (e.g., RetinaNet)
             extra_levels = num_outs - self.backbone_end_level + self.start_level
             if add_extra_convs and extra_levels >= 1:
@@ -237,14 +250,14 @@ class FPNTS(nn.Module):
             fpn_conv.eval()
             for param, origin_param in zip(fpn_conv.parameters(),
                                            origin_fpn_conv.parameters()):
-                param = origin_param.clone().detach()
+                param = origin_param.detach()
 
         for lateral_conv, origin_lateral_conv in zip(self.t_copy_lateral_convs,
                                                      self.lateral_convs):
             lateral_conv.eval()
             for param, origin_param in zip(lateral_conv.parameters(),
                                            origin_lateral_conv.parameters()):
-                param = origin_param.clone().detach()
+                param = origin_param.detach()
 
     @auto_fp16()
     def forward(self, inputs):
@@ -267,7 +280,7 @@ class FPNTS(nn.Module):
                                                self.t_copy_lateral_convs)
             for sharing_out in sharing_outs:
                 aligned_outputs += tuple(
-                    [self.align_t_copy_back_conv(sharing_out)])
+                    [self.align_t_copy_back_conv[0](sharing_out)])
 
         if self.apply_block_wise_alignment:
             # push hint loss to head
