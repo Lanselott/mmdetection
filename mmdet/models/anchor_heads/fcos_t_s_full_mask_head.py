@@ -672,9 +672,13 @@ class FCOSTSFullMaskHead(nn.Module):
                                 avg_factor=iou_attention_weight.sum())
                             # print("attention_iou_pyramid_hint_loss:", attention_iou_pyramid_hint_loss)
                         else:
-                            iou_attention_weight = bbox_overlaps(
+                            t_s_ious = bbox_overlaps(
                                 s_pred_bboxes, t_pred_bboxes,
                                 is_aligned=True).detach()
+                            s_g_ious = bbox_overlaps(
+                                s_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
+                            iou_attention_weight = t_s_ious * s_g_ious
+
                             attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
                                 s_pyramid_feature_list[t_pos_inds],
                                 t_pyramid_feature_list[t_pos_inds],
@@ -1100,7 +1104,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                                 0).float()
+                    0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
