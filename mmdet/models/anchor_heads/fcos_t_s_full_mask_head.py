@@ -678,6 +678,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             s_g_ious = bbox_overlaps(
                                 s_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
                             iou_attention_weight = t_s_ious * s_g_ious
+                            iou_attention_weight /= iou_attention_weight.max()
 
                             attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
                                 s_pyramid_feature_list[t_pos_inds],
