@@ -944,27 +944,26 @@ class FCOSTSFullMaskHead(nn.Module):
                 loss_dict.update(t_logits_reg=t_logits_reg)
 
             if self.finetune_student:
-                if not self.apply_data_free_mode:
-                    if self.apply_soft_regression_distill:
-                        t_s_pos_centerness = bbox_overlaps(
-                            s_pred_bboxes, t_pred_bboxes,
-                            is_aligned=True).detach()
-                        # print("t_s_pos_centerness shape:", t_s_pos_centerness.shape)
-                        # print("s_pred_bboxes shape:", s_pred_bboxes.shape)
-                        s_soft_loss_bbox = self.loss_bbox(
-                            s_pred_bboxes,
-                            t_gt_bboxes,
-                            weight=t_s_pos_centerness,
-                            avg_factor=t_s_pos_centerness.sum())
-                        loss_dict.update(
-                            s_loss_bbox=s_loss_bbox,
-                            s_loss_centerness=s_loss_centerness,
-                            s_loss_cls=s_loss_cls)
-                    else:
-                        loss_dict.update(
-                            s_loss_bbox=s_loss_bbox,
-                            s_loss_centerness=s_loss_centerness,
-                            s_loss_cls=s_loss_cls)
+                if self.apply_soft_regression_distill:
+                    t_s_pos_centerness = bbox_overlaps(
+                        s_pred_bboxes, t_pred_bboxes,
+                        is_aligned=True).detach()
+                    # print("t_s_pos_centerness shape:", t_s_pos_centerness.shape)
+                    # print("s_pred_bboxes shape:", s_pred_bboxes.shape)
+                    s_soft_loss_bbox = self.loss_bbox(
+                        s_pred_bboxes,
+                        t_gt_bboxes,
+                        weight=t_s_pos_centerness,
+                        avg_factor=t_s_pos_centerness.sum())
+                    loss_dict.update(
+                        s_loss_bbox=s_soft_loss_bbox,
+                        s_loss_centerness=s_loss_centerness,
+                        s_loss_cls=s_loss_cls)
+                else:
+                    loss_dict.update(
+                        s_loss_bbox=s_loss_bbox,
+                        s_loss_centerness=s_loss_centerness,
+                        s_loss_cls=s_loss_cls)
 
                 if self.apply_soft_cls_distill:
                     if self.spatial_ratio > 1:
@@ -1030,57 +1029,6 @@ class FCOSTSFullMaskHead(nn.Module):
                     cls_reg_dist_loss = self.cls_reg_distribution_hint_loss(
                         s_cls_reg_distance, t_cls_reg_distance)
                     loss_dict.update(cls_reg_dist_loss=cls_reg_dist_loss)
-                if self.apply_data_free_mode:
-                    df_t_pred_centerness = t_pred_centerness.sigmoid()
-                    df_t_confidence, df_t_labels = t_flatten_cls_scores.sigmoid(
-                    ).max(1)
-                    # select high confidence
-                    df_t_labels[(df_t_confidence < 0.3).nonzero()] = 0
-                    df_avg_factor = df_t_labels.nonzero().shape[0]
-                    df_loss_bbox = self.loss_bbox(
-                        s_pred_bboxes,
-                        t_pred_bboxes,
-                        weight=df_t_pred_centerness,
-                        avg_factor=df_t_pred_centerness.sum())
-                    df_loss_cls = self.loss_cls(
-                        s_flatten_cls_scores,
-                        df_t_labels,
-                        avg_factor=df_avg_factor)
-                    df_loss_centerness = self.loss_centerness(
-                        s_pred_centerness, df_t_pred_centerness)
-                    loss_dict.update(
-                        df_loss_cls=df_loss_cls,
-                        df_loss_bbox=df_loss_bbox,
-                        df_loss_centerness=df_loss_centerness)
-                if self.learn_from_missing_annotation:
-                    # learn from high confidence predictions
-                    # from teacher network without annotations
-                    t_cls_logits, t_learned_labels = t_flatten_cls_scores.sigmoid(
-                    ).max(1)
-                    t_learned_labels[t_pos_inds] = 0  # mask annotations
-                    t_missing_cls_anno_inds = t_learned_labels.nonzero(
-                    ).reshape(-1)
-                    recovered_anno_mask = t_missing_cls_anno_inds[(
-                        t_cls_logits[t_missing_cls_anno_inds] >=
-                        0.75).nonzero().reshape(-1)]
-                    recovered_pos_avg_factor = len(recovered_anno_mask)
-                    if recovered_pos_avg_factor == 0:
-                        recovered_loss_bboxes = t_all_pred_bboxes[
-                            recovered_anno_mask].sum()
-                        recovered_loss_cls = s_flatten_cls_scores[
-                            recovered_anno_mask].sum()
-                    else:
-                        recovered_loss_weight = 1
-                        recovered_loss_bboxes = recovered_loss_weight * self.loss_bbox(
-                            s_all_pred_bboxes[recovered_anno_mask],
-                            t_all_pred_bboxes[recovered_anno_mask])
-                        recovered_loss_cls = recovered_loss_weight * self.loss_cls(
-                            s_flatten_cls_scores[recovered_anno_mask],
-                            t_learned_labels[recovered_anno_mask],
-                            avg_factor=recovered_pos_avg_factor)
-                    loss_dict.update(
-                        recovered_loss_cls=recovered_loss_cls,
-                        recovered_loss_bboxes=recovered_loss_bboxes)
                 if not self.freeze_teacher:
                     loss_dict.update(
                         loss_cls=loss_cls,
