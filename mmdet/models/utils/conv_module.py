@@ -134,11 +134,13 @@ class ConvModule(nn.Module):
         # build activation layer
         if self.with_activatation:
             # TODO: introduce `act_cfg` and supports more activation layers
-            if self.activation not in ['relu']:
+            if self.activation not in ['relu', 'leaky_relu']:
                 raise ValueError('{} is currently not supported.'.format(
                     self.activation))
             if self.activation == 'relu':
                 self.activate = nn.ReLU(inplace=inplace)
+            if self.activation == 'leaky_relu':
+                self.activate = nn.LeakyReLU(negative_slope=0.2, inplace=inplace)
 
         # Use msra init by default
         self.init_weights()
