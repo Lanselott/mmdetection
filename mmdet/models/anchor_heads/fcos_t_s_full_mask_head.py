@@ -639,6 +639,9 @@ class FCOSTSFullMaskHead(nn.Module):
             if self.apply_pyramid_wise_alignment:
                 t_pyramid_feature_list = []
                 s_pyramid_feature_list = []
+                discrim_loss_list = []
+                real_discrim_loss_list = []
+
                 for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
                     s_pyramid_feature = pyramid_hint_pair[0]
                     if self.spatial_ratio > 1:
@@ -683,12 +686,8 @@ class FCOSTSFullMaskHead(nn.Module):
                         fake_discrim_loss = self.discrim_loss(
                             s_discrim_detached_out, fake_labels)
                         discrim_loss = real_discrim_loss + fake_discrim_loss
-
-                        loss_dict.update({
-                            'discrim_loss': discrim_loss,
-                            'generator_loss': generator_loss
-                        })
-
+                        discrim_loss_list.append(discrim_loss)
+                        real_discrim_loss_list.append(real_discrim_loss)
                     t_pyramid_feature_list.append(
                         t_pyramid_feature.permute(0, 2, 3, 1).reshape(
                             -1, self.feat_channels))
@@ -703,6 +702,13 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
                 t_high_quality_bboxes_inds = (t_pred_bboxes_ious >=
                                               0.7).nonzero().reshape(-1)
+                if self.apply_discriminator:
+                    loss_dict.update({
+                        'discrim_loss':
+                        sum(discrim_loss_list),
+                        'generator_loss':
+                        sum(real_discrim_loss_list)
+                    })
 
                 # TODO: implement pos/neg alignment together
                 # t_pos_bboxes_ious = bbox_overlaps(
