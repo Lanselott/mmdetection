@@ -402,9 +402,9 @@ class FCOSTSFullMaskHead(nn.Module):
         if self.apply_discriminator:
             for m in self.discriminator:
                 normal_init(m.conv, std=0.01)
-            bias_discrim_cls = bias_init_with_prob(0.01)
+            # bias_discrim_cls = bias_init_with_prob(0.01)
             normal_init(
-                self.discrim_classifier, std=0.01, bias=bias_discrim_cls)
+                self.discrim_classifier, std=0.01)
 
         if self.freeze_teacher:
             self.freeze_teacher_layers()
