@@ -70,6 +70,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  learn_from_missing_annotation=False,
                  block_wise_attention=False,
                  pyramid_wise_attention=False,
+                 apply_discriminator=False,
                  pyramid_full_attention=False,
                  corr_out_channels=32,
                  pyramid_correlation=False,
@@ -156,6 +157,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.simple_pyramid_alignment = simple_pyramid_alignment
         self.block_wise_attention = block_wise_attention
         self.pyramid_wise_attention = pyramid_wise_attention
+        self.apply_discriminator = apply_discriminator
         self.pyramid_full_attention = pyramid_full_attention
         self.pyramid_correlation = pyramid_correlation
         self.pyramid_learn_high_quality = pyramid_learn_high_quality
@@ -218,6 +220,30 @@ class FCOSTSFullMaskHead(nn.Module):
         self.fp16_enabled = False
         self._init_teacher_layers()
         self._init_student_layers()
+
+        if self.apply_discriminator:
+            self.stacked_discriminator_levels = 4  # 64 * 64 -> 4 * 4
+            self._init_discriminator()
+            self.discrim_loss = nn.BCELoss()
+
+    def _init_discriminator(self):
+        # Use 64 * 64 as inputs for all pyramids
+        # Input: 64 * 64
+        self.discriminator = nn.ModuleList()
+
+        for i in range(self.stacked_discriminator_levels):
+            self.discriminator.append(
+                ConvModule(
+                    self.feat_channels,
+                    self.feat_channels,
+                    4,
+                    stride=2,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=self.norm_cfg is None))
+            self.discrim_classifier = nn.Conv2d(
+                self.feat_channels, 1, 4, padding=0)
 
     def _init_teacher_layers(self):
         self.cls_convs = nn.ModuleList()
@@ -372,6 +398,13 @@ class FCOSTSFullMaskHead(nn.Module):
                 normal_init(m.conv, std=0.01)
             for m in self.s_t_reg_head_align:
                 normal_init(m.conv, std=0.01)
+
+        if self.apply_discriminator:
+            for m in self.discriminator:
+                normal_init(m.conv, std=0.01)
+            bias_discrim_cls = bias_init_with_prob(0.01)
+            normal_init(
+                self.discrim_classifier, std=0.01, bias=bias_discrim_cls)
 
         if self.freeze_teacher:
             self.freeze_teacher_layers()
@@ -619,8 +652,43 @@ class FCOSTSFullMaskHead(nn.Module):
                         for t_s_pyramid_align_conv in self.t_s_pyramid_align:
                             s_pyramid_feature = t_s_pyramid_align_conv(
                                 s_pyramid_feature)
-
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
+
+                    # NOTE: discriminator
+                    if self.apply_discriminator:
+                        t_real = F.interpolate(
+                            t_pyramid_feature, size=(64, 64), mode='nearest')
+                        s_fake = F.interpolate(
+                            s_pyramid_feature, size=(64, 64), mode='nearest')
+                        s_fake_detached = s_fake.detach()
+
+                        # Discriminator
+                        for discrim_conv in self.discriminator:
+                            t_real = discrim_conv(t_real)
+                            s_fake = discrim_conv(s_fake)
+                            s_fake_detached = discrim_conv(s_fake_detached)
+
+                        t_discrim_out = self.discrim_classifier(
+                            t_real).sigmoid().view(-1)
+                        s_discrim_out = self.discrim_classifier(
+                            s_fake).sigmoid().view(-1)
+                        s_discrim_detached_out = self.discrim_classifier(
+                            s_fake_detached).sigmoid().view(-1)
+                        real_labels = torch.ones_like(t_discrim_out)
+                        fake_labels = torch.zeros_like(t_discrim_out)
+                        generator_loss = self.discrim_loss(
+                            s_discrim_out, real_labels)
+                        real_discrim_loss = self.discrim_loss(
+                            t_discrim_out, real_labels)
+                        fake_discrim_loss = self.discrim_loss(
+                            s_discrim_detached_out, fake_labels)
+                        discrim_loss = real_discrim_loss + fake_discrim_loss
+
+                        loss_dict.update({
+                            'discrim_loss': discrim_loss,
+                            'generator_loss': generator_loss
+                        })
+
                     t_pyramid_feature_list.append(
                         t_pyramid_feature.permute(0, 2, 3, 1).reshape(
                             -1, self.feat_channels))
@@ -664,7 +732,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             iou_attention_weight = 1 + t_s_pred_ious
 
                             iou_attention_weight *= self.pyramid_attention_factor
- 
+
                             attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
                                 s_pyramid_feature_list,
                                 t_pyramid_feature_list,
@@ -676,7 +744,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                 s_pred_bboxes, t_pred_bboxes,
                                 is_aligned=True).detach()
                             s_g_ious = bbox_overlaps(
-                                s_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
+                                s_pred_bboxes, t_gt_bboxes,
+                                is_aligned=True).detach()
                             iou_attention_weight = t_s_ious * s_g_ious
                             iou_attention_weight /= iou_attention_weight.max()
 
@@ -1105,7 +1174,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                    0).float()
+                                 0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
