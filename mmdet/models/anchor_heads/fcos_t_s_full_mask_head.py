@@ -255,11 +255,11 @@ class FCOSTSFullMaskHead(nn.Module):
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None,
                     activation='leaky_relu'))
-
+        self.num_pyramid_samples = 4
         self.discrim_classifier = nn.Conv2d(
-            self.feat_channels, 8, 4, padding=0)
+            self.feat_channels, self.num_pyramid_samples, 4, padding=0)
         self.freezed_discrim_classifier = nn.Conv2d(
-            self.feat_channels, 8, 4, padding=0)
+            self.feat_channels, self.num_pyramid_samples, 4, padding=0)
 
     def _init_teacher_layers(self):
         self.cls_convs = nn.ModuleList()
@@ -704,9 +704,13 @@ class FCOSTSFullMaskHead(nn.Module):
                             self.copy_discriminator()
 
                             s_fake = F.interpolate(
-                                s_pyramid_feature, size=(64, 64), mode='nearest')
+                                s_pyramid_feature,
+                                size=(64, 64),
+                                mode='nearest')
                             t_real = F.interpolate(
-                                t_pyramid_feature, size=(64, 64), mode='nearest')
+                                t_pyramid_feature,
+                                size=(64, 64),
+                                mode='nearest')
                             s_fake_detached = s_fake.detach()
                             for discrim_conv, freezed_discrim_conv in zip(
                                     self.discriminator,
@@ -762,8 +766,10 @@ class FCOSTSFullMaskHead(nn.Module):
                         })
                     else:
                         loss_dict.update({
-                            'discrim_loss': torch.zeros_like(s_pyramid_feature.min()).sum(),
-                            'generator_loss': torch.zeros_like(s_pyramid_feature.min()).sum()
+                            'discrim_loss':
+                            torch.zeros_like(s_pyramid_feature.min()).sum(),
+                            'generator_loss':
+                            torch.zeros_like(s_pyramid_feature.min()).sum()
                         })
 
                 # TODO: implement pos/neg alignment together
