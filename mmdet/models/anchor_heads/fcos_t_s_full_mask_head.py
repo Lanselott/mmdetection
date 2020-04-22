@@ -694,9 +694,9 @@ class FCOSTSFullMaskHead(nn.Module):
                                 s_pyramid_feature)
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
 
-                    # NOTE: discriminator
+                    # discriminator
                     if self.apply_discriminator:
-                        # TODO: copy the discriminator is not efficient
+                        # NOTE: copy the discriminator is not efficient
                         self.copy_discriminator()
 
                         s_fake = F.interpolate(
@@ -749,7 +749,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
 
                 if self.apply_discriminator:
-                    generator_loss = 0.1 * sum(generator_loss_list)
+                    generator_loss = 0.02 * sum(generator_loss_list)
                     discrim_loss = sum(discrim_loss_list)
                     loss_dict.update({
                         'discrim_loss': discrim_loss,
