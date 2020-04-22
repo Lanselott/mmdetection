@@ -257,9 +257,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     activation='leaky_relu'))
 
         self.discrim_classifier = nn.Conv2d(
-            self.feat_channels, 1, 4, padding=0)
+            self.feat_channels, 8, 4, padding=0)
         self.freezed_discrim_classifier = nn.Conv2d(
-            self.feat_channels, 1, 4, padding=0)
+            self.feat_channels, 8, 4, padding=0)
 
     def _init_teacher_layers(self):
         self.cls_convs = nn.ModuleList()
@@ -693,51 +693,55 @@ class FCOSTSFullMaskHead(nn.Module):
                             s_pyramid_feature = t_s_pyramid_align_conv(
                                 s_pyramid_feature)
                     t_pyramid_feature = pyramid_hint_pair[1].detach()
-
+                    delta_s_ious = s_g_ious.max() - s_g_ious.min()
+                    delta_t_ious = t_g_ious.max() - t_g_ious.min()
+                    mean_s_ious = s_g_ious.mean()
+                    mean_t_ious = t_g_ious.mean()
                     # discriminator
                     if self.apply_discriminator:
-                        # NOTE: copy the discriminator is not efficient
-                        self.copy_discriminator()
+                        if True:
+                            # NOTE: copy the discriminator is not efficient
+                            self.copy_discriminator()
 
-                        s_fake = F.interpolate(
-                            s_pyramid_feature, size=(64, 64), mode='nearest')
-                        t_real = F.interpolate(
-                            t_pyramid_feature, size=(64, 64), mode='nearest')
-                        s_fake_detached = s_fake.detach()
-                        for discrim_conv, freezed_discrim_conv in zip(
-                                self.discriminator,
-                                self.freezed_discriminator):
-                            # Discriminator
-                            t_real = discrim_conv(t_real)
-                            s_fake_detached = discrim_conv(s_fake_detached)
-                            # Generator, discriminator weight should not be modified
-                            s_fake = freezed_discrim_conv(s_fake)
-                            # for test, test_freeze in zip(
-                            #         discrim_conv.parameters(),
-                            #         freezed_discrim_conv.parameters()):
-                            #     embed()
-                        t_discrim_out = self.discrim_classifier(
-                            t_real).reshape(-1).sigmoid()
-                        s_discrim_out = self.freezed_discrim_classifier(
-                            s_fake).reshape(-1).sigmoid()
-                        s_discrim_detached_out = self.discrim_classifier(
-                            s_fake_detached).reshape(-1).sigmoid()
-                        real_labels = torch.ones_like(t_discrim_out)
-                        fake_labels = torch.zeros_like(t_discrim_out)
+                            s_fake = F.interpolate(
+                                s_pyramid_feature, size=(64, 64), mode='nearest')
+                            t_real = F.interpolate(
+                                t_pyramid_feature, size=(64, 64), mode='nearest')
+                            s_fake_detached = s_fake.detach()
+                            for discrim_conv, freezed_discrim_conv in zip(
+                                    self.discriminator,
+                                    self.freezed_discriminator):
+                                # Discriminator
+                                t_real = discrim_conv(t_real)
+                                s_fake_detached = discrim_conv(s_fake_detached)
+                                # Generator, discriminator weight should not be modified
+                                s_fake = freezed_discrim_conv(s_fake)
+                                # for test, test_freeze in zip(
+                                #         discrim_conv.parameters(),
+                                #         freezed_discrim_conv.parameters()):
+                                #     embed()
+                            t_discrim_out = self.discrim_classifier(
+                                t_real).reshape(-1).sigmoid()
+                            s_discrim_out = self.freezed_discrim_classifier(
+                                s_fake).reshape(-1).sigmoid()
+                            s_discrim_detached_out = self.discrim_classifier(
+                                s_fake_detached).reshape(-1).sigmoid()
+                            real_labels = torch.ones_like(t_discrim_out)
+                            fake_labels = torch.zeros_like(t_discrim_out)
 
-                        # Generator Loss
-                        generator_loss = self.discrim_loss(
-                            s_discrim_out, real_labels)
-                        # Discriminator Loss
-                        real_discrim_loss = self.discrim_loss(
-                            t_discrim_out, real_labels)
-                        fake_discrim_loss = self.discrim_loss(
-                            s_discrim_detached_out, fake_labels)
-                        discrim_loss = (real_discrim_loss +
-                                        fake_discrim_loss) / 2
-                        discrim_loss_list.append(discrim_loss)
-                        generator_loss_list.append(generator_loss)
-                        #--end of discriminator--#
+                            # Generator Loss
+                            generator_loss = self.discrim_loss(
+                                s_discrim_out, real_labels)
+                            # Discriminator Loss
+                            real_discrim_loss = self.discrim_loss(
+                                t_discrim_out, real_labels)
+                            fake_discrim_loss = self.discrim_loss(
+                                s_discrim_detached_out, fake_labels)
+                            discrim_loss = (real_discrim_loss +
+                                            fake_discrim_loss) / 2
+                            discrim_loss_list.append(discrim_loss)
+                            generator_loss_list.append(generator_loss)
+                            #--end of discriminator--#
                     t_pyramid_feature_list.append(
                         t_pyramid_feature.permute(0, 2, 3, 1).reshape(
                             -1, self.feat_channels))
@@ -749,12 +753,18 @@ class FCOSTSFullMaskHead(nn.Module):
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
 
                 if self.apply_discriminator:
-                    generator_loss = 0.02 * sum(generator_loss_list)
-                    discrim_loss = sum(discrim_loss_list)
-                    loss_dict.update({
-                        'discrim_loss': discrim_loss,
-                        'generator_loss': generator_loss
-                    })
+                    if True:
+                        generator_loss = 0.1 * sum(generator_loss_list)
+                        discrim_loss = sum(discrim_loss_list)
+                        loss_dict.update({
+                            'discrim_loss': discrim_loss,
+                            'generator_loss': generator_loss
+                        })
+                    else:
+                        loss_dict.update({
+                            'discrim_loss': torch.zeros_like(s_pyramid_feature.min()).sum(),
+                            'generator_loss': torch.zeros_like(s_pyramid_feature.min()).sum()
+                        })
 
                 # TODO: implement pos/neg alignment together
                 # t_pos_bboxes_ious = bbox_overlaps(
