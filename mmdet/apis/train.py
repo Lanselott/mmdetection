@@ -14,6 +14,7 @@ from mmdet.models import RPN
 from .env import get_root_logger
 from IPython import embed
 
+
 def parse_losses(losses):
     log_vars = OrderedDict()
     for loss_name, loss_value in losses.items():
@@ -122,11 +123,18 @@ def build_optimizer(model, optimizer_cfg):
                 params.append(param_group)
                 continue
 
+                
             # for norm layers, overwrite the weight decay of weight and bias
             # TODO: obtain the norm layer prefixes dynamically
             if re.search(r'(bn|gn)(\d+)?.(weight|bias)', name):
                 if base_wd is not None:
                     param_group['weight_decay'] = base_wd * norm_decay_mult
+                    '''
+                    # NOTE: test for different learning rate on discriminator
+                    if re.search(r'(discrim)', name):
+                        param_group['weight_decay'] = base_wd * norm_decay_mult
+                        embed()
+                    '''
             # for other layers, overwrite both lr and weight decay of bias
             elif name.endswith('.bias'):
                 param_group['lr'] = base_lr * bias_lr_mult
@@ -224,7 +232,6 @@ def _non_dist_train(model, dataset, cfg, validate=False):
         optimizer_config = cfg.optimizer_config
     runner.register_training_hooks(cfg.lr_config, optimizer_config,
                                    cfg.checkpoint_config, cfg.log_config)
-
     if cfg.resume_from:
         runner.resume(cfg.resume_from)
     elif cfg.load_from:
