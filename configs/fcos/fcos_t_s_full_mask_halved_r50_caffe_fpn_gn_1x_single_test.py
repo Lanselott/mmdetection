@@ -193,6 +193,7 @@ optimizer = dict(
     momentum=0.9,
     weight_decay=0.0001,
     paramwise_options=dict(bias_lr_mult=2., bias_decay_mult=0.))
+# optimizer = dict(type='Adam', lr=0.0002, betas=(0.5, 0.999), eps=1e-08)
 optimizer_config = dict(grad_clip=None)
 # learning policy
 lr_config = dict(
@@ -215,6 +216,6 @@ total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
-load_from = None #'work/dirs/fcos_t_s_scratch_model/fcos_t_s_finetune_halved_student_from_scratch_epoch_12.pth'
+load_from = None  # 'work/dirs/fcos_t_s_scratch_model/fcos_t_s_finetune_halved_student_from_scratch_epoch_12.pth'
 resume_from = None
 workflow = [('train', 1)]

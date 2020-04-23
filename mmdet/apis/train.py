@@ -12,7 +12,7 @@ from mmdet.core import (CocoDistEvalmAPHook, CocoDistEvalRecallHook,
 from mmdet.datasets import DATASETS, build_dataloader
 from mmdet.models import RPN
 from .env import get_root_logger
-
+from IPython import embed
 
 def parse_losses(losses):
     log_vars = OrderedDict()
