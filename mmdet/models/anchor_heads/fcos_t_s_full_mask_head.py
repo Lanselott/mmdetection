@@ -328,7 +328,7 @@ class FCOSTSFullMaskHead(nn.Module):
         '''
         self.t_s_correlation_conv = nn.ModuleList()
         self.t_s_pyramid_align = nn.ModuleList()
-        if self.apply_pyramid_wise_alignment:
+        if self.apply_pyramid_wise_alignment or self.apply_discriminator:
             for i in range(self.multi_levels):
                 channel_delta = (self.feat_channels -
                                  self.s_feat_channels) // self.multi_levels
@@ -401,7 +401,7 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_cls, std=0.01, bias=bias_s_cls)
         normal_init(self.fcos_s_reg, std=0.01)
         normal_init(self.fcos_s_centerness, std=0.01)
-        if self.apply_pyramid_wise_alignment:
+        if self.apply_pyramid_wise_alignment or self.apply_discriminator:
             for align_conv in self.t_s_pyramid_align:
                 normal_init(align_conv, std=0.01)
 
@@ -507,7 +507,7 @@ class FCOSTSFullMaskHead(nn.Module):
             t_fpn_cls_feat = t_fpn_feat
             t_fpn_reg_feat = t_fpn_feat
 
-        if self.apply_pyramid_wise_alignment:
+        if self.apply_pyramid_wise_alignment or self.apply_discriminator:
             pyramid_hint_pairs = []
             pyramid_hint_pairs.append(s_x)
             pyramid_hint_pairs.append(t_x)
@@ -566,14 +566,14 @@ class FCOSTSFullMaskHead(nn.Module):
                 self.fcos_s_reg(t_fpn_reg_feat)).float().exp()
 
         if self.training:
-            if self.apply_pyramid_wise_alignment and not self.apply_head_wise_alignment:
+            if self.apply_pyramid_wise_alignment or self.apply_discriminator and not self.apply_head_wise_alignment:
                 if self.copy_teacher_fpn:
                     return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, t_fpn_bbox_pred, t_fpn_cls_score, t_fpn_centerness
                 else:
                     return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None
-            elif self.apply_head_wise_alignment and not self.apply_pyramid_wise_alignment:
+            elif self.apply_head_wise_alignment or self.apply_discriminator and not self.apply_pyramid_wise_alignment:
                 return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, head_hint_pairs, None, None, None, None, None
-            elif self.apply_pyramid_wise_alignment and self.apply_head_wise_alignment:
+            elif self.apply_pyramid_wise_alignment or self.apply_discriminator and self.apply_head_wise_alignment:
                 return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, head_hint_pairs, corr_pairs, pri_pyramid_hint_pairs, None, None, None
             else:
                 return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None, corr_pairs, None, None, None, None
@@ -667,7 +667,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update(
                         {'hint_loss_block_{}'.format(j): hint_loss})
             # NOTE: pyramid wise alignment
-            if self.apply_pyramid_wise_alignment:
+            if self.apply_pyramid_wise_alignment or self.apply_discriminator:
                 t_pyramid_feature_list = []
                 s_pyramid_feature_list = []
                 discrim_loss_list = []
@@ -720,16 +720,13 @@ class FCOSTSFullMaskHead(nn.Module):
                                 s_fake_detached = discrim_conv(s_fake_detached)
                                 # Generator, discriminator weight should not be modified
                                 s_fake = freezed_discrim_conv(s_fake)
-                                # for test, test_freeze in zip(
-                                #         discrim_conv.parameters(),
-                                #         freezed_discrim_conv.parameters()):
-                                #     embed()
+
                             t_discrim_out = self.discrim_classifier(
                                 t_real).reshape(-1).sigmoid()
-                            s_discrim_out = self.freezed_discrim_classifier(
-                                s_fake).reshape(-1).sigmoid()
                             s_discrim_detached_out = self.discrim_classifier(
                                 s_fake_detached).reshape(-1).sigmoid()
+                            s_discrim_out = self.freezed_discrim_classifier(
+                                s_fake).reshape(-1).sigmoid()
                             real_labels = torch.ones_like(t_discrim_out)
                             fake_labels = torch.zeros_like(t_discrim_out)
 
@@ -741,8 +738,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                 t_discrim_out, real_labels)
                             fake_discrim_loss = self.discrim_loss(
                                 s_discrim_detached_out, fake_labels)
-                            discrim_loss = (real_discrim_loss +
-                                            fake_discrim_loss) / 2
+                            discrim_loss = real_discrim_loss + fake_discrim_loss
                             discrim_loss_list.append(discrim_loss)
                             generator_loss_list.append(generator_loss)
                             #--end of discriminator--#
@@ -758,8 +754,8 @@ class FCOSTSFullMaskHead(nn.Module):
 
                 if self.apply_discriminator:
                     if True:
-                        generator_loss = 0.001 * sum(generator_loss_list)
-                        discrim_loss = 0.01 * sum(discrim_loss_list)
+                        generator_loss = 0.01 * sum(generator_loss_list)
+                        discrim_loss = 0.1 * sum(discrim_loss_list)
                         loss_dict.update({
                             'discrim_loss': discrim_loss,
                             'generator_loss': generator_loss
@@ -771,16 +767,6 @@ class FCOSTSFullMaskHead(nn.Module):
                             'generator_loss':
                             torch.zeros_like(s_pyramid_feature.min()).sum()
                         })
-
-                # TODO: implement pos/neg alignment together
-                # t_pos_bboxes_ious = bbox_overlaps(
-                #     s_all_pred_bboxes[t_pos_inds],
-                #     t_all_pred_bboxes[t_pos_inds],
-                #     is_aligned=True).detach()
-                # t_neg_bboxes_ious = bbox_overlaps(
-                #     s_all_pred_bboxes[t_neg_inds],
-                #     t_all_pred_bboxes[t_neg_inds],
-                #     is_aligned=True).detach()
 
                 if self.pyramid_wise_attention:
                     if len(t_pos_inds) != 0:
