@@ -6,6 +6,7 @@ from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import ConvModule, Scale, bias_init_with_prob
+from mmdet.ops import DeformConv, MaskedConv2d
 from IPython import embed
 INF = 1e8
 
@@ -98,8 +99,25 @@ class FCOSClusteringHead(nn.Module):
         self.fcos_cls = nn.Conv2d(
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         # NOTE: (l, t, r, b, offset(x, y))
-        self.fcos_reg = nn.Conv2d(self.feat_channels, 6, 3, padding=1)
+        self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
+
+        kernel_size = 3
+        deformable_groups = 4
+        offset_channels = kernel_size * kernel_size * 2
+
+        self.deformable_offset = nn.Conv2d(
+            self.feat_channels,
+            deformable_groups * offset_channels,
+            3,
+            padding=1,
+            bias=False)
+        self.deformable_conv = DeformConv(
+            self.feat_channels,
+            2,
+            kernel_size=kernel_size,
+            padding=(kernel_size - 1) // 2,
+            deformable_groups=deformable_groups)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
@@ -112,6 +130,9 @@ class FCOSClusteringHead(nn.Module):
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
         normal_init(self.fcos_centerness, std=0.01)
+        normal_init(self.deformable_conv, std=0.01)
+        normal_init(self.deformable_offset, std=0.01)
+
 
     def forward(self, feats):
         return multi_apply(self.forward_single, feats, self.scales)
@@ -127,22 +148,27 @@ class FCOSClusteringHead(nn.Module):
 
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
+        # Deformable conv on offset prediction
+        reg_offset = self.deformable_offset(reg_feat.detach())
+        cluster_offset = self.deformable_conv(reg_feat, reg_offset.detach())
         # scale the bbox_pred of different level
         # float to avoid overflow when enabling FP16
         bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
-        return cls_score, bbox_pred, centerness
+        return cls_score, bbox_pred, centerness, cluster_offset
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def loss(self,
              cls_scores,
              bbox_preds,
              centernesses,
+             cluster_offsets,
              gt_bboxes,
              gt_labels,
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-        assert len(cls_scores) == len(bbox_preds) == len(centernesses)
+        assert len(cls_scores) == len(bbox_preds) == len(centernesses) == len(
+            cluster_offsets)
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         all_level_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                            bbox_preds[0].device)
@@ -156,16 +182,21 @@ class FCOSClusteringHead(nn.Module):
             for cls_score in cls_scores
         ]
         flatten_bbox_preds = [
-            bbox_pred.permute(0, 2, 3, 1).reshape(-1, 6)
+            bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
             for bbox_pred in bbox_preds
         ]
         flatten_centerness = [
             centerness.permute(0, 2, 3, 1).reshape(-1)
             for centerness in centernesses
         ]
+        flatten_cluster_offsets = [
+            offset.permute(0, 2, 3, 1).reshape(-1, 2)
+            for offset in cluster_offsets
+        ]
         flatten_cls_scores = torch.cat(flatten_cls_scores)
         flatten_bbox_preds = torch.cat(flatten_bbox_preds)
         flatten_centerness = torch.cat(flatten_centerness)
+        flatten_cluster_offsets = torch.cat(flatten_cluster_offsets)
         flatten_labels = torch.cat(labels)
         flatten_bbox_targets = torch.cat(bbox_targets)
         # repeat points to align with bbox_preds
@@ -177,14 +208,13 @@ class FCOSClusteringHead(nn.Module):
         loss_cls = self.loss_cls(
             flatten_cls_scores, flatten_labels,
             avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
-
-        pos_bbox_offset_preds = flatten_bbox_preds[pos_inds]
-        pos_bbox_preds = pos_bbox_offset_preds[:, :4]
-        pos_offset_preds = pos_bbox_offset_preds[:, 4:]
+    
+        pos_offset_preds = flatten_cluster_offsets[pos_inds]
+        pos_bbox_preds = flatten_bbox_preds[pos_inds]
 
         pos_centerness = flatten_centerness[pos_inds]
         max_points_x, max_points_y = flatten_points.max(0)[0]
-        center_factor = 10
+        center_factor = 5
         if num_pos > 0:
             pos_bbox_targets = flatten_bbox_targets[pos_inds]
             pos_centerness_targets = self.centerness_target(pos_bbox_targets)
