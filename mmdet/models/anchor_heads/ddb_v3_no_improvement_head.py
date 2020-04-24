@@ -399,11 +399,12 @@ class DDBV3NPHead(nn.Module):
                                   (_bd_iou - self.iou_delta)).float()
             origin_gradient_mask = ((_bd_sort_iou - self.iou_delta) <=
                                     _bd_iou).float()
-           
+            '''
             sorted_bbox_weight = _bd_sort_iou.mean(1)[0]
             bbox_weight = _bd_iou.mean(1)[0]
             origin_gradient_mask *= torch.tanh(_bd_iou / _bd_iou.max())
             sort_gradient_mask *= torch.tanh(_bd_sort_iou / _bd_sort_iou.max())
+            '''
 
             # apply hook to mask origin/sort gradients
             pos_decoded_sort_bbox_preds.register_hook(
@@ -413,15 +414,15 @@ class DDBV3NPHead(nn.Module):
             # sorted bboxes
             loss_sorted_bbox = self.loss_sorted_bbox(
                 pos_decoded_sort_bbox_preds,
-                pos_decoded_target_preds)#,
-                # weight=sorted_bbox_weight,
-                # avg_factor=sorted_bbox_weight.sum())
+                pos_decoded_target_preds,
+                weight=sorted_ious_weights,
+                avg_factor=sorted_ious_weights.sum())
             # origin boxes
             loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds,
-                pos_decoded_target_preds)#,
-                # weight=bbox_weight,
-                # avg_factor=bbox_weight.sum())
+                pos_decoded_target_preds,
+                weight=ious_weights,
+                avg_factor=ious_weights.sum())
 
             loss_cls = self.loss_cls(
                 flatten_cls_scores,
