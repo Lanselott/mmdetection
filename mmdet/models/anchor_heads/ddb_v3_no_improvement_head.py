@@ -338,7 +338,6 @@ class DDBV3NPHead(nn.Module):
                 obj_mask_inds = (
                     (dist_conf_mask[saved_target_mask] +
                      masks_for_all[saved_target_mask]) == 2).nonzero()
-
                 # global merging
                 _, sorted_inds = torch.sort(
                     pos_dist_scores[:, obj_mask_inds], dim=1, descending=True)
@@ -397,46 +396,32 @@ class DDBV3NPHead(nn.Module):
             # NOTE: the grad of sorted branch is in sort order, diff from origin
             '''
             sort_gradient_mask = (_bd_sort_iou >
-                                    (_bd_iou - self.iou_delta)).float()
+                                  (_bd_iou - self.iou_delta)).float()
             origin_gradient_mask = ((_bd_sort_iou - self.iou_delta) <=
                                     _bd_iou).float()
-            if self.box_weighted:
-                # apply hook to mask origin/sort gradients
-                pos_decoded_sort_bbox_preds.register_hook(
-                    lambda grad: grad * sort_gradient_mask)
-                pos_decoded_bbox_preds.register_hook(
-                    lambda grad: grad * origin_gradient_mask)
-                # loss bbox weights
-                sorted_bbox_weight = _bd_sort_iou.max(1)[0]
-                bbox_weight = _bd_iou.max(1)[0]
-                # sorted bboxes
-                loss_sorted_bbox = self.loss_sorted_bbox(
-                    pos_decoded_sort_bbox_preds,
-                    pos_decoded_target_preds,
-                    weight=sorted_bbox_weight,
-                    avg_factor=sorted_bbox_weight.sum())
-                # origin boxes
-                loss_bbox = self.loss_bbox(
-                    pos_decoded_bbox_preds,
-                    pos_decoded_target_preds,
-                    weight=bbox_weight,
-                    avg_factor=bbox_weight.sum())
-            else:
-                origin_gradient_mask *= _bd_iou / _bd_iou.max() * 2
-                sort_gradient_mask *= _bd_sort_iou / _bd_sort_iou.max() * 2
-                # apply hook to mask origin/sort gradients
-                pos_decoded_sort_bbox_preds.register_hook(
-                    lambda grad: grad * sort_gradient_mask)
-                pos_decoded_bbox_preds.register_hook(
-                    lambda grad: grad * origin_gradient_mask)
-                # sorted bboxes
-                loss_sorted_bbox = self.loss_sorted_bbox(
-                    pos_decoded_sort_bbox_preds,
-                    pos_decoded_target_preds)
-                # origin boxes
-                loss_bbox = self.loss_bbox(
-                    pos_decoded_bbox_preds,
-                    pos_decoded_target_preds)
+           
+            sorted_bbox_weight = _bd_sort_iou.mean(1)[0]
+            bbox_weight = _bd_iou.mean(1)[0]
+            origin_gradient_mask *= torch.tanh(_bd_iou / _bd_iou.max())
+            sort_gradient_mask *= torch.tanh(_bd_sort_iou / _bd_sort_iou.max())
+
+            # apply hook to mask origin/sort gradients
+            pos_decoded_sort_bbox_preds.register_hook(
+                lambda grad: grad * sort_gradient_mask)
+            pos_decoded_bbox_preds.register_hook(
+                lambda grad: grad * origin_gradient_mask)
+            # sorted bboxes
+            loss_sorted_bbox = self.loss_sorted_bbox(
+                pos_decoded_sort_bbox_preds,
+                pos_decoded_target_preds)#,
+                # weight=sorted_bbox_weight,
+                # avg_factor=sorted_bbox_weight.sum())
+            # origin boxes
+            loss_bbox = self.loss_bbox(
+                pos_decoded_bbox_preds,
+                pos_decoded_target_preds)#,
+                # weight=bbox_weight,
+                # avg_factor=bbox_weight.sum())
 
             loss_cls = self.loss_cls(
                 flatten_cls_scores,
