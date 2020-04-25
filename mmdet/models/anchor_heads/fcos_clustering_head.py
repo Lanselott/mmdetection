@@ -133,7 +133,6 @@ class FCOSClusteringHead(nn.Module):
         normal_init(self.deformable_conv, std=0.01)
         normal_init(self.deformable_offset, std=0.01)
 
-
     def forward(self, feats):
         return multi_apply(self.forward_single, feats, self.scales)
 
@@ -208,7 +207,7 @@ class FCOSClusteringHead(nn.Module):
         loss_cls = self.loss_cls(
             flatten_cls_scores, flatten_labels,
             avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
-    
+
         pos_offset_preds = flatten_cluster_offsets[pos_inds]
         pos_bbox_preds = flatten_bbox_preds[pos_inds]
 
@@ -259,10 +258,11 @@ class FCOSClusteringHead(nn.Module):
                    cls_scores,
                    bbox_preds,
                    centernesses,
+                   cluster_offsets,
                    img_metas,
                    cfg,
                    rescale=None):
-        assert len(cls_scores) == len(bbox_preds)
+        assert len(cls_scores) == len(bbox_preds) == len(cluster_offsets)
         num_levels = len(cls_scores)
 
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
