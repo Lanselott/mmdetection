@@ -1,6 +1,6 @@
 # model settings
 BLOCK_ALIGN = False
-PYRAMID_ALIGN = False
+PYRAMID_ALIGN = True
 HEAD_ALIGN = False
 FREEZE_TEACHER = False
 RATIO = 2
@@ -158,13 +158,13 @@ data = dict(
         img_prefix=data_root + 'images/val2017/',
         pipeline=test_pipeline))
 # optimizer
-# optimizer = dict(
-#     type='SGD',
-#     lr=0.01,
-#     momentum=0.9,
-#     weight_decay=0.0001,
-#     paramwise_options=dict(bias_lr_mult=2., bias_decay_mult=0.))
-optimizer = dict(type='Adam', lr=0.00001, betas=(0.9, 0.999), eps=1e-08)
+optimizer = dict(
+    type='SGD',
+    lr=0.01,
+    momentum=0.9,
+    weight_decay=0.0001,
+    paramwise_options=dict(bias_lr_mult=2., bias_decay_mult=0.))
+# optimizer = dict(type='Adam', lr=0.00001, betas=(0.9, 0.999), eps=1e-08)
 optimizer_config = dict(grad_clip=None)
 # learning policy
 lr_config = dict(
