@@ -164,7 +164,7 @@ data = dict(
 #     momentum=0.9,
 #     weight_decay=0.0001,
 #     paramwise_options=dict(bias_lr_mult=2., bias_decay_mult=0.))
-optimizer = dict(type='Adam', lr=0.001, betas=(0.9, 0.999), eps=1e-08)
+optimizer = dict(type='Adam', lr=0.00001, betas=(0.9, 0.999), eps=1e-08)
 optimizer_config = dict(grad_clip=None)
 # learning policy
 lr_config = dict(
