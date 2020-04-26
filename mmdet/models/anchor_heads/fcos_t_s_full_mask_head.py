@@ -7,6 +7,8 @@ from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms, b
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import ConvModule, Scale, bias_init_with_prob
+import torch.autograd as autograd
+from torch.autograd import Variable
 from IPython import embed
 INF = 1e8
 
@@ -68,6 +70,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  head_align_levels=[0],
                  apply_data_free_mode=False,
                  learn_from_missing_annotation=False,
+                 use_additional_generator=False,
                  block_wise_attention=False,
                  pyramid_wise_attention=False,
                  apply_discriminator=False,
@@ -158,6 +161,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.block_wise_attention = block_wise_attention
         self.pyramid_wise_attention = pyramid_wise_attention
         self.apply_discriminator = apply_discriminator
+        self.use_additional_generator = use_additional_generator
         self.pyramid_full_attention = pyramid_full_attention
         self.pyramid_correlation = pyramid_correlation
         self.pyramid_learn_high_quality = pyramid_learn_high_quality
@@ -222,44 +226,48 @@ class FCOSTSFullMaskHead(nn.Module):
         self._init_student_layers()
 
         if self.apply_discriminator:
-            self.stacked_discriminator_levels = 4  # 64 * 64 -> 4 * 4
+            self.train_generator_count = 0
+
+            if self.use_additional_generator:
+                self._init_generator()
+
             self._init_discriminator()
             self.discrim_loss = nn.BCELoss()
+
+    def _init_generator(self):
+        self.generator = nn.Sequential(
+            nn.Linear(64 * 64, 512),
+            nn.BatchNorm1d(512),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(256, 512),
+            nn.BatchNorm1d(512),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(512, 64 * 64),
+            nn.BatchNorm1d(64 * 64),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
 
     def _init_discriminator(self):
         # Use 64 * 64 as inputs for all pyramids
         # Input: 64 * 64
-        self.discriminator = nn.ModuleList()
-        self.freezed_discriminator = nn.ModuleList()
 
-        for i in range(self.stacked_discriminator_levels):
-            self.discriminator.append(
-                ConvModule(
-                    self.feat_channels,
-                    self.feat_channels,
-                    4,
-                    stride=2,
-                    padding=1,
-                    conv_cfg=self.conv_cfg,
-                    norm_cfg=self.norm_cfg,
-                    bias=self.norm_cfg is None,
-                    activation='leaky_relu'))
-            self.freezed_discriminator.append(
-                ConvModule(
-                    self.feat_channels,
-                    self.feat_channels,
-                    4,
-                    stride=2,
-                    padding=1,
-                    conv_cfg=self.conv_cfg,
-                    norm_cfg=self.norm_cfg,
-                    bias=self.norm_cfg is None,
-                    activation='leaky_relu'))
-        self.num_pyramid_samples = 4
-        self.discrim_classifier = nn.Conv2d(
-            self.feat_channels, self.num_pyramid_samples, 4, padding=0)
-        self.freezed_discrim_classifier = nn.Conv2d(
-            self.feat_channels, self.num_pyramid_samples, 4, padding=0)
+        self.discriminator = nn.Sequential(
+            nn.Linear(64 * 64, 512),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(512, 256),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(256, 1),
+        )
+        self.freezed_discriminator = nn.Sequential(
+            nn.Linear(64 * 64, 512),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(512, 256),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(256, 1),
+        )
 
     def _init_teacher_layers(self):
         self.cls_convs = nn.ModuleList()
@@ -415,12 +423,6 @@ class FCOSTSFullMaskHead(nn.Module):
             for m in self.s_t_reg_head_align:
                 normal_init(m.conv, std=0.01)
 
-        if self.apply_discriminator:
-            for m in self.discriminator:
-                normal_init(m.conv, std=0.02)
-            # bias_discrim_cls = bias_init_with_prob(0.01)
-            normal_init(self.discrim_classifier, std=0.02)
-
         if self.freeze_teacher:
             self.freeze_teacher_layers()
 
@@ -450,13 +452,6 @@ class FCOSTSFullMaskHead(nn.Module):
                 # freezed_param = param.detach()
                 freezed_param.data = param.data
                 freezed_param.requires_grad = False
-
-        for freezed_param, param in zip(
-                self.freezed_discrim_classifier.parameters(),
-                self.discrim_classifier.parameters()):
-            # freezed_param = param.detach()
-            freezed_param.data = param.data
-            freezed_param.requires_grad = False
 
     def forward(self, feats):
         t_feats = feats[0]
@@ -681,6 +676,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                 for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
                     s_pyramid_feature = pyramid_hint_pair[0]
+                    t_pyramid_feature = pyramid_hint_pair[1]
                     if self.spatial_ratio > 1:
                         for t_s_pyramid_align_conv in self.t_s_pyramid_align:
                             s_pyramid_feature = t_s_pyramid_align_conv(
@@ -692,7 +688,6 @@ class FCOSTSFullMaskHead(nn.Module):
                         for t_s_pyramid_align_conv in self.t_s_pyramid_align:
                             s_pyramid_feature = t_s_pyramid_align_conv(
                                 s_pyramid_feature)
-                    t_pyramid_feature = pyramid_hint_pair[1].detach()
                     delta_s_ious = s_g_ious.max() - s_g_ious.min()
                     delta_t_ious = t_g_ious.max() - t_g_ious.min()
                     mean_s_ious = s_g_ious.mean()
@@ -711,36 +706,59 @@ class FCOSTSFullMaskHead(nn.Module):
                                 t_pyramid_feature,
                                 size=(64, 64),
                                 mode='nearest')
+                            s_fake = s_fake.reshape(-1, 64 * 64)
+                            t_real = t_real.reshape(-1, 64 * 64)
+                            # real_imgs = t_real
+                            # fake_imgs = s_fake
+                            # random weight term
+
+                            if self.use_additional_generator:
+                                for generator_layer in self.generator:
+                                    s_fake = generator_layer(s_fake)
+
                             s_fake_detached = s_fake.detach()
-                            for discrim_conv, freezed_discrim_conv in zip(
+                            t_real_detached = t_real.detach()
+
+                            alpha = torch.rand(
+                                t_real.shape, device=t_real_detached.device)
+                            interpolates = (alpha * t_real_detached +
+                                            ((1 - alpha) * s_fake_detached)
+                                            ).requires_grad_(True)
+
+                            d_interpolates = interpolates
+                            for discrim_layer, freezed_discrim_layer in zip(
                                     self.discriminator,
                                     self.freezed_discriminator):
                                 # Discriminator
-                                t_real = discrim_conv(t_real)
-                                s_fake_detached = discrim_conv(s_fake_detached)
+                                t_real_detached = discrim_layer(
+                                    t_real_detached)
+                                s_fake_detached = discrim_layer(
+                                    s_fake_detached)
+                                d_interpolates = discrim_layer(d_interpolates)
                                 # Generator, discriminator weight should not be modified
-                                s_fake = freezed_discrim_conv(s_fake)
+                                s_fake = freezed_discrim_layer(s_fake)
 
-                            t_discrim_out = self.discrim_classifier(
-                                t_real).reshape(-1).sigmoid()
-                            s_discrim_detached_out = self.discrim_classifier(
-                                s_fake_detached).reshape(-1).sigmoid()
-                            s_discrim_out = self.freezed_discrim_classifier(
-                                s_fake).reshape(-1).sigmoid()
-                            real_labels = torch.ones_like(t_discrim_out)
-                            fake_labels = torch.zeros_like(t_discrim_out)
+                            # gradient penalty
+                            fake = torch.ones_like(s_fake, requires_grad=False)
+                            gradients = autograd.grad(
+                                outputs=d_interpolates,
+                                inputs=interpolates,
+                                grad_outputs=fake,
+                                create_graph=True,
+                                retain_graph=True,
+                                only_inputs=True)[0]
+                            gradients = gradients.view(gradients.size(0), -1)
+                            gradient_penalty = ((gradients.norm(2, dim=1) -
+                                                 1)**2).mean()
+                            discrim_loss = -torch.mean(t_real) + torch.mean(
+                                s_fake_detached) + gradient_penalty
 
-                            # Generator Loss
-                            generator_loss = self.discrim_loss(
-                                s_discrim_out, real_labels)
-                            # Discriminator Loss
-                            real_discrim_loss = self.discrim_loss(
-                                t_discrim_out, real_labels)
-                            fake_discrim_loss = self.discrim_loss(
-                                s_discrim_detached_out, fake_labels)
-                            discrim_loss = real_discrim_loss + fake_discrim_loss
+                            self.train_generator_count += 1
+                            if self.train_generator_count % 1 == 0:
+                                generator_loss = -torch.mean(s_fake)
+                                generator_loss_list.append(generator_loss)
+
                             discrim_loss_list.append(discrim_loss)
-                            generator_loss_list.append(generator_loss)
                             #--end of discriminator--#
                     t_pyramid_feature_list.append(
                         t_pyramid_feature.permute(0, 2, 3, 1).reshape(
@@ -749,18 +767,31 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_pyramid_feature.permute(0, 2, 3, 1).reshape(
                             -1, self.feat_channels))
 
-                t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
+                t_pyramid_feature_list = torch.cat(
+                    t_pyramid_feature_list).detach()
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
 
                 if self.apply_discriminator:
-                    if mean_t_ious >= 0.5 and (t_g_ious.max() - s_g_ious.max()) >= 0.1:
-                        generator_loss = 0.1 * sum(generator_loss_list)
-                        discrim_loss = sum(discrim_loss_list)
-                        loss_dict.update({
-                            'discrim_loss': discrim_loss,
-                            'generator_loss': generator_loss
-                        })
+                    # if mean_t_ious >= 0.5 and (t_g_ious.max() -
+                    #                            s_g_ious.max()) >= 0.1:
+                    if True:
+                        discrim_loss = 0.001 * sum(discrim_loss_list)
+                        # print(discrim_loss)
+                        if self.train_generator_count % 1 == 0:
+                            generator_loss = 0.01 * sum(generator_loss_list)
+                            # print("discrim_loss:", discrim_loss)
+                            # print("generator_loss:", generator_loss)
+                            loss_dict.update({
+                                'discrim_loss': discrim_loss,
+                                'generator_loss': generator_loss
+                            })
+                        else:
+                            loss_dict.update({
+                                'discrim_loss': discrim_loss,
+                            })
                     else:
+                        # print(generator_loss)
+                        # print(discrim_loss)
                         loss_dict.update({
                             'discrim_loss':
                             torch.zeros_like(s_pyramid_feature.min()).sum(),

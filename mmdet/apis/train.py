@@ -123,23 +123,25 @@ def build_optimizer(model, optimizer_cfg):
                 params.append(param_group)
                 continue
 
-                
-            # for norm layers, overwrite the weight decay of weight and bias
-            # TODO: obtain the norm layer prefixes dynamically
-            if re.search(r'(bn|gn)(\d+)?.(weight|bias)', name):
+            # NOTE: test for different learning rate on discriminator
+            if re.search(r'(discrim)', name):
+                lr_rate = 1
+                param_group['lr'] = base_lr * bias_lr_mult * lr_rate
                 if base_wd is not None:
-                    param_group['weight_decay'] = base_wd * norm_decay_mult
-                    '''
-                    # NOTE: test for different learning rate on discriminator
-                    if re.search(r'(discrim)', name):
+                    param_group[
+                        'weight_decay'] = base_wd * bias_decay_mult * lr_rate
+            else:
+                # for norm layers, overwrite the weight decay of weight and bias
+                # TODO: obtain the norm layer prefixes dynamically
+                if re.search(r'(bn|gn)(\d+)?.(weight|bias)', name):
+                    if base_wd is not None:
                         param_group['weight_decay'] = base_wd * norm_decay_mult
-                        embed()
-                    '''
-            # for other layers, overwrite both lr and weight decay of bias
-            elif name.endswith('.bias'):
-                param_group['lr'] = base_lr * bias_lr_mult
-                if base_wd is not None:
-                    param_group['weight_decay'] = base_wd * bias_decay_mult
+
+                # for other layers, overwrite both lr and weight decay of bias
+                elif name.endswith('.bias'):
+                    param_group['lr'] = base_lr * bias_lr_mult
+                    if base_wd is not None:
+                        param_group['weight_decay'] = base_wd * bias_decay_mult
             # otherwise use the global settings
 
             params.append(param_group)

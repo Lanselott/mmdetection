@@ -1,6 +1,6 @@
 # model settings
 BLOCK_ALIGN = False
-PYRAMID_ALIGN = True
+PYRAMID_ALIGN = False
 HEAD_ALIGN = False
 FREEZE_TEACHER = False
 RATIO = 2
@@ -53,6 +53,7 @@ model = dict(
         align_level=0,
         apply_block_wise_alignment=BLOCK_ALIGN,
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
+        use_additional_generator=True,
         apply_discriminator=True,
         pyramid_wise_attention=False,
         pyramid_attention_factor=1,
