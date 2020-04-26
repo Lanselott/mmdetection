@@ -29,7 +29,7 @@ model = dict(
         apply_conditional_consistency_on_regression=False,
         mask_origin_bbox_loss=False,
         origin_bbox_loss_downgrade=False,
-        iou_delta = 0.0,
+        iou_delta = 0.1,
         apply_iou_cache=True,
         consistency_weight=False,
         box_weighted=True,
@@ -39,11 +39,12 @@ model = dict(
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
-        loss_bbox=dict(type='GIoULoss', loss_weight=1.0),
+        loss_bbox=dict(type='IoULoss', loss_weight=1.0),
         loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
         bd_threshold=0.0,
+        norm_cfg=dict(type='GN', num_groups=16, requires_grad=True),
         loss_dist_scores=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=2.0),
+            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
 # training and testing settings
