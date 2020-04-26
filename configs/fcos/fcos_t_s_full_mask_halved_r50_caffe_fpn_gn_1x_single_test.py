@@ -1,6 +1,6 @@
 # model settings
 ALIGN = False
-PYRAMID_ALIGN = False
+PYRAMID_ALIGN = True
 PRI_PYRAMID_ALIGN = False
 PYRAMID_CORRELATION = False
 HEAD_ALIGN = False
@@ -76,7 +76,7 @@ model = dict(
         pyramid_attention_factor=2,
         pyramid_correlation=PYRAMID_CORRELATION,
         pyramid_learn_high_quality=False,
-        pyramid_attention_only=True,
+        pyramid_attention_only=False,
         corr_out_channels=64,
         head_attention_factor=1,
         pyramid_cls_reg_consistent=False,

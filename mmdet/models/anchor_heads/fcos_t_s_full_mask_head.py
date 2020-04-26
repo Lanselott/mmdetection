@@ -240,6 +240,13 @@ class FCOSTSFullMaskHead(nn.Module):
             self._init_siamese()
 
     def _init_siamese(self):
+        self.t_s_siamese_align = nn.ModuleList()
+        self.t_s_siamese_align.append(
+            nn.Conv2d(self.s_feat_channels, self.feat_channels, 3, padding=1))
+
+        for m in self.t_s_siamese_align:
+            normal_init(m, std=0.01)
+
         self.siamese = nn.Sequential(
             nn.Linear(64 * 64, 2048),
             nn.BatchNorm1d(2048),
@@ -727,21 +734,26 @@ class FCOSTSFullMaskHead(nn.Module):
                     mean_t_ious = t_g_ious.mean()
                     # discriminator
                     if self.apply_discriminator or self.siamese_distill:
-
-                        # NOTE: copy the discriminator is not efficient
-
+                        if self.siamese_distill:
+                            s_siamese_feat = pyramid_hint_pair[0]
+                            for t_s_siamese_layer in self.t_s_siamese_align:
+                                s_siamese_feat = t_s_siamese_layer(
+                                    s_siamese_feat)
+                        s_siamese_feat = F.interpolate(
+                            s_siamese_feat, size=(64, 64), mode='nearest')
                         s_fake = F.interpolate(
                             s_pyramid_feature, size=(64, 64), mode='nearest')
                         t_real = F.interpolate(
                             t_pyramid_feature, size=(64, 64), mode='nearest')
                         s_fake = s_fake.reshape(-1, 64 * 64)
                         t_real = t_real.reshape(-1, 64 * 64)
+                        s_siamese_feat = s_siamese_feat.reshape(-1, 64 * 64)
                         # real_imgs = t_real
                         # fake_imgs = s_fake
                         # random weight term
                     if self.siamese_distill:
                         t_siamese_feat = t_real.detach()
-                        s_siamese_feat = s_fake
+                        # NOTE: copy the discriminator is not efficient
 
                         for siamese_layer in self.siamese:
                             t_siamese_feat = siamese_layer(t_siamese_feat)
