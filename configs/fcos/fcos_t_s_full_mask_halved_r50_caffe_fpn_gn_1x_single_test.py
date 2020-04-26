@@ -1,6 +1,6 @@
 # model settings
 ALIGN = False
-PYRAMID_ALIGN = True
+PYRAMID_ALIGN = False
 PRI_PYRAMID_ALIGN = False
 PYRAMID_CORRELATION = False
 HEAD_ALIGN = False
