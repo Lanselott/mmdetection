@@ -754,7 +754,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                 if self.apply_discriminator:
                     if mean_t_ious >= 0.5 and (t_g_ious.max() - mean_s_ious.max()) >= 0.1:
-                        generator_loss = sum(generator_loss_list)
+                        generator_loss = 0.1 * sum(generator_loss_list)
                         discrim_loss = sum(discrim_loss_list)
                         loss_dict.update({
                             'discrim_loss': discrim_loss,
