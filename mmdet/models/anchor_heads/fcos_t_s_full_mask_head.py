@@ -753,7 +753,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
 
                 if self.apply_discriminator:
-                    if mean_t_ious >= 0.5 and (t_g_ious.max() - mean_s_ious.max()) >= 0.1:
+                    if mean_t_ious >= 0.5 and (t_g_ious.max() - s_g_ious.max()) >= 0.1:
                         generator_loss = 0.1 * sum(generator_loss_list)
                         discrim_loss = sum(discrim_loss_list)
                         loss_dict.update({
