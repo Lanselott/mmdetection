@@ -763,7 +763,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             -1, self.feat_channels, 64, 64).detach()
                         s_siamese_targets = s_siamese_feat.reshape(
                             -1, self.feat_channels, 64, 64)
-                        siamese_loss = self.pyramid_hint_loss(
+                        siamese_loss = 5 * self.pyramid_hint_loss(
                             s_siamese_targets, t_siamese_targets)
                         loss_dict.update({'siamese_loss': siamese_loss})
 
