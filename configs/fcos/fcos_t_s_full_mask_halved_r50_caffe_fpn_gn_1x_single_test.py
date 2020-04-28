@@ -1,6 +1,6 @@
 # model settings
 ALIGN = False
-PYRAMID_ALIGN = False
+PYRAMID_ALIGN = True
 PRI_PYRAMID_ALIGN = False
 PYRAMID_CORRELATION = False
 HEAD_ALIGN = False
@@ -71,12 +71,12 @@ model = dict(
         simple_pyramid_alignment=False,
         learn_from_missing_annotation=False,
         block_wise_attention=False,
-        pyramid_wise_attention=False,
+        pyramid_wise_attention=True,
         pyramid_full_attention=False,
         pyramid_attention_factor=2,
         pyramid_correlation=PYRAMID_CORRELATION,
         pyramid_learn_high_quality=False,
-        pyramid_attention_only=False,
+        pyramid_attention_only=True,
         corr_out_channels=64,
         head_attention_factor=1,
         pyramid_cls_reg_consistent=False,

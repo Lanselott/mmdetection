@@ -857,15 +857,14 @@ class FCOSTSFullMaskHead(nn.Module):
                         cls_attention_weight = (
                             t_pred_cls == s_pred_cls).float()
 
-                        if self.pyramid_full_attention:
-                            assert self.pyramid_full_attention == self.pyramid_attention_only
+                        if self.pyramid_attention_only:
                             t_s_pred_ious = bbox_overlaps(
-                                s_all_pred_bboxes,
-                                t_all_pred_bboxes,
+                                s_pred_bboxes,
+                                t_pred_bboxes,
                                 is_aligned=True).detach()
                             iou_attention_weight = torch.ones_like(
                                 t_s_pred_ious)
-                            iou_attention_weight = 1 + t_s_pred_ious
+                            iou_attention_weight = 1 + t_s_pred_ious * t_g_ious
 
                             iou_attention_weight *= self.pyramid_attention_factor
 
@@ -884,18 +883,11 @@ class FCOSTSFullMaskHead(nn.Module):
                                 t_pyramid_feature_list[t_pos_inds],
                                 weight=iou_attention_weight,
                                 avg_factor=iou_attention_weight.sum())
-                        # attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
-                        #     s_pyramid_feature_list,
-                        #     t_pyramid_feature_list,
-                        #     weight=cls_attention_weight)
+                      
                     else:
                         attention_iou_pyramid_hint_loss = s_pyramid_feature_list[
                             t_pos_inds].sum()
-                    # print("attention_iou_pyramid_hint_loss:",
-                    #       attention_iou_pyramid_hint_loss)
                     loss_dict.update({
-                        # 'attention_cls_pyramid_hint_loss':
-                        # attention_cls_pyramid_hint_loss,
                         'attention_iou_pyramid_hint_loss':
                         attention_iou_pyramid_hint_loss
                     })
