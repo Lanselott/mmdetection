@@ -748,15 +748,12 @@ class FCOSTSFullMaskHead(nn.Module):
                         for siamese_layer in self.siamese:
                             t_siamese_feat = siamese_layer(t_siamese_feat)
                             s_siamese_feat = siamese_layer(s_siamese_feat)
-                        self.siamese_counter += 1
-                        if self.siamese_counter % 500 == 0:
-                            print("t_iou_maps.mean():", t_iou_maps.mean())
-                            print("s_iou_maps.mean():", s_iou_maps.mean())
-                        if t_iou_maps.mean() > 0.5 and s_iou_maps.mean() > 0.5:
-                            siamese_loss = self.pyramid_hint_loss(
-                                s_siamese_feat, t_siamese_feat.detach())
-                        else:
-                            siamese_loss = torch.zeros_like(t_siamese_feat).sum()
+
+                        # if t_g_ious.mean() > 0.5 and s_g_ious.mean() > 0.5:
+                        siamese_loss = self.pyramid_hint_loss(
+                            s_siamese_feat, t_siamese_feat.detach())
+                        # else:
+                        #     siamese_loss = torch.zeros_like(t_siamese_feat).sum()
 
                         loss_dict.update({'siamese_loss': siamese_loss})
 
