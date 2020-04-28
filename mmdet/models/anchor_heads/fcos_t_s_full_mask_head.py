@@ -971,8 +971,11 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_affinity_distance = s_pos_pyramid_feats[
                             i] - s_pos_pyramid_feats
 
-                        t_affinity_norm = (-torch.norm(t_affinity_distance, dim=1)).exp()
-                        s_affinity_norm = (-torch.norm(s_affinity_distance, dim=1)).exp()
+                        t_affinity_norm = (
+                            -torch.norm(t_affinity_distance, dim=1)).exp()
+                        s_affinity_norm = (
+                            -torch.norm(s_affinity_distance, dim=1)).exp()
+                        '''
                         t_affinity_prob = t_affinity_norm / t_affinity_norm.sum()
                         s_affinity_prob = s_affinity_norm / s_affinity_norm.sum()
 
@@ -980,26 +983,31 @@ class FCOSTSFullMaskHead(nn.Module):
                             t_affinity_prob.reshape(-1, 1))
                         s_affinity_list.append(
                             s_affinity_prob.reshape(-1, 1))
+                        '''
+                        t_affinity_list.append(t_affinity_norm.reshape(-1, 1))
+                        s_affinity_list.append(s_affinity_norm.reshape(-1, 1))
 
-                    t_affinity_list = torch.cat(
-                        t_affinity_list, 1).clamp(min=1e-6)  # [affinity_size, affinity_size]
-                    s_affinity_list = torch.cat(
-                        s_affinity_list, 1).clamp(min=1e-6)  # [affinity_size, affinity_size]
+                    t_affinity_list = torch.cat(t_affinity_list, 1).clamp(
+                        min=1e-6)  # [affinity_size, affinity_size]
+                    s_affinity_list = torch.cat(s_affinity_list, 1).clamp(
+                        min=1e-6)  # [affinity_size, affinity_size]
                     # NOTE: we consider to mimic the distance between teacher and student
                     # at KL distance of pyramid positve distributions and IoU scores at logits
-                    kl_loss = torch.nn.KLDivLoss()
-                    
+                    corr_critic = torch.nn.MSELoss(reduce=False)
+                    '''
+                    corr_critic = torch.nn.KLDivLoss()
                     t_iou_maps /= t_iou_maps.sum(1).reshape(-1, 1)
                     s_iou_maps /= s_iou_maps.sum(1).reshape(-1, 1)
-                    # t_iou_maps = t_iou_maps.softmax(1)
-                    # s_iou_maps = s_iou_maps.softmax(1)
-                    # t_affinity_list = t_affinity_list.softmax(1)
-                    # s_affinity_list = s_affinity_list.softmax(1)
-                    t_kl = kl_loss(t_affinity_list.log(), t_iou_maps.detach()).detach()
-                    s_kl = kl_loss(s_affinity_list.log(), s_iou_maps.detach())
-                    t_s_kl_distance_loss = 1000 * self.pyramid_hint_loss(s_kl, t_kl)
+                    t_kl = corr_critic(t_affinity_list.log(), t_iou_maps.detach()).detach()
+                    s_kl = corr_critic(s_affinity_list.log(), s_iou_maps.detach())
+                    '''
+                    t_kl = corr_critic(t_affinity_list.view(-1),
+                                       t_iou_maps.view(-1).detach()).detach()
+                    s_kl = corr_critic(s_affinity_list.view(-1), s_iou_maps.view(-1).detach())
+                    t_s_correlation_loss = 100 * self.pyramid_hint_loss(s_kl, t_kl)
                     # print("t_s_kl_distance_loss:", t_s_kl_distance_loss)
-                loss_dict.update({'t_s_kl_distance_loss': t_s_kl_distance_loss})
+                loss_dict.update(
+                    {'t_s_correlation_loss': t_s_correlation_loss})
 
             # NOTE: head wise alignment
             if self.apply_head_wise_alignment:
@@ -1310,7 +1318,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                    0).float()
+                                 0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
