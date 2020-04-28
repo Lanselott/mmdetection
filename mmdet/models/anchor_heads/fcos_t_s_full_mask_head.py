@@ -240,6 +240,7 @@ class FCOSTSFullMaskHead(nn.Module):
             self._init_siamese()
 
     def _init_siamese(self):
+        self.siamese_counter = 0
         self.t_s_siamese_align = nn.ModuleList()
         self.t_s_siamese_align.append(
             nn.Conv2d(self.s_feat_channels, self.feat_channels, 3, padding=1))
@@ -747,7 +748,8 @@ class FCOSTSFullMaskHead(nn.Module):
                         for siamese_layer in self.siamese:
                             t_siamese_feat = siamese_layer(t_siamese_feat)
                             s_siamese_feat = siamese_layer(s_siamese_feat)
-                        if self.train_generator_count % 500 == 0:
+                        self.siamese_counter += 1
+                        if self.siamese_counter % 500 == 0:
                             print("t_iou_maps.mean():", t_iou_maps.mean())
                             print("s_iou_maps.mean():", s_iou_maps.mean())
                         if t_iou_maps.mean() > 0.5 and s_iou_maps.mean() > 0.5:
