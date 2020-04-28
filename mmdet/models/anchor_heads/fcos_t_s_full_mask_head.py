@@ -244,35 +244,31 @@ class FCOSTSFullMaskHead(nn.Module):
         self.t_s_siamese_align.append(
             nn.Conv2d(self.s_feat_channels, self.feat_channels, 3, padding=1))
 
+        self.siamese = nn.ModuleList()
+        self.siamese_channel_nums = [256, 32]
+
+        for i in range(len(self.siamese_channel_nums) - 1):
+            self.siamese.append(
+                nn.Conv2d(
+                    self.siamese_channel_nums[i],
+                    self.siamese_channel_nums[i + 1],
+                    3,
+                    padding=1))
+            # self.siamese.append(
+            #     ConvModule(
+            #         self.siamese_channel_nums[i],
+            #         self.siamese_channel_nums[i + 1],
+            #         3,
+            #         stride=1,
+            #         padding=1,
+            #         conv_cfg=self.conv_cfg,
+            #         norm_cfg=self.norm_cfg,
+            #         bias=self.norm_cfg is None))
         for m in self.t_s_siamese_align:
             normal_init(m, std=0.01)
-
-        self.siamese = nn.Sequential(
-            nn.Linear(64 * 64, 2048),
-            nn.BatchNorm1d(2048),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(2048, 1024),
-            nn.BatchNorm1d(1024),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(1024, 512),
-            nn.BatchNorm1d(512),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(512, 256),
-            nn.BatchNorm1d(256),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(256, 512),
-            nn.BatchNorm1d(512),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(512, 1024),
-            nn.BatchNorm1d(1024),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(1024, 2048),
-            nn.BatchNorm1d(2048),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(2048, 64 * 64),
-            nn.BatchNorm1d(64 * 64),
-            nn.LeakyReLU(0.2, inplace=True),
-        )
+        for m in self.siamese:
+            # normal_init(m.conv, std=0.01)
+            normal_init(m, std=0.01)
 
     def _init_generator(self):
         self.generator = nn.Sequential(
@@ -740,35 +736,32 @@ class FCOSTSFullMaskHead(nn.Module):
                             for t_s_siamese_layer in self.t_s_siamese_align:
                                 s_siamese_feat = t_s_siamese_layer(
                                     s_siamese_feat)
-                        s_siamese_feat = F.interpolate(
-                            s_siamese_feat, size=(64, 64), mode='nearest')
+
+                        # real_imgs = t_real
+                        # fake_imgs = s_fake
+                        # random weight term
+                    if self.siamese_distill:
+                        t_siamese_feat = t_pyramid_feature.detach()
+                        # NOTE: copy the discriminator is not efficient
+
+                        for siamese_layer in self.siamese:
+                            t_siamese_feat = siamese_layer(t_siamese_feat)
+                            s_siamese_feat = siamese_layer(s_siamese_feat)
+                        if t_iou_maps.mean() > 0.5 and s_iou_maps.mean() > 0.5:
+                            siamese_loss = self.pyramid_hint_loss(
+                                s_siamese_feat, t_siamese_feat.detach())
+                        else:
+                            siamese_loss = torch.zeros_like(t_siamese_feat).sum()
+
+                        loss_dict.update({'siamese_loss': siamese_loss})
+
+                    if self.apply_discriminator:
                         s_fake = F.interpolate(
                             s_pyramid_feature, size=(64, 64), mode='nearest')
                         t_real = F.interpolate(
                             t_pyramid_feature, size=(64, 64), mode='nearest')
                         s_fake = s_fake.reshape(-1, 64 * 64)
                         t_real = t_real.reshape(-1, 64 * 64)
-                        s_siamese_feat = s_siamese_feat.reshape(-1, 64 * 64)
-                        # real_imgs = t_real
-                        # fake_imgs = s_fake
-                        # random weight term
-                    if self.siamese_distill:
-                        t_siamese_feat = t_real.detach()
-                        # NOTE: copy the discriminator is not efficient
-
-                        for siamese_layer in self.siamese:
-                            t_siamese_feat = siamese_layer(t_siamese_feat)
-                            s_siamese_feat = siamese_layer(s_siamese_feat)
-
-                        t_siamese_targets = t_siamese_feat.reshape(
-                            -1, self.feat_channels, 64, 64).detach()
-                        s_siamese_targets = s_siamese_feat.reshape(
-                            -1, self.feat_channels, 64, 64)
-                        siamese_loss = 4 * self.pyramid_hint_loss(
-                            s_siamese_targets, t_siamese_targets)
-                        loss_dict.update({'siamese_loss': siamese_loss})
-
-                    if self.apply_discriminator:
                         self.copy_discriminator()
                         if self.use_additional_generator:
                             for generator_layer in self.generator:
@@ -1001,10 +994,14 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_kl = corr_critic(t_affinity_list.log(), t_iou_maps.detach()).detach()
                     s_kl = corr_critic(s_affinity_list.log(), s_iou_maps.detach())
                     '''
-                    t_kl = corr_critic(t_affinity_list.view(-1),
-                                       t_iou_maps.view(-1).detach()).detach()
-                    s_kl = corr_critic(s_affinity_list.view(-1), s_iou_maps.view(-1).detach())
-                    t_s_correlation_loss = 100 * self.pyramid_hint_loss(s_kl, t_kl)
+                    t_kl = corr_critic(
+                        t_affinity_list.view(-1),
+                        t_iou_maps.view(-1).detach()).detach()
+                    s_kl = corr_critic(
+                        s_affinity_list.view(-1),
+                        s_iou_maps.view(-1).detach())
+                    t_s_correlation_loss = 100 * self.pyramid_hint_loss(
+                        s_kl, t_kl)
                     # print("t_s_kl_distance_loss:", t_s_kl_distance_loss)
                 loss_dict.update(
                     {'t_s_correlation_loss': t_s_correlation_loss})

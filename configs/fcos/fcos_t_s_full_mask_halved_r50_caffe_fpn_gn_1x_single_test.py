@@ -2,7 +2,7 @@
 ALIGN = False
 PYRAMID_ALIGN = False
 PRI_PYRAMID_ALIGN = False
-PYRAMID_CORRELATION = True
+PYRAMID_CORRELATION = False
 HEAD_ALIGN = False
 FREEZE_TEACHER = False
 RATIO = 2
@@ -62,7 +62,7 @@ model = dict(
         apply_block_wise_alignment=ALIGN,
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         apply_discriminator=False,
-        siamese_distill=False,
+        siamese_distill=True,
         use_additional_generator=False,
         copy_teacher_fpn=COPY_TEACHER_FPN,
         multi_levels=1,
