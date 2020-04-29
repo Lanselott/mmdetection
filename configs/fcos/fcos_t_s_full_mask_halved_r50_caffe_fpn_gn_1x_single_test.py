@@ -1,10 +1,10 @@
 # model settings
 ALIGN = False
-PYRAMID_ALIGN = False
+PYRAMID_ALIGN = True
 PRI_PYRAMID_ALIGN = False
-PYRAMID_CORRELATION = True
+PYRAMID_CORRELATION = False
 HEAD_ALIGN = False
-FREEZE_TEACHER = True
+FREEZE_TEACHER = False
 RATIO = 2
 DOWNSAMPLE_RATIO = 1
 COPY_TEACHER_FPN = False
@@ -18,7 +18,7 @@ model = dict(
         spatial_ratio=DOWNSAMPLE_RATIO,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
-        frozen_stages=4,
+        frozen_stages=1,
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe',
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
@@ -62,7 +62,7 @@ model = dict(
         apply_block_wise_alignment=ALIGN,
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         apply_discriminator=False,
-        siamese_distill=True,
+        siamese_distill=False,
         use_additional_generator=False,
         copy_teacher_fpn=COPY_TEACHER_FPN,
         multi_levels=1,
@@ -71,9 +71,9 @@ model = dict(
         simple_pyramid_alignment=False,
         learn_from_missing_annotation=False,
         block_wise_attention=False,
-        pyramid_wise_attention=True,
-        pyramid_full_attention=False,
-        pyramid_attention_factor=2,
+        pyramid_wise_attention=False,
+        pyramid_full_attention=True,
+        pyramid_attention_factor=1,
         pyramid_correlation=PYRAMID_CORRELATION,
         pyramid_learn_high_quality=False,
         pyramid_attention_only=True,
@@ -219,6 +219,6 @@ total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
-load_from = 'work/dirs/fcos_t_s_scratch_model/fcos_t_s_finetune_halved_student_from_scratch_epoch_12.pth'
+load_from = None  # 'work/dirs/fcos_t_s_scratch_model/fcos_t_s_finetune_halved_student_from_scratch_epoch_12.pth'
 resume_from = None
 workflow = [('train', 1)]

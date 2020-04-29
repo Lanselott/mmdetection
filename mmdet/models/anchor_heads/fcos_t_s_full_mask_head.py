@@ -854,25 +854,19 @@ class FCOSTSFullMaskHead(nn.Module):
                     if len(t_pos_inds) != 0:
                         t_pred_cls = t_flatten_cls_scores.max(1)[1]
                         s_pred_cls = s_flatten_cls_scores.max(1)[1]
-                        cls_attention_weight = (
-                            t_pred_cls == s_pred_cls).float()
 
                         t_s_pred_ious = bbox_overlaps(
-                            s_pred_bboxes,
-                            t_pred_bboxes,
+                            s_pred_bboxes, t_pred_bboxes,
                             is_aligned=True).detach()
-                        iou_attention_weight = torch.ones_like(
-                            t_s_pred_ious)
                         iou_attention_weight = 1 + t_s_pred_ious * t_g_ious
 
                         iou_attention_weight *= self.pyramid_attention_factor
 
                         attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
-                            s_pyramid_feature_list,
-                            t_pyramid_feature_list,
+                            s_pyramid_feature_list[t_pos_inds],
+                            t_pyramid_feature_list[t_pos_inds],
                             weight=iou_attention_weight,
                             avg_factor=iou_attention_weight.sum())
-                        
                     else:
                         attention_iou_pyramid_hint_loss = s_pyramid_feature_list[
                             t_pos_inds].sum()
@@ -882,7 +876,27 @@ class FCOSTSFullMaskHead(nn.Module):
                         attention_iou_pyramid_hint_loss
                     })
 
-                if self.apply_pyramid_wise_alignment:
+                if self.pyramid_full_attention:
+                    # Consider negative samples
+                    t_s_full_ious = bbox_overlaps(
+                        s_all_pred_bboxes, t_all_pred_bboxes,
+                        is_aligned=True).detach()
+                    t_g_full_ious = bbox_overlaps(
+                        t_all_pred_bboxes, t_gt_bboxes,
+                        is_aligned=False).detach().max(1)[0]
+                    iou_all_attention_weight = 1 + t_s_full_ious * t_g_full_ious
+                    iou_all_attention_weight *= self.pyramid_attention_factor
+                    attention_all_iou_pyramid_hint_loss = self.pyramid_hint_loss(
+                        s_pyramid_feature_list,
+                        t_pyramid_feature_list,
+                        weight=iou_all_attention_weight,
+                        avg_factor=iou_all_attention_weight.sum())
+                    loss_dict.update({
+                        'attention_all_iou_pyramid_hint_loss':
+                        attention_all_iou_pyramid_hint_loss
+                    })
+
+                if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
                     pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list, t_pyramid_feature_list)
                     loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
