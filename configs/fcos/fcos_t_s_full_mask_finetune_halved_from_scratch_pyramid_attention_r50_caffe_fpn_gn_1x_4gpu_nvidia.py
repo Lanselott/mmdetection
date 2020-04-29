@@ -59,7 +59,7 @@ model = dict(
         apply_head_wise_alignment=HEAD_ALIGN,
         freeze_teacher=FREEZE_TEACHER,
         block_teacher_attention=False,
-        pyramid_attention_only=True,
+        pyramid_attention_only=False,
         # student distillation params
         beta=1.5,
         gamma=2,
