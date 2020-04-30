@@ -412,18 +412,26 @@ class DDBV3NPHead(nn.Module):
             pos_decoded_bbox_preds.register_hook(
                 lambda grad: grad * origin_gradient_mask)
 
-            # sorted bboxes
-            loss_sorted_bbox = self.loss_sorted_bbox(
-                pos_decoded_sort_bbox_preds,
-                pos_decoded_target_preds,
-                weight=sorted_ious_weights,
-                avg_factor=sorted_ious_weights.sum())
-            # origin boxes
-            loss_bbox = self.loss_bbox(
-                pos_decoded_bbox_preds,
-                pos_decoded_target_preds,
-                weight=ious_weights,
-                avg_factor=ious_weights.sum())
+            if self.box_weighted:
+                # sorted bboxes
+                loss_sorted_bbox = self.loss_sorted_bbox(
+                    pos_decoded_sort_bbox_preds,
+                    pos_decoded_target_preds,
+                    weight=sorted_ious_weights,
+                    avg_factor=sorted_ious_weights.sum())
+                # origin boxes
+                loss_bbox = self.loss_bbox(
+                    pos_decoded_bbox_preds,
+                    pos_decoded_target_preds,
+                    weight=ious_weights,
+                    avg_factor=ious_weights.sum())
+            else:
+                # sorted bboxes
+                loss_sorted_bbox = self.loss_sorted_bbox(
+                    pos_decoded_sort_bbox_preds, pos_decoded_target_preds)
+                # origin boxes
+                loss_bbox = self.loss_bbox(pos_decoded_bbox_preds,
+                                           pos_decoded_target_preds)
 
             loss_cls = self.loss_cls(
                 flatten_cls_scores,
