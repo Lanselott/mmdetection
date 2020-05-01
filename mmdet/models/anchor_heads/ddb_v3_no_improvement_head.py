@@ -33,6 +33,7 @@ class DDBV3NPHead(nn.Module):
                  weighted_mask=False,
                  consistency_weight=False,
                  box_weighted=False,
+                 stable_noise=False,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -68,6 +69,7 @@ class DDBV3NPHead(nn.Module):
         self.weighted_mask = weighted_mask
         self.consistency_weight = consistency_weight
         self.box_weighted = box_weighted
+        self.stable_noise = stable_noise
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -395,11 +397,16 @@ class DDBV3NPHead(nn.Module):
             '''
             # NOTE: the grad of sorted branch is in sort order, diff from origin
             '''
+            if self.stable_noise:
+                sort_noise = (torch.rand_like(_bd_sort_iou) - 0.5) * 0.2
+                origin_noise = torch.rand_like(_bd_iou - 0.5) * 0.2
+                _bd_sort_iou += sort_noise
+                _bd_iou += origin_noise
+
             sort_gradient_mask = (_bd_sort_iou >
                                   (_bd_iou - self.iou_delta)).float()
             origin_gradient_mask = ((_bd_sort_iou - self.iou_delta) <=
                                     _bd_iou).float()
-            # embed()
             '''
             sorted_bbox_weight = _bd_sort_iou.mean(1)[0]
             bbox_weight = _bd_iou.mean(1)[0]
