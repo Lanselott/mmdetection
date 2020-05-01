@@ -399,6 +399,7 @@ class DDBV3NPHead(nn.Module):
                                   (_bd_iou - self.iou_delta)).float()
             origin_gradient_mask = ((_bd_sort_iou - self.iou_delta) <=
                                     _bd_iou).float()
+            # embed()
             '''
             sorted_bbox_weight = _bd_sort_iou.mean(1)[0]
             bbox_weight = _bd_iou.mean(1)[0]
