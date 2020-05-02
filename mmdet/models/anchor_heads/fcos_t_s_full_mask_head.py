@@ -854,26 +854,41 @@ class FCOSTSFullMaskHead(nn.Module):
                     if len(t_pos_inds) != 0:
                         t_pred_cls = t_flatten_cls_scores.max(1)[1]
                         s_pred_cls = s_flatten_cls_scores.max(1)[1]
+                        ce_loss = torch.nn.BCEWithLogitsLoss(reduce=False)
+                        t_s_cls_entropy = ce_loss(
+                            s_flatten_cls_scores[t_pos_inds].detach(),
+                            t_flatten_cls_scores[t_pos_inds].detach())
+                        t_s_cls_entropy = t_s_cls_entropy.sum(1)
+                        t_s_cls_entropy = t_s_cls_entropy - t_s_cls_entropy.min(
+                        ) + 1e-6
+                        t_s_cls_entropy /= t_s_cls_entropy.max()
 
                         t_s_pred_ious = bbox_overlaps(
                             s_pred_bboxes, t_pred_bboxes,
                             is_aligned=True).detach()
-                        iou_attention_weight = t_s_pred_ious
+                        iou_attention_weight = t_s_pred_ious * t_g_ious
+                        # iou_attention_weight = t_s_pred_ious
 
                         iou_attention_weight *= self.pyramid_attention_factor
 
                         attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
                             s_pyramid_feature_list[t_pos_inds],
                             t_pyramid_feature_list[t_pos_inds],
-                            weight=iou_attention_weight,
-                            avg_factor=iou_attention_weight.sum())
+                            weight=iou_attention_weight)
+                        attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
+                            s_pyramid_feature_list[t_pos_inds],
+                            t_pyramid_feature_list[t_pos_inds],
+                            weight=t_s_cls_entropy)
+
                     else:
                         attention_iou_pyramid_hint_loss = s_pyramid_feature_list[
                             t_pos_inds].sum()
 
                     loss_dict.update({
                         'attention_iou_pyramid_hint_loss':
-                        attention_iou_pyramid_hint_loss
+                        attention_iou_pyramid_hint_loss,
+                        'attention_cls_pyramid_hint_loss':
+                        attention_cls_pyramid_hint_loss
                     })
 
                 if self.pyramid_full_attention:
@@ -884,16 +899,30 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_g_full_ious = bbox_overlaps(
                         t_all_pred_bboxes, t_gt_bboxes,
                         is_aligned=False).detach().max(1)[0]
-                    iou_all_attention_weight = t_s_full_ious
+                    t_s_full_cls_entropy = ce_loss(
+                        s_flatten_cls_scores.detach(),
+                        t_flatten_cls_scores.detach())
+                    t_s_full_cls_entropy = t_s_full_cls_entropy.sum(1)
+                    t_s_full_cls_entropy = t_s_full_cls_entropy - t_s_full_cls_entropy.min(
+                    ) + 1e-6
+                    t_s_full_cls_entropy /= t_s_full_cls_entropy.max()
+
+                    iou_all_attention_weight = t_s_full_ious * t_g_full_ious
+                    # iou_all_attention_weight = t_s_full_ious
                     iou_all_attention_weight *= self.pyramid_attention_factor
                     attention_all_iou_pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pyramid_feature_list,
                         t_pyramid_feature_list,
-                        weight=iou_all_attention_weight,
-                        avg_factor=iou_all_attention_weight.sum())
+                        weight=iou_all_attention_weight)
+                    attention_all_cls_pyramid_hint_loss = self.pyramid_hint_loss(
+                        s_pyramid_feature_list,
+                        t_pyramid_feature_list,
+                        weight=t_s_full_cls_entropy)
                     loss_dict.update({
                         'attention_all_iou_pyramid_hint_loss':
-                        attention_all_iou_pyramid_hint_loss
+                        attention_all_iou_pyramid_hint_loss,
+                        'attention_all_cls_pyramid_hint_loss':
+                        attention_all_cls_pyramid_hint_loss
                     })
 
                 if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
@@ -1087,8 +1116,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     reg_head_attention_hint_loss = self.head_attention_factor * self.reg_head_hint_loss(
                         pos_s_reg_heads_feature,
                         pos_t_reg_heads_feature,
-                        weight=iou_attention_weight,
-                        avg_factor=iou_attention_weight.sum())
+                        weight=iou_attention_weight)
                     loss_dict.update({
                         'reg_head_attention_hint_loss':
                         reg_head_attention_hint_loss
