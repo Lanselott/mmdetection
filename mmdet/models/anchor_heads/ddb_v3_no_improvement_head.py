@@ -411,8 +411,8 @@ class DDBV3NPHead(nn.Module):
             sorted_bbox_weight = _bd_sort_iou.mean(1)[0]
             bbox_weight = _bd_iou.mean(1)[0]
             '''
-            origin_gradient_mask *= torch.tanh(_bd_iou / _bd_iou.max())
-            sort_gradient_mask *= torch.tanh(_bd_sort_iou / _bd_sort_iou.max())
+            # origin_gradient_mask *= torch.tanh(_bd_iou / _bd_iou.max())
+            # sort_gradient_mask *= torch.tanh(_bd_sort_iou / _bd_sort_iou.max())
 
             # apply hook to mask origin/sort gradients
             pos_decoded_sort_bbox_preds.register_hook(
