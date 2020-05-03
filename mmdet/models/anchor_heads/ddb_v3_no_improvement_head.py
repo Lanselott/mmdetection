@@ -398,8 +398,8 @@ class DDBV3NPHead(nn.Module):
             # NOTE: the grad of sorted branch is in sort order, diff from origin
             '''
             if self.stable_noise:
-                sort_noise = (torch.rand_like(_bd_sort_iou) - 0.5) * 0.2
-                origin_noise = torch.rand_like(_bd_iou - 0.5) * 0.2
+                sort_noise = (torch.rand_like(_bd_sort_iou) - 0.5) * 0.1
+                origin_noise = torch.rand_like(_bd_iou - 0.5) * 0.1
                 _bd_sort_iou += sort_noise
                 _bd_iou += origin_noise
 
