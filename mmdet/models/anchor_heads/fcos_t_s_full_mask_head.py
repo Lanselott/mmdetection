@@ -80,6 +80,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  pyramid_correlation=False,
                  pyramid_learn_high_quality=False,
                  pyramid_attention_only=False,
+                 negative_attention_weight=False,
                  pyramid_cls_reg_consistent=False,
                  pyramid_nms_aware=False,
                  pyramid_attention_factor=1,
@@ -168,6 +169,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.pyramid_correlation = pyramid_correlation
         self.pyramid_learn_high_quality = pyramid_learn_high_quality
         self.pyramid_attention_only = pyramid_attention_only
+        self.negative_attention_weight = negative_attention_weight
         self.corr_out_channels = corr_out_channels
         self.pyramid_cls_reg_consistent = pyramid_cls_reg_consistent
         self.pyramid_nms_aware = pyramid_nms_aware
@@ -867,6 +869,9 @@ class FCOSTSFullMaskHead(nn.Module):
                         t_s_pred_ious = bbox_overlaps(
                             s_pred_bboxes, t_pred_bboxes,
                             is_aligned=True).detach()
+
+                        if self.negative_attention_weight:
+                            t_s_pred_ious = t_s_pred_ious - 0.5
                         # iou_attention_weight = t_s_pred_ious * t_g_ious
                         iou_attention_weight = t_s_pred_ious
 
