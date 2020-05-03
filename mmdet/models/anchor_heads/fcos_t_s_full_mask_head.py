@@ -855,6 +855,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         t_pred_cls = t_flatten_cls_scores.max(1)[1]
                         s_pred_cls = s_flatten_cls_scores.max(1)[1]
                         ce_loss = torch.nn.BCEWithLogitsLoss(reduce=False)
+                        '''
                         t_s_cls_entropy = ce_loss(
                             s_flatten_cls_scores[t_pos_inds].detach(),
                             t_flatten_cls_scores[t_pos_inds].detach())
@@ -862,12 +863,12 @@ class FCOSTSFullMaskHead(nn.Module):
                         t_s_cls_entropy = t_s_cls_entropy - t_s_cls_entropy.min(
                         ) + 1e-6
                         t_s_cls_entropy /= t_s_cls_entropy.max()
-
+                        '''
                         t_s_pred_ious = bbox_overlaps(
                             s_pred_bboxes, t_pred_bboxes,
                             is_aligned=True).detach()
-                        iou_attention_weight = t_s_pred_ious * t_g_ious
-                        # iou_attention_weight = t_s_pred_ious
+                        # iou_attention_weight = t_s_pred_ious * t_g_ious
+                        iou_attention_weight = t_s_pred_ious
 
                         iou_attention_weight *= self.pyramid_attention_factor
 
@@ -875,10 +876,12 @@ class FCOSTSFullMaskHead(nn.Module):
                             s_pyramid_feature_list[t_pos_inds],
                             t_pyramid_feature_list[t_pos_inds],
                             weight=iou_attention_weight)
+                        '''
                         attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
                             s_pyramid_feature_list[t_pos_inds],
                             t_pyramid_feature_list[t_pos_inds],
                             weight=t_s_cls_entropy)
+                        '''
 
                     else:
                         attention_iou_pyramid_hint_loss = s_pyramid_feature_list[
@@ -887,8 +890,8 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update({
                         'attention_iou_pyramid_hint_loss':
                         attention_iou_pyramid_hint_loss,
-                        'attention_cls_pyramid_hint_loss':
-                        attention_cls_pyramid_hint_loss
+                        # 'attention_cls_pyramid_hint_loss':
+                        # attention_cls_pyramid_hint_loss
                     })
 
                 if self.pyramid_full_attention:
