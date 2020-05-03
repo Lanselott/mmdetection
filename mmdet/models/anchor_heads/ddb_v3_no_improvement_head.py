@@ -34,6 +34,7 @@ class DDBV3NPHead(nn.Module):
                  consistency_weight=False,
                  box_weighted=False,
                  stable_noise=False,
+                 apply_cls_awareness=False,
                  loss_cls=dict(
                      type='FocalLoss',
                      use_sigmoid=True,
@@ -70,6 +71,7 @@ class DDBV3NPHead(nn.Module):
         self.consistency_weight = consistency_weight
         self.box_weighted = box_weighted
         self.stable_noise = stable_noise
+        self.apply_cls_awareness = apply_cls_awareness
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_centerness = build_loss(loss_centerness)
@@ -267,11 +269,14 @@ class DDBV3NPHead(nn.Module):
             # if pixel i  regression < mean & classification < mean, label as zero and do not regression on these pixels.
             '''
             pos_scores = flatten_cls_scores[pos_inds]
-            pos_scores, _ = pos_scores.sigmoid().max(1)
+            pos_scores, pos_pred_inds = pos_scores.sigmoid().max(1)
+            
             for dist_conf_mask in dist_conf_mask_list:
                 obj_mask_inds = dist_conf_mask.nonzero().reshape(-1)
                 pos_centerness_obj = pos_centerness_targets[obj_mask_inds]
                 pos_scores_obj = pos_scores[obj_mask_inds]
+                        
+
                 # pos_scores_obj = pos_scores
                 # mean IoU of an object
                 regression_reduced_threshold = pos_centerness_obj.mean()
@@ -279,6 +284,12 @@ class DDBV3NPHead(nn.Module):
 
                 regression_mask = pos_centerness_obj < regression_reduced_threshold
                 classification_mask = pos_scores_obj < classification_reduced_threshold
+
+                if self.apply_cls_awareness:
+                    correct_pred_cls = ((pos_pred_inds[obj_mask_inds] + 1) == pos_labels[obj_mask_inds])
+                    acc = (correct_pred_cls).sum().float() / len(obj_mask_inds)
+                    if acc >= 0.5:
+                        classification_mask[(correct_pred_cls == 0).nonzero()] = 1
 
                 # consistency:
                 consistency_mask = (regression_mask + classification_mask) == 2
