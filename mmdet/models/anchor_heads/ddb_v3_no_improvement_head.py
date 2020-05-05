@@ -288,7 +288,7 @@ class DDBV3NPHead(nn.Module):
                 if self.apply_cls_awareness:
                     correct_pred_cls = ((pos_pred_inds[obj_mask_inds] + 1) == pos_labels[obj_mask_inds])
                     acc = (correct_pred_cls).sum().float() / len(obj_mask_inds)
-                    if acc >= 0.5:
+                    if acc >= 0.9:
                         classification_mask[(correct_pred_cls == 0).nonzero()] = 1
 
                 # consistency:
