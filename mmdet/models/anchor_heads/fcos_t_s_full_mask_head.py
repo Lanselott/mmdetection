@@ -704,9 +704,9 @@ class FCOSTSFullMaskHead(nn.Module):
             # TODO: Polishing conditions here...
             if self.apply_pyramid_wise_alignment or self.apply_discriminator or self.siamese_distill or self.pyramid_correlation:
                 if self.freeze_teacher:
-                        pyramid_lambda = 10
-                    else: 
-                        pyramid_lambda = 1
+                    pyramid_lambda = 10
+                else: 
+                    pyramid_lambda = 1
 
                 t_pyramid_feature_list = []
                 s_pyramid_feature_list = []
