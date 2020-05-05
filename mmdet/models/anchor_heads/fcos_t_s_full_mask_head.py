@@ -80,7 +80,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  pyramid_correlation=False,
                  pyramid_learn_high_quality=False,
                  pyramid_attention_only=False,
-                 negative_attention_weight=False,
+                 ignore_low_ious=False,
                  pyramid_cls_reg_consistent=False,
                  pyramid_nms_aware=False,
                  pyramid_attention_factor=1,
@@ -169,7 +169,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.pyramid_correlation = pyramid_correlation
         self.pyramid_learn_high_quality = pyramid_learn_high_quality
         self.pyramid_attention_only = pyramid_attention_only
-        self.negative_attention_weight = negative_attention_weight
+        self.ignore_low_ious = ignore_low_ious
         self.corr_out_channels = corr_out_channels
         self.pyramid_cls_reg_consistent = pyramid_cls_reg_consistent
         self.pyramid_nms_aware = pyramid_nms_aware
@@ -875,11 +875,13 @@ class FCOSTSFullMaskHead(nn.Module):
                             s_pred_bboxes, t_pred_bboxes,
                             is_aligned=True).detach()
 
-                        if self.negative_attention_weight:
-                            t_s_pred_ious = t_s_pred_ious - 0.5
-                        # FIXME: Offline mode alignment requires larger weight (w=10 or 15)
+                        if self.ignore_low_ious:
+                            negative_inds = (((t_g_ious < 0.5) & (s_g_ious > t_g_ious)) == 1).nonzero().reshape(-1)
+                            t_s_pred_ious[negative_inds] = 0
+
+                        # NOTE: Offline mode alignment requires larger weight (w=10 or 15)
                         iou_attention_weight = t_s_pred_ious * t_g_ious
-                        # iou_attention_weight = t_s_pred_ious
+                        
                         iou_attention_weight *= self.pyramid_attention_factor
 
                         attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
