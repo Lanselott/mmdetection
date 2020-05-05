@@ -703,6 +703,11 @@ class FCOSTSFullMaskHead(nn.Module):
 
             # TODO: Polishing conditions here...
             if self.apply_pyramid_wise_alignment or self.apply_discriminator or self.siamese_distill or self.pyramid_correlation:
+                if self.freeze_teacher:
+                        pyramid_lambda = 10
+                    else: 
+                        pyramid_lambda = 1
+
                 t_pyramid_feature_list = []
                 s_pyramid_feature_list = []
                 discrim_loss_list = []
@@ -872,12 +877,12 @@ class FCOSTSFullMaskHead(nn.Module):
 
                         if self.negative_attention_weight:
                             t_s_pred_ious = t_s_pred_ious - 0.5
-                        # iou_attention_weight = t_s_pred_ious * t_g_ious
-                        iou_attention_weight = t_s_pred_ious
-
+                        # FIXME: Offline mode alignment requires larger weight (w=10 or 15)
+                        iou_attention_weight = t_s_pred_ious * t_g_ious
+                        # iou_attention_weight = t_s_pred_ious
                         iou_attention_weight *= self.pyramid_attention_factor
 
-                        attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
+                        attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                             s_pyramid_feature_list[t_pos_inds],
                             t_pyramid_feature_list[t_pos_inds],
                             weight=iou_attention_weight)
@@ -918,11 +923,11 @@ class FCOSTSFullMaskHead(nn.Module):
                     iou_all_attention_weight = t_s_full_ious * t_g_full_ious
                     # iou_all_attention_weight = t_s_full_ious
                     iou_all_attention_weight *= self.pyramid_attention_factor
-                    attention_all_iou_pyramid_hint_loss = self.pyramid_hint_loss(
+                    attention_all_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                         s_pyramid_feature_list,
                         t_pyramid_feature_list,
                         weight=iou_all_attention_weight)
-                    attention_all_cls_pyramid_hint_loss = self.pyramid_hint_loss(
+                    attention_all_cls_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                         s_pyramid_feature_list,
                         t_pyramid_feature_list,
                         weight=t_s_full_cls_entropy)
@@ -934,7 +939,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     })
 
                 if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
-                    pyramid_hint_loss = self.pyramid_hint_loss(
+                    pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                         s_pyramid_feature_list, t_pyramid_feature_list)
                     loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
 
@@ -1349,7 +1354,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                                 0).float()
+                    0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
