@@ -410,7 +410,7 @@ class DDBV3NPHead(nn.Module):
             '''
             if self.stable_noise:
                 sort_noise = (torch.rand_like(_bd_sort_iou) - 0.5) * 0.05
-                origin_noise = （torch.rand_like(_bd_iou) - 0.5）* 0.05
+                origin_noise = (torch.rand_like(_bd_iou) - 0.5)* 0.05
                 _bd_sort_iou += sort_noise
                 _bd_iou += origin_noise
 
