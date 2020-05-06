@@ -225,6 +225,7 @@ class FCOSTSFullMaskHead(nn.Module):
         )  # build_loss(loss_iou_similiarity)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
+        self.epoch_counter = 0
         self.fp16_enabled = False
         self._init_teacher_layers()
         self._init_student_layers()
@@ -242,7 +243,6 @@ class FCOSTSFullMaskHead(nn.Module):
             self._init_siamese()
 
     def _init_siamese(self):
-        self.siamese_counter = 0
         self.t_s_siamese_align = nn.ModuleList()
         self.t_s_siamese_align.append(
             nn.Conv2d(self.s_feat_channels, self.feat_channels, 3, padding=1))
@@ -706,7 +706,8 @@ class FCOSTSFullMaskHead(nn.Module):
                 if self.freeze_teacher:
                     pyramid_lambda = 15
                 else: 
-                    pyramid_lambda = 1
+                    self.epoch_counter += 1
+                    pyramid_lambda = 1 + ((float(self.epoch_counter) / 58633) / 15.0)
 
                 t_pyramid_feature_list = []
                 s_pyramid_feature_list = []
