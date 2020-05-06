@@ -51,7 +51,8 @@ class DDBV3NPHead(nn.Module):
                      type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
                  bd_threshold=0.0,
                  conv_cfg=None,
-                 norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
+                 norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
+                 hook_debug=False):
         super(DDBV3NPHead, self).__init__()
 
         self.num_classes = num_classes
@@ -80,6 +81,7 @@ class DDBV3NPHead(nn.Module):
         self.bd_threshold = bd_threshold
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
+        self.hook_debug = hook_debug
 
         self._init_layers()
 
@@ -270,12 +272,11 @@ class DDBV3NPHead(nn.Module):
             '''
             pos_scores = flatten_cls_scores[pos_inds]
             pos_scores, pos_pred_inds = pos_scores.sigmoid().max(1)
-            
+
             for dist_conf_mask in dist_conf_mask_list:
                 obj_mask_inds = dist_conf_mask.nonzero().reshape(-1)
                 pos_centerness_obj = pos_centerness_targets[obj_mask_inds]
                 pos_scores_obj = pos_scores[obj_mask_inds]
-                        
 
                 # pos_scores_obj = pos_scores
                 # mean IoU of an object
@@ -286,10 +287,12 @@ class DDBV3NPHead(nn.Module):
                 classification_mask = pos_scores_obj < classification_reduced_threshold
 
                 if self.apply_cls_awareness:
-                    correct_pred_cls = ((pos_pred_inds[obj_mask_inds] + 1) == pos_labels[obj_mask_inds])
+                    correct_pred_cls = ((pos_pred_inds[obj_mask_inds] +
+                                         1) == pos_labels[obj_mask_inds])
                     acc = (correct_pred_cls).sum().float() / len(obj_mask_inds)
                     if acc >= 0.9:
-                        classification_mask[(correct_pred_cls == 0).nonzero()] = 1
+                        classification_mask[(
+                            correct_pred_cls == 0).nonzero()] = 1
 
                 # consistency:
                 consistency_mask = (regression_mask + classification_mask) == 2
@@ -319,8 +322,6 @@ class DDBV3NPHead(nn.Module):
 
             # NOTE: clone, avoid inplace operations
             pos_decoded_sort_bbox_preds = pos_decoded_bbox_preds.clone()
-            none_sort_pos_decoded_sort_bbox_preds = pos_decoded_bbox_preds.clone(
-            )
             '''
             # NOTE: update sorting rules:
             # 1. first order bboxes (four boundries 'outside' the gt) 
@@ -388,7 +389,7 @@ class DDBV3NPHead(nn.Module):
                 inds_shift += sorted_inds.shape[1]
 
             sorted_ious_weights = bbox_overlaps(
-                pos_decoded_sort_bbox_preds,
+                pos_decoded_sort_bbox_preds,  # mapped
                 pos_decoded_target_preds,
                 is_aligned=True).detach()
             ious_weights = bbox_overlaps(
@@ -403,17 +404,11 @@ class DDBV3NPHead(nn.Module):
                 sorted_ious_weights[pos_gradient_update_anti_mapping[..., 2]].
                 reshape(-1, 1), sorted_ious_weights[
                     pos_gradient_update_anti_mapping[..., 3]].reshape(-1, 1)
-            ], 1)
+            ], 1) # mapped back
             _bd_iou = ious_weights.reshape(-1, 1).repeat(1, 4)
             '''
             # NOTE: the grad of sorted branch is in sort order, diff from origin
             '''
-            if self.stable_noise:
-                sort_noise = (torch.rand_like(_bd_sort_iou) - 0.5) * 0.05
-                origin_noise = (torch.rand_like(_bd_iou) - 0.5)* 0.05
-                _bd_sort_iou += sort_noise
-                _bd_iou += origin_noise
-
             sort_gradient_mask = (_bd_sort_iou >
                                   (_bd_iou - self.iou_delta)).float()
             origin_gradient_mask = ((_bd_sort_iou - self.iou_delta) <=
@@ -422,15 +417,26 @@ class DDBV3NPHead(nn.Module):
             sorted_bbox_weight = _bd_sort_iou.mean(1)[0]
             bbox_weight = _bd_iou.mean(1)[0]
             '''
-            # origin_gradient_mask *= torch.tanh(_bd_iou / _bd_iou.max())
-            # sort_gradient_mask *= torch.tanh(_bd_sort_iou / _bd_sort_iou.max())
-
             # apply hook to mask origin/sort gradients
-            pos_decoded_sort_bbox_preds.register_hook(
-                lambda grad: grad * sort_gradient_mask)
+            if self.hook_debug:
+                debug_mask = torch.cat([
+                    sort_gradient_mask[pos_gradient_update_mapping[..., 0], 0].
+                    reshape(-1, 1),
+                    sort_gradient_mask[pos_gradient_update_mapping[..., 1], 1].
+                    reshape(-1, 1),
+                    sort_gradient_mask[pos_gradient_update_mapping[..., 2], 2].
+                    reshape(-1, 1),
+                    sort_gradient_mask[pos_gradient_update_mapping[..., 3], 3].
+                    reshape(-1, 1)
+                ], 1)
+                pos_decoded_sort_bbox_preds.register_hook(
+                    lambda grad: grad * debug_mask)
+            else:
+                pos_decoded_sort_bbox_preds.register_hook(
+                    lambda grad: grad * sort_gradient_mask)
             pos_decoded_bbox_preds.register_hook(
                 lambda grad: grad * origin_gradient_mask)
-
+            
             if self.box_weighted:
                 # sorted bboxes
                 loss_sorted_bbox = self.loss_sorted_bbox(
