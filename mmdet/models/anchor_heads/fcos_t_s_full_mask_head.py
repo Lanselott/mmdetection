@@ -707,8 +707,8 @@ class FCOSTSFullMaskHead(nn.Module):
                     pyramid_lambda = 10
                 else: 
                     self.epoch_counter += 1
-                    pyramid_lambda = 1 + ((float(self.epoch_counter) / (58633 / 16)) / 15.0)
-                    print("pyramid_lambda:", pyramid_lambda)
+                    pyramid_lambda = 1 + int((float(self.epoch_counter) / (58633 / 16)) / 15.0)
+
                 t_pyramid_feature_list = []
                 s_pyramid_feature_list = []
                 discrim_loss_list = []

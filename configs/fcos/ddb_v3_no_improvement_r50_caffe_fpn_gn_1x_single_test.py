@@ -29,13 +29,13 @@ model = dict(
         apply_conditional_consistency_on_regression=True,
         mask_origin_bbox_loss=False,
         iou_delta=0.0,
-        apply_iou_cache=True,
+        apply_iou_cache=False,
         origin_bbox_loss_downgrade=False,
         mask_sort=False,
         weighted_mask=False,
         consistency_weight=False,
         box_weighted=False,
-        stable_noise=True,
+        stable_noise=False,
         apply_cls_awareness=True,
         loss_cls=dict(
             type='FocalLoss',
@@ -127,7 +127,7 @@ optimizer_config = dict(grad_clip=None)
 # learning policy
 lr_config = dict(
     policy='step',
-    warmup='constant',
+    warmup='linear',
     warmup_iters=500,
     warmup_ratio=1.0 / 3,
     step=[8, 11])
