@@ -708,9 +708,10 @@ class FCOSTSFullMaskHead(nn.Module):
                 if self.freeze_teacher:
                     pyramid_lambda = 10
                 else:
-                    self.epoch_counter += 1
-                    pyramid_lambda = 1 + int(
-                        (float(self.epoch_counter) / (58633 / 16)) / 15.0)
+                    # self.epoch_counter += 1
+                    # pyramid_lambda = 1 + int(
+                    #     (float(self.epoch_counter) / (58633 / 16)) / 15.0)
+                    pyramid_lambda = 1
 
                 t_pyramid_feature_list = []
                 s_pyramid_feature_list = []
