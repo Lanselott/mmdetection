@@ -707,9 +707,10 @@ class FCOSTSFullMaskHead(nn.Module):
             if self.apply_pyramid_wise_alignment or self.apply_discriminator or self.siamese_distill or self.pyramid_correlation:
                 if self.freeze_teacher:
                     pyramid_lambda = 10
-                else: 
+                else:
                     self.epoch_counter += 1
-                    pyramid_lambda = 1 + int((float(self.epoch_counter) / (58633 / 16)) / 15.0)
+                    pyramid_lambda = 1 + int(
+                        (float(self.epoch_counter) / (58633 / 16)) / 15.0)
 
                 t_pyramid_feature_list = []
                 s_pyramid_feature_list = []
@@ -828,8 +829,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_pyramid_feature.permute(0, 2, 3, 1).reshape(
                             -1, self.feat_channels))
 
-                t_pyramid_feature_list = torch.cat(
-                    t_pyramid_feature_list).detach()
+                t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
                 s_pyramid_feature_list = torch.cat(s_pyramid_feature_list)
 
                 if self.apply_discriminator:
@@ -879,73 +879,82 @@ class FCOSTSFullMaskHead(nn.Module):
                             is_aligned=True).detach()
 
                         if self.ignore_low_ious:
-                            negative_inds = (((t_g_ious < 0.2) & (s_g_ious > t_g_ious)) == 1).nonzero().reshape(-1)
+                            negative_inds = (((t_g_ious < 0.2) &
+                                              (s_g_ious > t_g_ious)) == 1
+                                             ).nonzero().reshape(-1)
                             t_s_pred_ious[negative_inds] = 0
 
-                        # NOTE: Offline mode alignment requires larger weight (w=10 or 15)
-                        iou_attention_weight = t_s_pred_ious
-                        
-                        iou_attention_weight *= self.pyramid_attention_factor
+                        if self.learn_from_each_other:
+                            assert self.freeze_teacher == False
+                            assert self.ignore_low_ious == False
+                            # Online learning with learn from each other
+                            student_zero_inds = (
+                                s_g_ious < t_g_ious).nonzero().reshape(-1)
+                            teacher_zero_inds = (
+                                s_g_ious > t_g_ious).nonzero().reshape(-1)
+                            student_weight = bbox_overlaps(
+                                s_pred_bboxes, t_pred_bboxes,
+                                is_aligned=True).detach()
+                            teacher_weight = bbox_overlaps(
+                                s_pred_bboxes, t_pred_bboxes,
+                                is_aligned=True).detach()
 
-                        attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                            s_pyramid_feature_list[t_pos_inds],
-                            t_pyramid_feature_list[t_pos_inds],
-                            weight=iou_attention_weight)
-                        '''
-                        attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
-                            s_pyramid_feature_list[t_pos_inds],
-                            t_pyramid_feature_list[t_pos_inds],
-                            weight=t_s_cls_entropy)
-                        '''
+                            student_weight[student_zero_inds] = 0
+                            teacher_weight[teacher_zero_inds] = 0
 
+                            student_learn_from_teacher_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                s_pyramid_feature_list[t_pos_inds],
+                                t_pyramid_feature_list[t_pos_inds].detach(),
+                                weight=student_weight)
+                            teacher_learn_from_student_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                t_pyramid_feature_list[t_pos_inds],
+                                s_pyramid_feature_list[t_pos_inds].detach(),
+                                weight=teacher_weight)
+                        else:
+                            # NOTE: Offline mode alignment requires larger weight (w=10 or 15)
+                            iou_attention_weight = t_s_pred_ious
+
+                            iou_attention_weight *= self.pyramid_attention_factor
+
+                            attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                s_pyramid_feature_list[t_pos_inds],
+                                t_pyramid_feature_list[t_pos_inds].detach(),
+                                weight=iou_attention_weight)
+                            '''
+                            attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
+                                s_pyramid_feature_list[t_pos_inds],
+                                t_pyramid_feature_list[t_pos_inds].detach(),
+                                weight=t_s_cls_entropy)
+                            '''
                     else:
-                        attention_iou_pyramid_hint_loss = s_pyramid_feature_list[
-                            t_pos_inds].sum()
+                        if self.learn_from_each_other:
+                            student_learn_from_teacher_attention_loss = s_pyramid_feature_list[
+                                t_pos_inds].sum()
+                            teacher_learn_from_student_attention_loss = t_pyramid_feature_list[
+                                t_pos_inds].sum()
+                        else:
+                            attention_iou_pyramid_hint_loss = s_pyramid_feature_list[
+                                t_pos_inds].sum()
 
-                    loss_dict.update({
-                        'attention_iou_pyramid_hint_loss':
-                        attention_iou_pyramid_hint_loss,
-                        # 'attention_cls_pyramid_hint_loss':
-                        # attention_cls_pyramid_hint_loss
-                    })
-
-                if self.pyramid_full_attention:
-                    # Consider negative samples
-                    t_s_full_ious = bbox_overlaps(
-                        s_all_pred_bboxes, t_all_pred_bboxes,
-                        is_aligned=True).detach()
-                    t_g_full_ious = bbox_overlaps(
-                        t_all_pred_bboxes, t_gt_bboxes,
-                        is_aligned=False).detach().max(1)[0]
-                    t_s_full_cls_entropy = ce_loss(
-                        s_flatten_cls_scores.detach(),
-                        t_flatten_cls_scores.detach())
-                    t_s_full_cls_entropy = t_s_full_cls_entropy.sum(1)
-                    t_s_full_cls_entropy = t_s_full_cls_entropy - t_s_full_cls_entropy.min(
-                    ) + 1e-6
-                    t_s_full_cls_entropy /= t_s_full_cls_entropy.max()
-
-                    # iou_all_attention_weight = t_s_full_ious * t_g_full_ious
-                    iou_all_attention_weight = t_s_full_ious
-                    iou_all_attention_weight *= self.pyramid_attention_factor
-                    attention_all_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                        s_pyramid_feature_list,
-                        t_pyramid_feature_list,
-                        weight=iou_all_attention_weight)
-                    attention_all_cls_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                        s_pyramid_feature_list,
-                        t_pyramid_feature_list,
-                        weight=t_s_full_cls_entropy)
-                    loss_dict.update({
-                        'attention_all_iou_pyramid_hint_loss':
-                        attention_all_iou_pyramid_hint_loss,
-                        'attention_all_cls_pyramid_hint_loss':
-                        attention_all_cls_pyramid_hint_loss
-                    })
+                    if self.learn_from_each_other:
+                        loss_dict.update({
+                            'student_learn_from_teacher_attention_loss':
+                            student_learn_from_teacher_attention_loss,
+                            'teacher_learn_from_student_attention_loss':
+                            teacher_learn_from_student_attention_loss
+                        })
+                    else:
+                        loss_dict.update({
+                            'attention_iou_pyramid_hint_loss':
+                            attention_iou_pyramid_hint_loss,
+                            # 'attention_cls_pyramid_hint_loss':
+                            # attention_cls_pyramid_hint_loss
+                        })
 
                 if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
                     pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                        s_pyramid_feature_list, t_pyramid_feature_list)
+                        s_pyramid_feature_list,
+                        t_pyramid_feature_list.detach())
                     loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
 
             # NOTE: pri (bottom-up pyramid) 1-3 levels
@@ -1359,7 +1368,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                    0).float()
+                                 0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
