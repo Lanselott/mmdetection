@@ -70,6 +70,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  head_align_levels=[0],
                  apply_data_free_mode=False,
                  learn_from_missing_annotation=False,
+                 learn_from_each_other=False,
                  use_additional_generator=False,
                  block_wise_attention=False,
                  pyramid_wise_attention=False,
@@ -204,6 +205,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_feature_alignment = apply_feature_alignment
         self.apply_data_free_mode = apply_data_free_mode
         self.learn_from_missing_annotation = learn_from_missing_annotation
+        self.learn_from_each_other = learn_from_each_other
         self.fix_student_train_teacher = fix_student_train_teacher
         self.train_student_only = train_student_only
         self.pyramid_hint_loss = build_loss(pyramid_hint_loss)

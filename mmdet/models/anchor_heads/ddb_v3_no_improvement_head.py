@@ -404,7 +404,7 @@ class DDBV3NPHead(nn.Module):
                 sorted_ious_weights[pos_gradient_update_anti_mapping[..., 2]].
                 reshape(-1, 1), sorted_ious_weights[
                     pos_gradient_update_anti_mapping[..., 3]].reshape(-1, 1)
-            ], 1) # mapped back
+            ], 1)  # mapped back
             _bd_iou = ious_weights.reshape(-1, 1).repeat(1, 4)
             '''
             # NOTE: the grad of sorted branch is in sort order, diff from origin
@@ -417,6 +417,7 @@ class DDBV3NPHead(nn.Module):
             sorted_bbox_weight = _bd_sort_iou.mean(1)[0]
             bbox_weight = _bd_iou.mean(1)[0]
             '''
+
             # apply hook to mask origin/sort gradients
             if self.hook_debug:
                 debug_mask = torch.cat([
@@ -432,11 +433,15 @@ class DDBV3NPHead(nn.Module):
                 pos_decoded_sort_bbox_preds.register_hook(
                     lambda grad: grad * debug_mask)
             else:
+                # pos_decoded_sort_bbox_preds.register_hook(
+                #     lambda grad: grad * sort_gradient_mask)
                 pos_decoded_sort_bbox_preds.register_hook(
-                    lambda grad: grad * sort_gradient_mask)
+                    lambda grad: grad * 0)
+            # pos_decoded_bbox_preds.register_hook(
+            #     lambda grad: grad * origin_gradient_mask)
             pos_decoded_bbox_preds.register_hook(
-                lambda grad: grad * origin_gradient_mask)
-            
+                lambda grad: grad * 0)
+
             if self.box_weighted:
                 # sorted bboxes
                 loss_sorted_bbox = self.loss_sorted_bbox(
