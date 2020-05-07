@@ -879,7 +879,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             is_aligned=True).detach()
 
                         if self.ignore_low_ious:
-                            negative_inds = (((t_g_ious < 0.3) & (s_g_ious > t_g_ious)) == 1).nonzero().reshape(-1)
+                            negative_inds = (((t_g_ious < 0.2) & (s_g_ious > t_g_ious)) == 1).nonzero().reshape(-1)
                             t_s_pred_ious[negative_inds] = 0
 
                         # NOTE: Offline mode alignment requires larger weight (w=10 or 15)
