@@ -433,14 +433,14 @@ class DDBV3NPHead(nn.Module):
                 pos_decoded_sort_bbox_preds.register_hook(
                     lambda grad: grad * debug_mask)
             else:
-                # pos_decoded_sort_bbox_preds.register_hook(
-                #     lambda grad: grad * sort_gradient_mask)
                 pos_decoded_sort_bbox_preds.register_hook(
-                    lambda grad: grad * 0)
-            # pos_decoded_bbox_preds.register_hook(
-            #     lambda grad: grad * origin_gradient_mask)
+                    lambda grad: grad * sort_gradient_mask)
+                # pos_decoded_sort_bbox_preds.register_hook(
+                #     lambda grad: grad * 0)
             pos_decoded_bbox_preds.register_hook(
-                lambda grad: grad * 0)
+                lambda grad: grad * origin_gradient_mask)
+            # pos_decoded_bbox_preds.register_hook(
+            #     lambda grad: grad * 0)
 
             if self.box_weighted:
                 # sorted bboxes
