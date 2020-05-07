@@ -881,7 +881,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             t_s_pred_ious[negative_inds] = 0
 
                         # NOTE: Offline mode alignment requires larger weight (w=10 or 15)
-                        iou_attention_weight = t_s_pred_ious * t_g_ious
+                        iou_attention_weight = t_s_pred_ious
                         
                         iou_attention_weight *= self.pyramid_attention_factor
 
@@ -923,8 +923,8 @@ class FCOSTSFullMaskHead(nn.Module):
                     ) + 1e-6
                     t_s_full_cls_entropy /= t_s_full_cls_entropy.max()
 
-                    iou_all_attention_weight = t_s_full_ious * t_g_full_ious
-                    # iou_all_attention_weight = t_s_full_ious
+                    # iou_all_attention_weight = t_s_full_ious * t_g_full_ious
+                    iou_all_attention_weight = t_s_full_ious
                     iou_all_attention_weight *= self.pyramid_attention_factor
                     attention_all_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                         s_pyramid_feature_list,
