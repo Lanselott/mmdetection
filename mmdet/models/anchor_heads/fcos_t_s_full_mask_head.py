@@ -938,9 +938,9 @@ class FCOSTSFullMaskHead(nn.Module):
                             assert self.ignore_low_ious == False
                             # Online learning with learn from each other
                             student_zero_inds = (
-                                (s_g_ious < t_g_ious) & (t_g_ious < 0.5)).nonzero().reshape(-1)
+                                (s_g_ious < t_g_ious) & (t_g_ious < 0.7)).nonzero().reshape(-1)
                             teacher_zero_inds = (
-                                (s_g_ious > t_g_ious) & (s_g_ious < 0.5)).nonzero().reshape(-1)
+                                (s_g_ious > t_g_ious) & (s_g_ious < 0.7)).nonzero().reshape(-1)
                             student_weight = bbox_overlaps(
                                 s_pred_bboxes, t_pred_bboxes,
                                 is_aligned=True).detach()
