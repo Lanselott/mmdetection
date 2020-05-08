@@ -430,15 +430,26 @@ class DDBV3NPHead(nn.Module):
                     sort_gradient_mask[pos_gradient_update_mapping[..., 3], 3].
                     reshape(-1, 1)
                 ], 1)
-                pos_decoded_sort_bbox_preds.register_hook(
-                    lambda grad: grad * debug_mask)
+
+                if self.weighted_mask:
+                    pos_decoded_sort_bbox_preds.register_hook(
+                        lambda grad: grad * debug_mask * sorted_ious_weights.
+                        view(-1, 1))
+                else:
+                    pos_decoded_sort_bbox_preds.register_hook(
+                        lambda grad: grad * debug_mask)
             else:
                 pos_decoded_sort_bbox_preds.register_hook(
                     lambda grad: grad * sort_gradient_mask)
                 # pos_decoded_sort_bbox_preds.register_hook(
                 #     lambda grad: grad * 0)
-            pos_decoded_bbox_preds.register_hook(
-                lambda grad: grad * origin_gradient_mask)
+            if self.weighted_mask:
+                pos_decoded_bbox_preds.register_hook(
+                    lambda grad: grad * origin_gradient_mask * ious_weights.
+                    view(-1, 1))
+            else:
+                pos_decoded_bbox_preds.register_hook(
+                    lambda grad: grad * origin_gradient_mask)
             # pos_decoded_bbox_preds.register_hook(
             #     lambda grad: grad * 0)
 
