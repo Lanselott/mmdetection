@@ -34,6 +34,7 @@ model = dict(
         consistency_weight=False,
         hook_debug=True,
         box_weighted=True,
+        weighted_mask=True,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
