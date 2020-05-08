@@ -1002,10 +1002,11 @@ class FCOSTSFullMaskHead(nn.Module):
                         })
 
                 if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
-                    pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                        s_channel_increase_pyramid_feature_list,
-                        t_pyramid_feature_list.detach())
-                    loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
+                    if not self.learn_from_each_other:
+                        pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                            s_channel_increase_pyramid_feature_list,
+                            t_pyramid_feature_list.detach())
+                        loss_dict.update({'pyramid_hint_loss': pyramid_hint_loss})
 
             # NOTE: pri (bottom-up pyramid) 1-3 levels
             if self.apply_pri_pyramid_wise_alignment:
