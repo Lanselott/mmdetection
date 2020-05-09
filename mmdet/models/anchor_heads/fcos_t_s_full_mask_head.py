@@ -705,7 +705,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     s_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
 
                 if self.inner_opt:
-                    self.inner_itr = 10
+                    self.inner_itr = 4
                 else:
                     self.inner_itr = 1
 
@@ -894,7 +894,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                         0] - attention_pyramid_grad[
                                             0] * self.inner_lr
 
-                if self.pyramid_wise_attention and not self.inner_opt:
+                if self.pyramid_wise_attention:
                     loss_dict.update({
                         'attention_iou_pyramid_hint_loss':
                         attention_iou_pyramid_hint_loss,
