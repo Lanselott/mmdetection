@@ -464,7 +464,7 @@ class DDBV3NPHead(nn.Module):
                 loss_bbox = self.loss_bbox(
                     pos_decoded_bbox_preds,
                     pos_decoded_target_preds,
-                    weight=ious_weights,
+                    # weight=ious_weights,
                     avg_factor=ious_weights.sum())
             else:
                 # sorted bboxes

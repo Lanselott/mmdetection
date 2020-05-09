@@ -951,9 +951,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 # affinity_size = t_pos_inds.shape[0]
                 t_affinity_list = []
                 s_affinity_list = []
-                t_boxes_quality = bbox_overlaps(
-                    t_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
-
+                
                 # affinity_size = 50
                 # if affinity_size > len(t_pos_inds):
                 affinity_size = len(t_pos_inds)
