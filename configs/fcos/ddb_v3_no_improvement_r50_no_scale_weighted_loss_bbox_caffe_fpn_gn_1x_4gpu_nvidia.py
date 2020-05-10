@@ -26,19 +26,15 @@ model = dict(
         stacked_convs=4,
         feat_channels=256,
         strides=[8, 16, 32, 64, 128],
-        apply_conditional_consistency_on_regression=True,
+        apply_conditional_consistency_on_regression=False,
         mask_origin_bbox_loss=False,
-        iou_delta=0.0,
-        apply_iou_cache=False,
         origin_bbox_loss_downgrade=False,
-        mask_sort=False,
-        weighted_mask=True,
+        iou_delta = 0,
+        apply_iou_cache=False,
         consistency_weight=False,
         box_weighted=True,
         no_scale=True,
-        stable_noise=False,
         hook_debug=True,
-        apply_cls_awareness=False,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
@@ -47,8 +43,8 @@ model = dict(
             loss_weight=1.0),
         loss_bbox=dict(type='IoULoss', loss_weight=1.0),
         loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),
+        bd_threshold=0.0,
         norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
-        # norm_cfg=dict(type='BN', requires_grad=True),
         loss_dist_scores=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_centerness=dict(
@@ -68,12 +64,11 @@ test_cfg = dict(
     nms_pre=1000,
     min_bbox_size=0,
     score_thr=0.05,
-    nms=dict(type='nms', iou_thr=0.6),
-    # nms=dict(type='nms_v2', iou_thr=0.5, c_thr=0.95),
-    max_per_img=1000)
+    nms=dict(type='nms', iou_thr=0.5),
+    max_per_img=100)
 # dataset settings
 dataset_type = 'CocoDataset'
-data_root = 'data/2017/'
+data_root = '/coco/data/2017/'
 img_norm_cfg = dict(
     mean=[102.9801, 115.9465, 122.7717], std=[1.0, 1.0, 1.0], to_rgb=False)
 train_pipeline = [
@@ -107,22 +102,22 @@ data = dict(
     train=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_train2017.json',
-        img_prefix=data_root + 'train2017/',
+        img_prefix=data_root + 'images/train2017/',
         pipeline=train_pipeline),
     val=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'val2017/',
+        img_prefix=data_root + 'images/val2017/',
         pipeline=test_pipeline),
     test=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'val2017/',
+        img_prefix=data_root + 'images/val2017/',
         pipeline=test_pipeline))
 # optimizer
 optimizer = dict(
     type='SGD',
-    lr=0.0025,
+    lr=0.01,
     momentum=0.9,
     weight_decay=0.0001,
     paramwise_options=dict(bias_lr_mult=2., bias_decay_mult=0.))
@@ -130,7 +125,7 @@ optimizer_config = dict(grad_clip=None)
 # learning policy
 lr_config = dict(
     policy='step',
-    warmup='linear',
+    warmup='constant',
     warmup_iters=500,
     warmup_ratio=1.0 / 3,
     step=[8, 11])
@@ -149,5 +144,5 @@ dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
 load_from = None
-resume_from = None #'./work/dirs/ddb_v3_no_improvement_single/epoch_11.pth'
+resume_from = None
 workflow = [('train', 1)]

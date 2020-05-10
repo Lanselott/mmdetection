@@ -33,6 +33,7 @@ class DDBV3NPHead(nn.Module):
                  weighted_mask=False,
                  consistency_weight=False,
                  box_weighted=False,
+                 no_scale=False,
                  stable_noise=False,
                  apply_cls_awareness=False,
                  loss_cls=dict(
@@ -71,6 +72,7 @@ class DDBV3NPHead(nn.Module):
         self.weighted_mask = weighted_mask
         self.consistency_weight = consistency_weight
         self.box_weighted = box_weighted
+        self.no_scale = no_scale
         self.stable_noise = stable_noise
         self.apply_cls_awareness = apply_cls_awareness
         self.loss_cls = build_loss(loss_cls)
@@ -116,7 +118,7 @@ class DDBV3NPHead(nn.Module):
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
-
+        
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
     def init_weights(self):
@@ -147,7 +149,10 @@ class DDBV3NPHead(nn.Module):
 
         # trick: centerness to reg branch
         centerness = self.fcos_centerness(reg_feat)
-        bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
+        if self.no_scale:
+            bbox_pred = self.fcos_reg(reg_feat).float().exp()
+        else:
+            bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
 
         return cls_score, bbox_pred, centerness
 
