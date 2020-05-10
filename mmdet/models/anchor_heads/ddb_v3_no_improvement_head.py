@@ -334,8 +334,10 @@ class DDBV3NPHead(nn.Module):
                 reduced_mask]] = 0  # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
             saved_target_mask = masks_for_all.nonzero().reshape(-1)
             pos_centerness = pos_centerness[saved_target_mask].reshape(-1)
-            pos_bd_centerness = pos_bd_centerness[saved_target_mask].reshape(
-                -1, 4)
+            
+            if self.apply_boundary_centerness:
+                pos_bd_centerness = pos_bd_centerness[
+                    saved_target_mask].reshape(-1, 4)
             '''
             consistency between regression and classification
             '''
