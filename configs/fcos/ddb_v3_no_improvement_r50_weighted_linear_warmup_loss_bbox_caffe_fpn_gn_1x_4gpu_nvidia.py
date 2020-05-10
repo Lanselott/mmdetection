@@ -32,7 +32,7 @@ model = dict(
         iou_delta = 0,
         apply_iou_cache=False,
         consistency_weight=False,
-        box_weighted=False,
+        box_weighted=True,
         hook_debug=True,
         loss_cls=dict(
             type='FocalLoss',
@@ -124,9 +124,9 @@ optimizer_config = dict(grad_clip=None)
 # learning policy
 lr_config = dict(
     policy='step',
-    warmup='linear',
+    warmup='constant',
     warmup_iters=100,
-    warmup_ratio=1.0 / 3,
+    warmup_ratio=1.0,
     step=[8, 11])
 checkpoint_config = dict(interval=1)
 # yapf:disable
