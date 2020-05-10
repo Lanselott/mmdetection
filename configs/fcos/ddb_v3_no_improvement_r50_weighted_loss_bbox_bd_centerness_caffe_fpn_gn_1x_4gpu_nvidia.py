@@ -34,14 +34,15 @@ model = dict(
         consistency_weight=False,
         box_weighted=True,
         hook_debug=True,
+        apply_boundary_centerness=True,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
-        loss_bbox=dict(type='GIoULoss', loss_weight=1.0),
-        loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
+        loss_bbox=dict(type='IoULoss', loss_weight=1.0),
+        loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),
         bd_threshold=0.0,
         norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
         loss_dist_scores=dict(
@@ -125,7 +126,7 @@ optimizer_config = dict(grad_clip=None)
 lr_config = dict(
     policy='step',
     warmup='constant',
-    warmup_iters=100,
+    warmup_iters=500,
     warmup_ratio=1.0 / 3,
     step=[8, 11])
 checkpoint_config = dict(interval=1)

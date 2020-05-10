@@ -35,6 +35,7 @@ class DDBV3NPHead(nn.Module):
                  box_weighted=False,
                  no_scale=False,
                  stable_noise=False,
+                 apply_boundary_centerness=False,
                  apply_cls_awareness=False,
                  loss_cls=dict(
                      type='FocalLoss',
@@ -74,6 +75,7 @@ class DDBV3NPHead(nn.Module):
         self.box_weighted = box_weighted
         self.no_scale = no_scale
         self.stable_noise = stable_noise
+        self.apply_boundary_centerness = apply_boundary_centerness
         self.apply_cls_awareness = apply_cls_awareness
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
@@ -118,7 +120,10 @@ class DDBV3NPHead(nn.Module):
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
-        
+
+        if self.apply_boundary_centerness:
+            self.bd_centerness = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
+
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
     def init_weights(self):
@@ -131,6 +136,9 @@ class DDBV3NPHead(nn.Module):
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
         normal_init(self.fcos_centerness, std=0.01)
+
+        if self.apply_boundary_centerness:
+            normal_init(self.bd_centerness, std=0.01)
 
     def forward(self, feats):
         return multi_apply(self.forward_single, feats, self.scales)
@@ -149,12 +157,19 @@ class DDBV3NPHead(nn.Module):
 
         # trick: centerness to reg branch
         centerness = self.fcos_centerness(reg_feat)
+
+        if self.apply_boundary_centerness:
+            bd_centerness = self.bd_centerness(reg_feat)
+
         if self.no_scale:
             bbox_pred = self.fcos_reg(reg_feat).float().exp()
         else:
             bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
 
-        return cls_score, bbox_pred, centerness
+        if self.apply_boundary_centerness:
+            return cls_score, bbox_pred, centerness, bd_centerness
+        else:
+            return cls_score, bbox_pred, centerness, None
 
     # def regression_hook()
 
@@ -162,6 +177,7 @@ class DDBV3NPHead(nn.Module):
              cls_scores,
              bbox_preds,
              centernesses,
+             bd_centernesses,
              gt_bboxes,
              gt_labels,
              img_metas,
@@ -195,6 +211,12 @@ class DDBV3NPHead(nn.Module):
             centerness.permute(0, 2, 3, 1).reshape(-1)
             for centerness in centernesses
         ]
+        if self.apply_boundary_centerness:
+            flatten_bd_centerness = [
+                bd_centerness.permute(0, 2, 3, 1).reshape(-1, 4)
+                for bd_centerness in bd_centernesses
+            ]
+            flatten_bd_centerness = torch.cat(flatten_bd_centerness)
 
         flatten_cls_scores = torch.cat(flatten_cls_scores)
         flatten_bbox_preds = torch.cat(flatten_bbox_preds)
@@ -218,6 +240,9 @@ class DDBV3NPHead(nn.Module):
 
         pos_centerness = flatten_centerness[pos_inds]
         pos_labels = flatten_labels[pos_inds]
+
+        if self.apply_boundary_centerness:
+            pos_bd_centerness = flatten_bd_centerness[pos_inds]
         '''
         # BUG: do not use
         for id in range(1, len(pos_labels)):
@@ -309,6 +334,8 @@ class DDBV3NPHead(nn.Module):
                 reduced_mask]] = 0  # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
             saved_target_mask = masks_for_all.nonzero().reshape(-1)
             pos_centerness = pos_centerness[saved_target_mask].reshape(-1)
+            pos_bd_centerness = pos_bd_centerness[saved_target_mask].reshape(
+                -1, 4)
             '''
             consistency between regression and classification
             '''
@@ -486,17 +513,31 @@ class DDBV3NPHead(nn.Module):
 
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
+            if self.apply_boundary_centerness:
+                loss_bd_centerness = self.loss_centerness(
+                    pos_bd_centerness, torch.max(_bd_sort_iou, _bd_iou))
 
         else:
             loss_sorted_bbox = pos_bbox_preds.sum()
             loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
 
-        return dict(
-            loss_cls=loss_cls,
-            loss_bbox=loss_bbox,
-            loss_sorted_bbox=loss_sorted_bbox,
-            loss_centerness=loss_centerness)
+            if self.apply_boundary_centerness:
+                loss_bd_centerness = pos_bd_centerness.sum()
+
+        if self.apply_boundary_centerness:
+            return dict(
+                loss_cls=loss_cls,
+                loss_bbox=loss_bbox,
+                loss_sorted_bbox=loss_sorted_bbox,
+                loss_centerness=loss_centerness,
+                loss_bd_centerness=loss_bd_centerness)
+        else:
+            return dict(
+                loss_cls=loss_cls,
+                loss_bbox=loss_bbox,
+                loss_sorted_bbox=loss_sorted_bbox,
+                loss_centerness=loss_centerness)
 
     def get_bboxes(self,
                    cls_scores,

@@ -38,6 +38,7 @@ model = dict(
         no_scale=True,
         stable_noise=False,
         hook_debug=True,
+        apply_boundary_centerness=True,
         apply_cls_awareness=False,
         loss_cls=dict(
             type='FocalLoss',
