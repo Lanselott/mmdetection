@@ -240,10 +240,10 @@ class FCOSTSFullMaskHead(nn.Module):
             self._init_siamese()
 
         if self.inner_opt:
-            self.inner_itr = 9
+            self.inner_itr = 4
             self.inner_optimizer = optim.SGD([
                 {'params': self.t_s_pyramid_align[0].parameters()},
-            ], lr=1e-2, momentum=0.9)
+            ], lr=1e-2, momentum=0.9, weight_decay=0.0001)
         else:
             self.inner_itr = 1
 
