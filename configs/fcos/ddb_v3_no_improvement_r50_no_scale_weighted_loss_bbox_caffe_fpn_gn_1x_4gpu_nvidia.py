@@ -35,6 +35,7 @@ model = dict(
         box_weighted=True,
         no_scale=True,
         hook_debug=True,
+        sorted_warmup=1000,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,

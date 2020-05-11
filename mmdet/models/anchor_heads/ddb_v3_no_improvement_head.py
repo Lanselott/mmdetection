@@ -45,6 +45,7 @@ class DDBV3NPHead(nn.Module):
                      loss_weight=1.0),
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
                  loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),
+                 sorted_warmup=0,
                  loss_centerness=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -86,6 +87,7 @@ class DDBV3NPHead(nn.Module):
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.hook_debug = hook_debug
+        self.sorted_warmup = sorted_warmup
 
         self._init_layers()
 
@@ -334,7 +336,7 @@ class DDBV3NPHead(nn.Module):
                 reduced_mask]] = 0  # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
             saved_target_mask = masks_for_all.nonzero().reshape(-1)
             pos_centerness = pos_centerness[saved_target_mask].reshape(-1)
-            
+
             if self.apply_boundary_centerness:
                 pos_bd_centerness = pos_bd_centerness[
                     saved_target_mask].reshape(-1, 4)
@@ -535,16 +537,25 @@ class DDBV3NPHead(nn.Module):
                 loss_centerness=loss_centerness,
                 loss_bd_centerness=loss_bd_centerness)
         else:
-            return dict(
-                loss_cls=loss_cls,
-                loss_bbox=loss_bbox,
-                loss_sorted_bbox=loss_sorted_bbox,
-                loss_centerness=loss_centerness)
+            if self.sorted_warmup > 0:
+                self.sorted_warmup -= 1
+                return dict(
+                    loss_cls=loss_cls,
+                    loss_bbox=loss_bbox,
+                    # loss_sorted_bbox=loss_sorted_bbox,
+                    loss_centerness=loss_centerness)
+            else:
+                return dict(
+                    loss_cls=loss_cls,
+                    loss_bbox=loss_bbox,
+                    loss_sorted_bbox=loss_sorted_bbox,
+                    loss_centerness=loss_centerness)
 
     def get_bboxes(self,
                    cls_scores,
                    bbox_preds,
                    centernesses,
+                   bd_centernesses,
                    img_metas,
                    cfg,
                    rescale=None):
