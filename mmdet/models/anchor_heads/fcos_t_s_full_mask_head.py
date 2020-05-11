@@ -9,6 +9,7 @@ from ..registry import HEADS
 from ..utils import ConvModule, Scale, bias_init_with_prob
 import torch.autograd as autograd
 from torch.autograd import Variable
+from torch import optim
 from IPython import embed
 INF = 1e8
 
@@ -231,12 +232,20 @@ class FCOSTSFullMaskHead(nn.Module):
         self.epoch_counter = 0
         self.fp16_enabled = False
         self.inner_opt = inner_opt
-        self.inner_lr = 0.001
+        self.inner_lr = 0.01
         self._init_teacher_layers()
         self._init_student_layers()
 
         if self.siamese_distill:
             self._init_siamese()
+
+        if self.inner_opt:
+            self.inner_itr = 9
+            self.inner_optimizer = optim.SGD([
+                {'params': self.t_s_pyramid_align[0].parameters()},
+            ], lr=1e-2, momentum=0.9)
+        else:
+            self.inner_itr = 1
 
     def _init_siamese(self):
         self.t_s_siamese_align = nn.ModuleList()
@@ -704,13 +713,9 @@ class FCOSTSFullMaskHead(nn.Module):
                 s_g_ious = bbox_overlaps(
                     s_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
 
-                if self.inner_opt:
-                    self.inner_itr = 4
-                else:
-                    self.inner_itr = 1
-
                 for _ in range(self.inner_itr):
                     s_pyramid_feature_list = []
+                    inner_s_channel_increase_pyramid_feature_list = []
                     t_pyramid_feature_list = []
                     s_channel_increase_pyramid_feature_list = []
                     t_channel_decrease_pyramid_feature_list = []
@@ -738,6 +743,9 @@ class FCOSTSFullMaskHead(nn.Module):
                             for t_s_pyramid_align_conv in self.t_s_pyramid_align:
                                 s_pyramid_feature = t_s_pyramid_align_conv(
                                     s_pyramid_feature)
+                                if self.inner_opt:
+                                    inner_s_pyramid_feature = t_s_pyramid_align_conv(
+                                        pyramid_hint_pair[0].detach())
 
                             if self.learn_from_each_other:
                                 for s_t_pyramid_align_conv in self.s_t_pyramid_align:
@@ -755,6 +763,11 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_channel_increase_pyramid_feature_list.append(
                             s_pyramid_feature.permute(0, 2, 3, 1).reshape(
                                 -1, self.feat_channels))
+                        if self.inner_opt:
+                            inner_s_channel_increase_pyramid_feature_list.append(
+                                inner_s_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                                    -1, self.feat_channels))
+
                         if self.learn_from_each_other:
                             t_channel_decrease_pyramid_feature_list.append(
                                 t_channel_decrease_pyramid_feature.permute(
@@ -768,6 +781,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
                     s_channel_increase_pyramid_feature_list = torch.cat(
                         s_channel_increase_pyramid_feature_list)
+                    if self.inner_opt:
+                        inner_s_channel_increase_pyramid_feature_list = torch.cat(
+                            inner_s_channel_increase_pyramid_feature_list)
 
                     if self.learn_from_each_other:
                         t_channel_decrease_pyramid_feature_list = torch.cat(
@@ -870,29 +886,21 @@ class FCOSTSFullMaskHead(nn.Module):
                             })
                         else:
                             if self.inner_opt:
-                                pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                    s_channel_increase_pyramid_feature_list,
-                                    t_pyramid_feature_list.detach())
-                                for pyramid_hint_pair in pyramid_hint_pairs:
-                                    attention_pyramid_grad = torch.autograd.grad(
-                                        inputs=pyramid_hint_pair[
-                                            0],  # origin student pyramid feature
-                                        outputs=attention_iou_pyramid_hint_loss,
-                                        only_inputs=True,
-                                        create_graph=True,
-                                        # allow_unused=True,
-                                    )
-                                    # pyramid_grad = torch.autograd.grad(
-                                    #     inputs=pyramid_hint_pair[0], # origin student pyramid feature
-                                    #     outputs=pyramid_hint_loss,
-                                    #     only_inputs=True,
-                                    #     create_graph=True,
-                                    #     # allow_unused=True,
-                                    # )
-                                    # pyramid_hint_pair[0] = pyramid_hint_pair[0] - pyramid_grad[0] * self.inner_lr
-                                    pyramid_hint_pair[0] = pyramid_hint_pair[
-                                        0] - attention_pyramid_grad[
-                                            0] * self.inner_lr
+                                # NOTE: Only train the alignment network
+                                self.inner_optimizer.zero_grad()
+                                self.t_s_pyramid_align[0].zero_grad()
+                                inner_pyramid_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                    inner_s_channel_increase_pyramid_feature_list[
+                                        t_pos_inds],
+                                    t_pyramid_feature_list[t_pos_inds].detach(
+                                    ),
+                                    weight=iou_attention_weight,
+                                    avg_factor=iou_attention_weight.sum())
+                                inner_pyramid_attention_loss.backward(
+                                    retain_graph=True)
+                                self.inner_optimizer.step()
+                                # print("alignment layer weight:", self.t_s_pyramid_align[0].weight.sum())
+                                # print("input sum:", pyramid_hint_pairs[0][0].sum())
 
                 if self.pyramid_wise_attention:
                     loss_dict.update({
@@ -951,7 +959,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 # affinity_size = t_pos_inds.shape[0]
                 t_affinity_list = []
                 s_affinity_list = []
-                
+
                 # affinity_size = 50
                 # if affinity_size > len(t_pos_inds):
                 affinity_size = len(t_pos_inds)
@@ -1320,7 +1328,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                                 0).float()
+                    0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
