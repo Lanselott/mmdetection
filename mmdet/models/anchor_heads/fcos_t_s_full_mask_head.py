@@ -251,9 +251,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     'params': self.t_s_pyramid_align.parameters()
                 },
             ],
-                lr=1e-2,
-                momentum=0.9,
-                weight_decay=0.0001)
+                                             lr=1e-2,
+                                             momentum=0.9,
+                                             weight_decay=0.0001)
             self.inner_step = 0
         else:
             self.inner_itr = 1
@@ -399,12 +399,24 @@ class FCOSTSFullMaskHead(nn.Module):
                             3,
                             padding=1))
                 else:
-                    self.t_s_pyramid_align.append(
-                        nn.Conv2d(
-                            self.s_feat_channels + channel_delta * i,
-                            self.s_feat_channels + channel_delta * (i + 1),
-                            3,
-                            padding=1))
+                    if self.inner_opt:
+                        self.t_s_pyramid_align.append(
+                            ConvModule(
+                                self.s_feat_channels + channel_delta * i,
+                                self.s_feat_channels + channel_delta * (i + 1),
+                                3,
+                                stride=1,
+                                padding=1,
+                                conv_cfg=self.conv_cfg,
+                                norm_cfg=self.norm_cfg,
+                                bias=self.norm_cfg is None))
+                    else:
+                        self.t_s_pyramid_align.append(
+                            nn.Conv2d(
+                                self.s_feat_channels + channel_delta * i,
+                                self.s_feat_channels + channel_delta * (i + 1),
+                                3,
+                                padding=1))
 
                 if self.learn_from_each_other:
                     self.s_t_pyramid_align.append(
@@ -482,8 +494,12 @@ class FCOSTSFullMaskHead(nn.Module):
                 for align_conv in self.t_s_reg_pyramid_align:
                     normal_init(align_conv, std=0.01)
             else:
-                for align_conv in self.t_s_pyramid_align:
-                    normal_init(align_conv, std=0.01)
+                if self.inner_opt:
+                    for m in self.t_s_pyramid_align:
+                        normal_init(m.conv, std=0.01)
+                else:
+                    for align_conv in self.t_s_pyramid_align:
+                        normal_init(align_conv, std=0.01)
 
             if self.learn_from_each_other:
                 for align_conv in self.s_t_pyramid_align:
@@ -1002,8 +1018,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                     inner_pyramid_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
                                         inner_s_channel_increase_pyramid_feature_list[
                                             t_pos_inds],
-                                        t_pyramid_feature_list[t_pos_inds].detach(
-                                        ),
+                                        t_pyramid_feature_list[t_pos_inds].
+                                        detach(),
                                         weight=iou_attention_weight,
                                         avg_factor=iou_attention_weight.sum())
 
@@ -1464,7 +1480,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                    0).float()
+                                 0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
