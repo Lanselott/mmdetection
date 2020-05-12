@@ -10,6 +10,8 @@ from ..utils import ConvModule, Scale, bias_init_with_prob
 import torch.autograd as autograd
 from torch.autograd import Variable
 from torch import optim
+
+import math
 from IPython import embed
 INF = 1e8
 
@@ -243,14 +245,16 @@ class FCOSTSFullMaskHead(nn.Module):
 
         if self.inner_opt:
             self.inner_itr = 4
+
             self.inner_optimizer = optim.SGD([
                 {
-                    'params': self.t_s_pyramid_align[0].parameters()
+                    'params': self.t_s_pyramid_align.parameters()
                 },
             ],
-                                             lr=1e-2,
-                                             momentum=0.9,
-                                             weight_decay=0.0001)
+                lr=1e-2,
+                momentum=0.9,
+                weight_decay=0.0001)
+            self.inner_step = 0
         else:
             self.inner_itr = 1
 
@@ -755,6 +759,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
                         s_pyramid_feature = pyramid_hint_pair[0]
+                        inner_s_pyramid_feature = pyramid_hint_pair[0].detach()
                         t_pyramid_feature = pyramid_hint_pair[1]
                         if self.spatial_ratio > 1:
                             if self.pyramid_decoupling:
@@ -805,7 +810,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                         s_pyramid_feature)
                                     if self.inner_opt:
                                         inner_s_pyramid_feature = t_s_pyramid_align_conv(
-                                            pyramid_hint_pair[0].detach())
+                                            inner_s_pyramid_feature)
 
                             if self.learn_from_each_other:
                                 for s_t_pyramid_align_conv in self.s_t_pyramid_align:
@@ -870,7 +875,8 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     if self.pyramid_wise_attention:
                         # FIXME: Pyramid attention should be merge to pyramid alignement loss,
-                        assert self.learn_from_each_other != self.pyramid_decoupling
+                        if self.pyramid_decoupling:
+                            assert self.learn_from_each_other != self.pyramid_decoupling
                         if len(t_pos_inds) != 0:
                             t_pred_cls = t_flatten_cls_scores.max(1)[1]
                             s_pred_cls = s_flatten_cls_scores.max(1)[1]
@@ -987,6 +993,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             })
                         else:
                             if self.inner_opt:
+                                self.inner_step += 1
                                 # NOTE: Only train the alignment network
                                 self.inner_optimizer.zero_grad()
                                 self.t_s_pyramid_align[0].zero_grad()
@@ -997,9 +1004,17 @@ class FCOSTSFullMaskHead(nn.Module):
                                     ),
                                     weight=iou_attention_weight,
                                     avg_factor=iou_attention_weight.sum())
+                                self.inner_itr = math.floor(
+                                    t_g_ious.mean() * 10) + 1
+
                                 inner_pyramid_attention_loss.backward(
                                     retain_graph=True)
                                 self.inner_optimizer.step()
+
+                                if self.inner_step == 8 * 7330:
+                                    for g in self.inner_optimizer.param_groups:
+                                        g['lr'] = 0.001
+
                                 # print("alignment layer weight:", self.t_s_pyramid_align[0].weight.sum())
                                 # print("input sum:", pyramid_hint_pairs[0][0].sum())
 
@@ -1452,7 +1467,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                                 0).float()
+                    0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
