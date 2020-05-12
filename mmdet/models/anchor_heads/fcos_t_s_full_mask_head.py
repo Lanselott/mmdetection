@@ -734,9 +734,6 @@ class FCOSTSFullMaskHead(nn.Module):
                 if self.freeze_teacher:
                     pyramid_lambda = 10
                 else:
-                    # self.epoch_counter += 1
-                    # pyramid_lambda = 1 + int(
-                    #     (float(self.epoch_counter) / (58633 / 16)) / 15.0)
                     pyramid_lambda = 1
 
                 discrim_loss_list = []
@@ -994,29 +991,29 @@ class FCOSTSFullMaskHead(nn.Module):
                         else:
                             if self.inner_opt:
                                 self.inner_step += 1
-                                # NOTE: Only train the alignment network
-                                self.inner_optimizer.zero_grad()
-                                self.t_s_pyramid_align[0].zero_grad()
-                                inner_pyramid_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                    inner_s_channel_increase_pyramid_feature_list[
-                                        t_pos_inds],
-                                    t_pyramid_feature_list[t_pos_inds].detach(
-                                    ),
-                                    weight=iou_attention_weight,
-                                    avg_factor=iou_attention_weight.sum())
+
                                 self.inner_itr = math.floor(
                                     t_g_ious.mean() * 10) + 1
+                                if self.inner_itr > 1:
+                                    # NOTE: Only train the alignment network
+                                    self.inner_optimizer.zero_grad()
+                                    self.t_s_pyramid_align[0].zero_grad()
+                                    inner_pyramid_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                        inner_s_channel_increase_pyramid_feature_list[
+                                            t_pos_inds],
+                                        t_pyramid_feature_list[t_pos_inds].detach(
+                                        ),
+                                        weight=iou_attention_weight,
+                                        avg_factor=iou_attention_weight.sum())
 
-                                inner_pyramid_attention_loss.backward(
-                                    retain_graph=True)
-                                self.inner_optimizer.step()
-
+                                    inner_pyramid_attention_loss.backward(
+                                        retain_graph=True)
+                                    self.inner_optimizer.step()
+                                    print("inner_pyramid_attention_loss:",
+                                          inner_pyramid_attention_loss)
                                 if self.inner_step == 8 * 7330:
                                     for g in self.inner_optimizer.param_groups:
                                         g['lr'] = 0.001
-
-                                # print("alignment layer weight:", self.t_s_pyramid_align[0].weight.sum())
-                                # print("input sum:", pyramid_hint_pairs[0][0].sum())
 
                 if self.pyramid_wise_attention:
                     if self.pyramid_decoupling:
