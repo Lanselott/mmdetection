@@ -35,7 +35,7 @@ model = dict(
         box_weighted=True,
         no_scale=False,
         hook_debug=True,
-        sorted_warmup=1000,
+        sorted_warmup=1500,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
@@ -62,7 +62,7 @@ train_cfg = dict(
     pos_weight=-1,
     debug=False)
 test_cfg = dict(
-    nms_pre=1000,
+    nms_pre=1500,
     min_bbox_size=0,
     score_thr=0.05,
     nms=dict(type='nms', iou_thr=0.5),
