@@ -997,7 +997,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                 if self.inner_itr > 1:
                                     # NOTE: Only train the alignment network
                                     self.inner_optimizer.zero_grad()
-                                    self.t_s_pyramid_align[0].zero_grad()
+                                    self.t_s_pyramid_align.zero_grad()
+
                                     inner_pyramid_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
                                         inner_s_channel_increase_pyramid_feature_list[
                                             t_pos_inds],
@@ -1009,8 +1010,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                     inner_pyramid_attention_loss.backward(
                                         retain_graph=True)
                                     self.inner_optimizer.step()
-                                    print("inner_pyramid_attention_loss:",
-                                          inner_pyramid_attention_loss)
+
                                 if self.inner_step == 8 * 7330:
                                     for g in self.inner_optimizer.param_groups:
                                         g['lr'] = 0.001
