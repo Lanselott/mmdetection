@@ -994,7 +994,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                                 self.inner_itr = math.floor(
                                     t_g_ious.mean() * 10) + 1
-                                if self.inner_itr > 1:
+                                if self.inner_itr > 5:
                                     # NOTE: Only train the alignment network
                                     self.inner_optimizer.zero_grad()
                                     self.t_s_pyramid_align.zero_grad()
