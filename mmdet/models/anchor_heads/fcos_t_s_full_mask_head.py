@@ -381,6 +381,10 @@ class FCOSTSFullMaskHead(nn.Module):
             self.s_t_pyramid_align = nn.ModuleList()
 
         if self.apply_pyramid_wise_alignment or self.pyramid_correlation:
+            if self.inner_opt:
+                self.inner_opt_head = nn.Conv2d(
+                    self.feat_channels, self.feat_channels, 3, padding=1)
+
             for i in range(self.multi_levels):
                 channel_delta = (self.feat_channels -
                                  self.s_feat_channels) // self.multi_levels
@@ -497,6 +501,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 if self.inner_opt:
                     for m in self.t_s_pyramid_align:
                         normal_init(m.conv, std=0.01)
+                    normal_init(self.inner_opt_head, std=0.01)
                 else:
                     for align_conv in self.t_s_pyramid_align:
                         normal_init(align_conv, std=0.01)
@@ -824,6 +829,9 @@ class FCOSTSFullMaskHead(nn.Module):
                                     if self.inner_opt:
                                         inner_s_pyramid_feature = t_s_pyramid_align_conv(
                                             inner_s_pyramid_feature)
+                                if self.inner_opt:
+                                    inner_s_pyramid_feature = self.inner_opt_head(
+                                        inner_s_pyramid_feature)
 
                             if self.learn_from_each_other:
                                 for s_t_pyramid_align_conv in self.s_t_pyramid_align:

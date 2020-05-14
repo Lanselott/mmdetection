@@ -4,6 +4,7 @@ PYRAMID_ALIGN = True
 HEAD_ALIGN = False
 FREEZE_TEACHER = False
 RATIO = 2
+GOOD_INITIAL = True
 model = dict(
     type='FCOSTS',
     pretrained='open-mmlab://resnet50_caffe',
@@ -18,7 +19,8 @@ model = dict(
         style='caffe',
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
         apply_block_wise_alignment=BLOCK_ALIGN,
-        freeze_teacher=FREEZE_TEACHER),
+        freeze_teacher=FREEZE_TEACHER,
+        good_initial=GOOD_INITIAL),
     neck=dict(
         type='FPNTS',
         in_channels=[256, 512, 1024, 2048],
