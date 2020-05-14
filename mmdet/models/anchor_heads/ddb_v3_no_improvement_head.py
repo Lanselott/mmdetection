@@ -46,6 +46,8 @@ class DDBV3NPHead(nn.Module):
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
                  loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),
                  sorted_warmup=0,
+                 box_sampling=False,
+                 box_num=1,
                  loss_centerness=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -75,6 +77,8 @@ class DDBV3NPHead(nn.Module):
         self.consistency_weight = consistency_weight
         self.box_weighted = box_weighted
         self.no_scale = no_scale
+        self.box_sampling = box_sampling
+        self.box_num = box_num
         self.stable_noise = stable_noise
         self.apply_boundary_centerness = apply_boundary_centerness
         self.apply_cls_awareness = apply_cls_awareness
@@ -120,7 +124,13 @@ class DDBV3NPHead(nn.Module):
 
         self.fcos_cls = nn.Conv2d(
             self.feat_channels, self.cls_out_channels, 3, padding=1)
-        self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
+        if self.box_sampling:
+            assert self.box_num > 1
+        else:
+            assert self.box_num == 1
+
+        self.fcos_reg = nn.Conv2d(
+            self.feat_channels, 4 * self.box_num, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
 
         if self.apply_boundary_centerness:
@@ -205,10 +215,9 @@ class DDBV3NPHead(nn.Module):
             for cls_score in cls_scores
         ]
         flatten_bbox_preds = [
-            bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
+            bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4 * self.box_num)
             for bbox_pred in bbox_preds
         ]
-
         flatten_centerness = [
             centerness.permute(0, 2, 3, 1).reshape(-1)
             for centerness in centernesses
@@ -238,23 +247,13 @@ class DDBV3NPHead(nn.Module):
         pos_bbox_preds = flatten_bbox_preds[pos_inds]
         pos_bbox_targets = flatten_bbox_targets[pos_inds]
         pos_bbox_strided_targets = flatten_bbox_strided_targets[pos_inds]
-        pos_bbox_strides = flatten_bbox_strides[pos_inds]
+        # pos_bbox_strides = flatten_bbox_strides[pos_inds]
 
         pos_centerness = flatten_centerness[pos_inds]
         pos_labels = flatten_labels[pos_inds]
 
         if self.apply_boundary_centerness:
             pos_bd_centerness = flatten_bd_centerness[pos_inds]
-        '''
-        # BUG: do not use
-        for id in range(1, len(pos_labels)):
-            if pos_labels[id] == pos_labels[id-1]:
-                instance_counter[id] = start_id
-            else:
-                start_id += 1
-                instance_counter[id] = start_id
-        instance_counter = instance_counter.int()
-        '''
 
         if num_pos > 0:
             pos_points = flatten_points[pos_inds]
@@ -262,13 +261,33 @@ class DDBV3NPHead(nn.Module):
             NOTE: 
             Strided box and Origin box
             '''
-            pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
-            pos_decoded_target_preds = distance2bbox(pos_points,
-                                                     pos_bbox_targets)
-            pos_centerness_targets = bbox_overlaps(
-                pos_decoded_bbox_preds.clone().detach(),
-                pos_decoded_target_preds,
-                is_aligned=True)
+            if self.box_sampling:
+                pos_bbox_preds = pos_bbox_preds.reshape(-1, 4)
+                pos_decoded_bbox_preds = []
+                pos_points = pos_points.expand(self.box_num, -1,
+                                               2).reshape(-1, 2)
+                pos_decoded_bbox_preds.append(
+                    distance2bbox(pos_points, pos_bbox_preds))
+                pos_decoded_bbox_preds = torch.cat(pos_decoded_bbox_preds)
+                pos_bbox_targets = pos_bbox_targets.expand(
+                    self.box_num, -1, 4).reshape(-1, 4)
+                pos_decoded_target_preds = distance2bbox(
+                    pos_points, pos_bbox_targets)
+                pos_centerness_targets = bbox_overlaps(
+                    pos_decoded_bbox_preds.clone().detach(),
+                    pos_decoded_target_preds,
+                    is_aligned=True)
+                pos_centerness = pos_centerness.expand(self.box_num,
+                                                       -1).reshape(-1)
+            else:
+                pos_decoded_bbox_preds = distance2bbox(pos_points,
+                                                       pos_bbox_preds)
+                pos_decoded_target_preds = distance2bbox(
+                    pos_points, pos_bbox_targets)
+                pos_centerness_targets = bbox_overlaps(
+                    pos_decoded_bbox_preds.clone().detach(),
+                    pos_decoded_target_preds,
+                    is_aligned=True)
             '''
             sorting bbox branch
             '''
@@ -276,16 +295,18 @@ class DDBV3NPHead(nn.Module):
             instance levels mask
             '''
             # generate instance levels index
-            instance_counter = torch.zeros(num_pos, device=pos_labels.device)
-            remove = torch.zeros(num_pos, device=pos_labels.device)
+            instance_counter = torch.zeros(
+                num_pos * self.box_num, device=pos_labels.device)
+            remove = torch.zeros(
+                num_pos * self.box_num, device=pos_labels.device)
             obj_id = 0
 
             # NOTE: get mask for each obj
             for i in range(len(pos_decoded_target_preds)):
                 if remove[i] == 0:
                     current_bbox = pos_decoded_target_preds[i]
-                    mask = ((pos_decoded_target_preds == current_bbox
-                             ).sum(1) == 4).nonzero()
+                    mask = ((pos_decoded_target_preds[:self.box_num] ==
+                             current_bbox).sum(1) == 4).nonzero()
                     instance_counter[mask] = obj_id
                     remove[mask] = 1
                     obj_id += 1
@@ -308,8 +329,13 @@ class DDBV3NPHead(nn.Module):
             for dist_conf_mask in dist_conf_mask_list:
                 obj_mask_inds = dist_conf_mask.nonzero().reshape(-1)
                 pos_centerness_obj = pos_centerness_targets[obj_mask_inds]
-                pos_scores_obj = pos_scores[obj_mask_inds]
 
+                if self.box_sampling:
+                    pos_scores = pos_scores.expand(self.box_num,
+                                                   -1).reshape(-1)
+                    pos_inds = pos_inds.expand(self.box_num, -1).reshape(-1)
+
+                pos_scores_obj = pos_scores[obj_mask_inds]
                 # pos_scores_obj = pos_scores
                 # mean IoU of an object
                 regression_reduced_threshold = pos_centerness_obj.mean()
@@ -317,21 +343,13 @@ class DDBV3NPHead(nn.Module):
 
                 regression_mask = pos_centerness_obj < regression_reduced_threshold
                 classification_mask = pos_scores_obj < classification_reduced_threshold
-
-                if self.apply_cls_awareness:
-                    correct_pred_cls = ((pos_pred_inds[obj_mask_inds] +
-                                         1) == pos_labels[obj_mask_inds])
-                    acc = (correct_pred_cls).sum().float() / len(obj_mask_inds)
-                    if acc >= 0.9:
-                        classification_mask[(
-                            correct_pred_cls == 0).nonzero()] = 1
-
                 # consistency:
                 consistency_mask = (regression_mask + classification_mask) == 2
                 masks_for_all[obj_mask_inds[consistency_mask]] = 0
 
             # cls branch
             reduced_mask = (masks_for_all == 0).nonzero()
+            # FIXME:
             flatten_labels[pos_inds[
                 reduced_mask]] = 0  # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
             saved_target_mask = masks_for_all.nonzero().reshape(-1)
@@ -348,13 +366,13 @@ class DDBV3NPHead(nn.Module):
                 saved_target_mask].reshape(-1, 4)
             pos_decoded_bbox_preds = pos_decoded_bbox_preds[
                 saved_target_mask].reshape(-1, 4)
-            pos_bbox_strides = pos_bbox_strides[saved_target_mask].reshape(
-                -1, 4)
 
+            # pos_bbox_strides = pos_bbox_strides[saved_target_mask].reshape(
+            #     -1, 4)
             pos_centerness_targets = pos_centerness_targets[
                 saved_target_mask].reshape(-1)
             pos_inds = flatten_labels.nonzero().reshape(-1)
-            num_pos = len(pos_inds)
+            pruned_num_pos = len(pos_inds)
 
             # NOTE: clone, avoid inplace operations
             pos_decoded_sort_bbox_preds = pos_decoded_bbox_preds.clone()
@@ -453,7 +471,6 @@ class DDBV3NPHead(nn.Module):
             sorted_bbox_weight = _bd_sort_iou.mean(1)[0]
             bbox_weight = _bd_iou.mean(1)[0]
             '''
-
             # apply hook to mask origin/sort gradients
             if self.hook_debug:
                 debug_mask = torch.cat([
@@ -513,7 +530,8 @@ class DDBV3NPHead(nn.Module):
             loss_cls = self.loss_cls(
                 flatten_cls_scores,
                 flatten_labels,
-                avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
+                avg_factor=pruned_num_pos +
+                num_imgs)  # avoid pruned_num_pos is 0
 
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
