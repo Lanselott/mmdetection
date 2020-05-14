@@ -33,9 +33,9 @@ model = dict(
         apply_iou_cache=False,
         consistency_weight=False,
         box_weighted=True,
-        no_scale=False,
+        no_scale=True,
         hook_debug=True,
-        sorted_warmup=1500,
+        sorted_warmup=500,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
@@ -62,7 +62,7 @@ train_cfg = dict(
     pos_weight=-1,
     debug=False)
 test_cfg = dict(
-    nms_pre=1500,
+    nms_pre=1000,
     min_bbox_size=0,
     score_thr=0.05,
     nms=dict(type='nms', iou_thr=0.5),
@@ -127,7 +127,7 @@ optimizer_config = dict(grad_clip=None)
 lr_config = dict(
     policy='step',
     warmup='constant',
-    warmup_iters=1000,
+    warmup_iters=500,
     warmup_ratio=1.0 / 3,
     step=[8, 11])
 checkpoint_config = dict(interval=1)
