@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
 from mmcv.cnn import normal_init
 
 from mmdet.core import multi_apply, multiclass_nms, multiclass_nms_sorting, distance2bbox, bbox2delta, bbox_overlaps
@@ -34,6 +36,7 @@ class DDBV3NPHead(nn.Module):
                  consistency_weight=False,
                  box_weighted=False,
                  no_scale=False,
+                 relu_scale=False,
                  stable_noise=False,
                  apply_boundary_centerness=False,
                  apply_cls_awareness=False,
@@ -77,6 +80,7 @@ class DDBV3NPHead(nn.Module):
         self.consistency_weight = consistency_weight
         self.box_weighted = box_weighted
         self.no_scale = no_scale
+        self.relu_scale = relu_scale
         self.box_sampling = box_sampling
         self.box_num = box_num
         self.stable_noise = stable_noise
@@ -175,6 +179,8 @@ class DDBV3NPHead(nn.Module):
 
         if self.no_scale:
             bbox_pred = self.fcos_reg(reg_feat).float().exp()
+        elif self.relu_scale:
+            bbox_pred = F.relu(self.fcos_reg(reg_feat).float())
         else:
             bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
 
