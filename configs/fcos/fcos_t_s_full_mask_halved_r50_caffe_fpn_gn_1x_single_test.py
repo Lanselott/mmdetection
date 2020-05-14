@@ -8,6 +8,7 @@ FREEZE_TEACHER = False
 RATIO = 2
 DOWNSAMPLE_RATIO = 1
 COPY_TEACHER_FPN = False
+GOOD_INITIAL = True
 model = dict(
     type='FCOSTS',
     pretrained='open-mmlab://resnet50_caffe',
@@ -23,7 +24,8 @@ model = dict(
         style='caffe',
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
         apply_block_wise_alignment=ALIGN,
-        freeze_teacher=FREEZE_TEACHER),
+        freeze_teacher=FREEZE_TEACHER,
+        good_initial=GOOD_INITIAL),
     neck=dict(
         type='FPNTS',
         in_channels=[256, 512, 1024, 2048],
@@ -66,7 +68,7 @@ model = dict(
         siamese_distill=False,
         use_additional_generator=False,
         copy_teacher_fpn=COPY_TEACHER_FPN,
-        multi_levels=2,
+        multi_levels=1,
         apply_pri_pyramid_wise_alignment=PRI_PYRAMID_ALIGN,
         apply_data_free_mode=False,
         simple_pyramid_alignment=False,
@@ -122,7 +124,7 @@ model = dict(
             loss_weight=1.0),
         loss_regression_distill=dict(type='IoULoss', loss_weight=1.0),
         reg_distill_threshold=0.5,
-        inner_opt=True,
+        inner_opt=False,
         # loss_iou_similiarity=dict(
         #     type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
         loss_iou_similiarity=dict(type='MSELoss', loss_weight=1.0),

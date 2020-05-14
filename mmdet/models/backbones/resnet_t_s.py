@@ -7,7 +7,6 @@ from mmcv.runner import load_checkpoint
 from torch.nn.modules.batchnorm import _BatchNorm
 import torch.nn.functional as F
 
-
 from mmdet.models.plugins import GeneralizedAttention
 from mmdet.ops import ContextBlock, DeformConv, ModulatedDeformConv
 from ..registry import BACKBONES
@@ -246,7 +245,6 @@ class Bottleneck(nn.Module):
 
             if self.with_gen_attention:
                 out = self.gen_attention_block(out)
-
             out = self.conv3(out)
             out = self.norm3(out)
 
@@ -394,6 +392,7 @@ class ResTSNet(nn.Module):
                  pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
                  apply_block_wise_alignment=False,
                  freeze_teacher=False,
+                 good_initial=False,
                  frozen_stages=-1,
                  conv_cfg=None,
                  norm_cfg=dict(type='BN', requires_grad=True),
@@ -424,6 +423,7 @@ class ResTSNet(nn.Module):
         self.apply_block_wise_alignment = apply_block_wise_alignment
         self.freeze_teacher = freeze_teacher
         self.frozen_stages = frozen_stages
+        self.good_initial = good_initial
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.with_cp = with_cp
@@ -497,7 +497,7 @@ class ResTSNet(nn.Module):
                 style=self.style,
                 with_cp=with_cp,
                 conv_cfg=conv_cfg,
-                norm_cfg=norm_cfg,
+                norm_cfg=dict(type='BN', requires_grad=True),
                 dcn=dcn,
                 gcb=gcb,
                 gen_attention=gen_attention,
@@ -550,7 +550,7 @@ class ResTSNet(nn.Module):
             assert self.frozen_stages == 4
         else:
             assert self.frozen_stages == 1
-            
+
         if self.frozen_stages >= 0:
             self.norm1.eval()
             for m in [self.conv1, self.norm1]:
@@ -567,6 +567,78 @@ class ResTSNet(nn.Module):
         if isinstance(pretrained, str):
             logger = logging.getLogger()
             load_checkpoint(self, pretrained, strict=False, logger=logger)
+            #
+            if self.good_initial:
+                for m in self.modules():
+                    if hasattr(m, 's_layer1'):
+                        t_layers1 = m.layer1
+                        s_layers1 = m.s_layer1
+                        t_layers2 = m.layer2
+                        s_layers2 = m.s_layer2
+                        t_layers3 = m.layer3
+                        s_layers3 = m.s_layer3
+                        t_layers4 = m.layer4
+                        s_layers4 = m.s_layer4
+                        t_bottleneck_list = [t_layers1, t_layers2, t_layers3, t_layers4]
+                        s_bottleneck_list = [s_layers1, s_layers2, s_layers3, s_layers4]
+                        # t_bottleneck_list = [t_layers1]
+                        # s_bottleneck_list = [s_layers1]
+                        for t_layers, s_layers in zip(t_bottleneck_list, s_bottleneck_list):
+                            for t_layer, s_layer in zip(t_layers, s_layers):
+                                # conv
+                                t_layer_conv1_data = t_layer.conv1.weight.data.permute(
+                                    2, 3, 0, 1).detach()
+                                s_layer.conv1.weight.data.copy_(F.interpolate(
+                                    t_layer_conv1_data,
+                                    size=s_layer.conv1.weight.shape[:2],
+                                    mode='bilinear').permute(2, 3, 0, 1))
+                                t_layer_conv2_data = t_layer.conv2.weight.data.permute(
+                                    2, 3, 0, 1).detach()
+                                s_layer.conv2.weight.data.copy_(F.interpolate(
+                                    t_layer_conv2_data,
+                                    size=s_layer.conv2.weight.shape[:2],
+                                    mode='bilinear').permute(2, 3, 0, 1))
+                                t_layer_conv3_data = t_layer.conv3.weight.data.permute(
+                                    2, 3, 0, 1).detach()
+                                s_layer.conv3.weight.data.copy_(F.interpolate(
+                                    t_layer_conv3_data,
+                                    size=s_layer.conv3.weight.shape[:2],
+                                    mode='bilinear').permute(2, 3, 0, 1))
+                                # bn
+                                t_layer_bn1_data = t_layer.bn1.weight.data.unsqueeze(
+                                    0).unsqueeze(0)
+                                s_layer.bn1.weight.data.copy_(F.interpolate(
+                                    t_layer_bn1_data,
+                                    size=s_layer.bn1.weight.shape[0],
+                                    mode='linear').view(-1))
+                                t_layer_bn2_data = t_layer.bn2.weight.data.unsqueeze(
+                                    0).unsqueeze(0)
+                                s_layer.bn2.weight.data.copy_(F.interpolate(
+                                    t_layer_bn2_data,
+                                    size=s_layer.bn2.weight.shape[0],
+                                    mode='linear').view(-1))
+                                t_layer_bn3_data = t_layer.bn3.weight.data.unsqueeze(
+                                    0).unsqueeze(0)
+                                s_layer.bn3.weight.data.copy_(F.interpolate(
+                                    t_layer_bn3_data,
+                                    size=s_layer.bn3.weight.shape[0],
+                                    mode='linear').view(-1))
+
+                                if t_layer.downsample is not None:
+                                    # donwsample
+                                    t_layer_downsample_conv_data = t_layer.downsample[
+                                        0].weight.data.permute(2, 3, 0, 1)
+                                    s_layer.downsample[0].weight.data.copy_(F.interpolate(
+                                        t_layer_downsample_conv_data,
+                                        size=s_layer.downsample[0].weight.shape[:2],
+                                        mode='bilinear').permute(2, 3, 0, 1))
+                                    t_layer_downsample_bias_data = t_layer.downsample[
+                                        1].weight.data.unsqueeze(0).unsqueeze(0)
+                                    s_layer.downsample[1].weight.data.copy_(F.interpolate(
+                                        t_layer_downsample_bias_data,
+                                        size=s_layer.downsample[1].weight.shape[0],
+                                        mode='linear').view(-1))
+                        
         elif pretrained is None:
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):
