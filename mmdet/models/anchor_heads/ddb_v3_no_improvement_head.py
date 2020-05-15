@@ -178,10 +178,11 @@ class DDBV3NPHead(nn.Module):
             bd_centerness = self.bd_centerness(reg_feat)
 
         if self.no_scale:
-            bbox_pred = self.fcos_reg(reg_feat).float()
+            bbox_pred = self.fcos_reg(reg_feat).float().exp()
         elif self.relu_scale:
-            softplus = nn.Softplus()
-            bbox_pred = softplus(self.fcos_reg(reg_feat).float().exp())
+            # softplus = nn.Softplus()
+            # bbox_pred = softplus(self.fcos_reg(reg_feat).float().exp())
+            bbox_pred = F.relu(self.fcos_reg(reg_feat).float())
         else:
             bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
             # bbox_pred = scale(self.fcos_reg(reg_feat)).float()
@@ -313,8 +314,8 @@ class DDBV3NPHead(nn.Module):
             for i in range(len(pos_decoded_target_preds)):
                 if remove[i] == 0:
                     current_bbox = pos_decoded_target_preds[i]
-                    mask = ((pos_decoded_target_preds[:self.box_num] ==
-                             current_bbox).sum(1) == 4).nonzero()
+                    mask = ((pos_decoded_target_preds == current_bbox
+                             ).sum(1) == 4).nonzero()
                     instance_counter[mask] = obj_id
                     remove[mask] = 1
                     obj_id += 1
