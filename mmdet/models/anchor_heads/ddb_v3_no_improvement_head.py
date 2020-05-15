@@ -37,6 +37,7 @@ class DDBV3NPHead(nn.Module):
                  box_weighted=False,
                  no_scale=False,
                  relu_scale=False,
+                 softplus_scale=False,
                  stable_noise=False,
                  apply_boundary_centerness=False,
                  apply_cls_awareness=False,
@@ -81,6 +82,7 @@ class DDBV3NPHead(nn.Module):
         self.box_weighted = box_weighted
         self.no_scale = no_scale
         self.relu_scale = relu_scale
+        self.softplus_scale = softplus_scale
         self.box_sampling = box_sampling
         self.box_num = box_num
         self.stable_noise = stable_noise
@@ -180,9 +182,10 @@ class DDBV3NPHead(nn.Module):
         if self.no_scale:
             bbox_pred = self.fcos_reg(reg_feat).float().exp()
         elif self.relu_scale:
-            # softplus = nn.Softplus()
-            # bbox_pred = softplus(self.fcos_reg(reg_feat).float().exp())
             bbox_pred = F.relu(self.fcos_reg(reg_feat).float())
+        elif self.softplus_scale:
+            softplus = nn.Softplus()
+            bbox_pred = softplus(self.fcos_reg(reg_feat).float())
         else:
             bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
             # bbox_pred = scale(self.fcos_reg(reg_feat)).float()
