@@ -497,7 +497,7 @@ class ResTSNet(nn.Module):
                 style=self.style,
                 with_cp=with_cp,
                 conv_cfg=conv_cfg,
-                norm_cfg=dict(type='BN', requires_grad=True),
+                norm_cfg=norm_cfg,
                 dcn=dcn,
                 gcb=gcb,
                 gen_attention=gen_attention,
