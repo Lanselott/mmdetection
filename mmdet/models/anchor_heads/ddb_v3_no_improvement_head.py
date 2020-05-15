@@ -178,11 +178,12 @@ class DDBV3NPHead(nn.Module):
             bd_centerness = self.bd_centerness(reg_feat)
 
         if self.no_scale:
-            bbox_pred = self.fcos_reg(reg_feat).float().exp()
+            bbox_pred = self.fcos_reg(reg_feat).float()
         elif self.relu_scale:
             bbox_pred = F.relu(self.fcos_reg(reg_feat).float())
         else:
             bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
+            # bbox_pred = scale(self.fcos_reg(reg_feat)).float()
 
         if self.apply_boundary_centerness:
             return cls_score, bbox_pred, centerness, bd_centerness
