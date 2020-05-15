@@ -180,7 +180,8 @@ class DDBV3NPHead(nn.Module):
         if self.no_scale:
             bbox_pred = self.fcos_reg(reg_feat).float()
         elif self.relu_scale:
-            bbox_pred = F.relu(self.fcos_reg(reg_feat).float())
+            softplus = nn.Softplus()
+            bbox_pred = softplus(self.fcos_reg(reg_feat).float().exp())
         else:
             bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
             # bbox_pred = scale(self.fcos_reg(reg_feat)).float()
