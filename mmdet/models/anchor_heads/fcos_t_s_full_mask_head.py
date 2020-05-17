@@ -237,6 +237,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.fp16_enabled = False
         self.inner_opt = inner_opt
         self.inner_lr = 0.01
+        self.train_step = 0
         self._init_teacher_layers()
         self._init_student_layers()
 
@@ -254,7 +255,6 @@ class FCOSTSFullMaskHead(nn.Module):
                                              lr=1e-2,
                                              momentum=0.9,
                                              weight_decay=0.0001)
-            self.inner_step = 0
         else:
             self.inner_itr = 1
 
@@ -750,333 +750,334 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update(
                         {'hint_loss_block_{}'.format(j): hint_loss})
 
-            # TODO: Polishing conditions here...
-            if self.apply_pyramid_wise_alignment or self.siamese_distill or self.pyramid_correlation:
-                if self.freeze_teacher:
-                    pyramid_lambda = 10
-                else:
-                    pyramid_lambda = 1
+            self.train_step += 1
+            # NOTE: Do alignment when teacher distribution 'stable'
+            if self.train_step > 7330:
+                # TODO: Polishing conditions here...
+                if self.apply_pyramid_wise_alignment or self.siamese_distill or self.pyramid_correlation:
+                    if self.freeze_teacher:
+                        pyramid_lambda = 10
+                    else:
+                        pyramid_lambda = 1
 
-                discrim_loss_list = []
-                generator_loss_list = []
-                t_g_ious = bbox_overlaps(
-                    t_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
-                t_s_ious = bbox_overlaps(
-                    s_pred_bboxes, t_pred_bboxes, is_aligned=True).detach()
-                s_g_ious = bbox_overlaps(
-                    s_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
+                    discrim_loss_list = []
+                    generator_loss_list = []
+                    t_g_ious = bbox_overlaps(
+                        t_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
+                    t_s_ious = bbox_overlaps(
+                        s_pred_bboxes, t_pred_bboxes, is_aligned=True).detach()
+                    s_g_ious = bbox_overlaps(
+                        s_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
 
-                for _ in range(self.inner_itr):
-                    s_pyramid_feature_list = []
-                    inner_s_channel_increase_pyramid_feature_list = []
-                    t_pyramid_feature_list = []
-                    s_channel_increase_pyramid_feature_list = []
-                    t_channel_decrease_pyramid_feature_list = []
-                    s_cls_pyramid_feature_list = []
-                    s_reg_pyramid_feature_list = []
+                    for _ in range(self.inner_itr):
+                        s_pyramid_feature_list = []
+                        inner_s_channel_increase_pyramid_feature_list = []
+                        t_pyramid_feature_list = []
+                        s_channel_increase_pyramid_feature_list = []
+                        t_channel_decrease_pyramid_feature_list = []
+                        s_cls_pyramid_feature_list = []
+                        s_reg_pyramid_feature_list = []
 
-                    for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
-                        s_pyramid_feature = pyramid_hint_pair[0]
-                        inner_s_pyramid_feature = pyramid_hint_pair[0].detach()
-                        t_pyramid_feature = pyramid_hint_pair[1]
-                        if self.spatial_ratio > 1:
-                            if self.pyramid_decoupling:
-                                for t_s_cls_pyramid_align_conv, t_s_reg_pyramid_align_conv in zip(
-                                        self.t_s_cls_pyramid_align,
-                                        self.t_s_reg_pyramid_align):
-                                    s_cls_pyramid_feature = t_s_cls_pyramid_align_conv(
-                                        F.interpolate(
-                                            s_pyramid_feature,
-                                            size=pyramid_hint_pair[1].
-                                            shape[2:],
-                                            mode='nearest'))
-                                    s_reg_pyramid_feature = t_s_reg_pyramid_align_conv(
-                                        F.interpolate(
-                                            s_pyramid_feature,
-                                            size=pyramid_hint_pair[1].
-                                            shape[2:],
-                                            mode='nearest'))
+                        for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
+                            s_pyramid_feature = pyramid_hint_pair[0]
+                            inner_s_pyramid_feature = pyramid_hint_pair[0].detach()
+                            t_pyramid_feature = pyramid_hint_pair[1]
+                            if self.spatial_ratio > 1:
+                                if self.pyramid_decoupling:
+                                    for t_s_cls_pyramid_align_conv, t_s_reg_pyramid_align_conv in zip(
+                                            self.t_s_cls_pyramid_align,
+                                            self.t_s_reg_pyramid_align):
+                                        s_cls_pyramid_feature = t_s_cls_pyramid_align_conv(
+                                            F.interpolate(
+                                                s_pyramid_feature,
+                                                size=pyramid_hint_pair[1].
+                                                shape[2:],
+                                                mode='nearest'))
+                                        s_reg_pyramid_feature = t_s_reg_pyramid_align_conv(
+                                            F.interpolate(
+                                                s_pyramid_feature,
+                                                size=pyramid_hint_pair[1].
+                                                shape[2:],
+                                                mode='nearest'))
+                                else:
+                                    for t_s_pyramid_align_conv in self.t_s_pyramid_align:
+                                        s_pyramid_feature = t_s_pyramid_align_conv(
+                                            F.interpolate(
+                                                s_pyramid_feature,
+                                                size=pyramid_hint_pair[1].
+                                                shape[2:],
+                                                mode='nearest'))
+
+                                if self.learn_from_each_other:
+                                    for s_t_pyramid_align_conv in self.s_t_pyramid_align:
+                                        t_channel_decrease_pyramid_feature = s_t_pyramid_align_conv(
+                                            F.interpolate(
+                                                t_pyramid_feature,
+                                                size=pyramid_hint_pair[0].
+                                                shape[2:],
+                                                mode='nearest'))
                             else:
-                                for t_s_pyramid_align_conv in self.t_s_pyramid_align:
-                                    s_pyramid_feature = t_s_pyramid_align_conv(
-                                        F.interpolate(
-                                            s_pyramid_feature,
-                                            size=pyramid_hint_pair[1].
-                                            shape[2:],
-                                            mode='nearest'))
-
-                            if self.learn_from_each_other:
-                                for s_t_pyramid_align_conv in self.s_t_pyramid_align:
-                                    t_channel_decrease_pyramid_feature = s_t_pyramid_align_conv(
-                                        F.interpolate(
-                                            t_pyramid_feature,
-                                            size=pyramid_hint_pair[0].
-                                            shape[2:],
-                                            mode='nearest'))
-                        else:
-                            if self.pyramid_decoupling:
-                                for t_s_cls_pyramid_align_conv, t_s_reg_pyramid_align_conv in zip(
-                                        self.t_s_cls_pyramid_align,
-                                        self.t_s_reg_pyramid_align):
-                                    s_cls_pyramid_feature = t_s_cls_pyramid_align_conv(
-                                        pyramid_hint_pair[0])
-                                    s_reg_pyramid_feature = t_s_reg_pyramid_align_conv(
-                                        pyramid_hint_pair[0])
-                            else:
-                                for t_s_pyramid_align_conv in self.t_s_pyramid_align:
-                                    s_pyramid_feature = t_s_pyramid_align_conv(
-                                        s_pyramid_feature)
+                                if self.pyramid_decoupling:
+                                    for t_s_cls_pyramid_align_conv, t_s_reg_pyramid_align_conv in zip(
+                                            self.t_s_cls_pyramid_align,
+                                            self.t_s_reg_pyramid_align):
+                                        s_cls_pyramid_feature = t_s_cls_pyramid_align_conv(
+                                            pyramid_hint_pair[0])
+                                        s_reg_pyramid_feature = t_s_reg_pyramid_align_conv(
+                                            pyramid_hint_pair[0])
+                                else:
+                                    for t_s_pyramid_align_conv in self.t_s_pyramid_align:
+                                        s_pyramid_feature = t_s_pyramid_align_conv(
+                                            s_pyramid_feature)
+                                        if self.inner_opt:
+                                            inner_s_pyramid_feature = t_s_pyramid_align_conv(
+                                                inner_s_pyramid_feature)
                                     if self.inner_opt:
-                                        inner_s_pyramid_feature = t_s_pyramid_align_conv(
+                                        inner_s_pyramid_feature = self.inner_opt_head(
                                             inner_s_pyramid_feature)
-                                if self.inner_opt:
-                                    inner_s_pyramid_feature = self.inner_opt_head(
-                                        inner_s_pyramid_feature)
+
+                                if self.learn_from_each_other:
+                                    for s_t_pyramid_align_conv in self.s_t_pyramid_align:
+                                        t_channel_decrease_pyramid_feature = s_t_pyramid_align_conv(
+                                            t_pyramid_feature)
+
+                            delta_s_ious = s_g_ious.max() - s_g_ious.min()
+                            delta_t_ious = t_g_ious.max() - t_g_ious.min()
+                            mean_s_ious = s_g_ious.mean()
+                            mean_t_ious = t_g_ious.mean()
+
+                            t_pyramid_feature_list.append(
+                                t_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                                    -1, self.feat_channels))
+                            s_channel_increase_pyramid_feature_list.append(
+                                s_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                                    -1, self.feat_channels))
+                            if self.inner_opt:
+                                inner_s_channel_increase_pyramid_feature_list.append(
+                                    inner_s_pyramid_feature.permute(
+                                        0, 2, 3,
+                                        1).reshape(-1, self.feat_channels))
+                            if self.pyramid_decoupling:
+                                s_cls_pyramid_feature_list.append(
+                                    s_cls_pyramid_feature.permute(
+                                        0, 2, 3,
+                                        1).reshape(-1, self.feat_channels))
+                                s_reg_pyramid_feature_list.append(
+                                    s_reg_pyramid_feature.permute(
+                                        0, 2, 3,
+                                        1).reshape(-1, self.feat_channels))
 
                             if self.learn_from_each_other:
-                                for s_t_pyramid_align_conv in self.s_t_pyramid_align:
-                                    t_channel_decrease_pyramid_feature = s_t_pyramid_align_conv(
-                                        t_pyramid_feature)
+                                t_channel_decrease_pyramid_feature_list.append(
+                                    t_channel_decrease_pyramid_feature.permute(
+                                        0, 2, 3,
+                                        1).reshape(-1, self.s_feat_channels))
+                                s_pyramid_feature_list.append(
+                                    pyramid_hint_pair[0].permute(
+                                        0, 2, 3,
+                                        1).reshape(-1, self.s_feat_channels))
 
-                        delta_s_ious = s_g_ious.max() - s_g_ious.min()
-                        delta_t_ious = t_g_ious.max() - t_g_ious.min()
-                        mean_s_ious = s_g_ious.mean()
-                        mean_t_ious = t_g_ious.mean()
+                        t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
+                        s_channel_increase_pyramid_feature_list = torch.cat(
+                            s_channel_increase_pyramid_feature_list)
 
-                        t_pyramid_feature_list.append(
-                            t_pyramid_feature.permute(0, 2, 3, 1).reshape(
-                                -1, self.feat_channels))
-                        s_channel_increase_pyramid_feature_list.append(
-                            s_pyramid_feature.permute(0, 2, 3, 1).reshape(
-                                -1, self.feat_channels))
                         if self.inner_opt:
-                            inner_s_channel_increase_pyramid_feature_list.append(
-                                inner_s_pyramid_feature.permute(
-                                    0, 2, 3,
-                                    1).reshape(-1, self.feat_channels))
+                            inner_s_channel_increase_pyramid_feature_list = torch.cat(
+                                inner_s_channel_increase_pyramid_feature_list)
+
                         if self.pyramid_decoupling:
-                            s_cls_pyramid_feature_list.append(
-                                s_cls_pyramid_feature.permute(
-                                    0, 2, 3,
-                                    1).reshape(-1, self.feat_channels))
-                            s_reg_pyramid_feature_list.append(
-                                s_reg_pyramid_feature.permute(
-                                    0, 2, 3,
-                                    1).reshape(-1, self.feat_channels))
+                            s_cls_pyramid_feature_list = torch.cat(
+                                s_cls_pyramid_feature_list)
+                            s_reg_pyramid_feature_list = torch.cat(
+                                s_reg_pyramid_feature_list)
 
                         if self.learn_from_each_other:
-                            t_channel_decrease_pyramid_feature_list.append(
-                                t_channel_decrease_pyramid_feature.permute(
-                                    0, 2, 3,
-                                    1).reshape(-1, self.s_feat_channels))
-                            s_pyramid_feature_list.append(
-                                pyramid_hint_pair[0].permute(
-                                    0, 2, 3,
-                                    1).reshape(-1, self.s_feat_channels))
+                            t_channel_decrease_pyramid_feature_list = torch.cat(
+                                t_channel_decrease_pyramid_feature_list)
+                            s_pyramid_feature_list = torch.cat(
+                                s_pyramid_feature_list)
 
-                    t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
-                    s_channel_increase_pyramid_feature_list = torch.cat(
-                        s_channel_increase_pyramid_feature_list)
+                        if self.pyramid_wise_attention:
+                            # FIXME: Pyramid attention should be merge to pyramid alignement loss,
+                            if self.pyramid_decoupling:
+                                assert self.learn_from_each_other != self.pyramid_decoupling
+                            if len(t_pos_inds) != 0:
+                                t_pred_cls = t_flatten_cls_scores.max(1)[1]
+                                s_pred_cls = s_flatten_cls_scores.max(1)[1]
+                                ce_loss = torch.nn.BCEWithLogitsLoss(reduce=False)
 
-                    if self.inner_opt:
-                        inner_s_channel_increase_pyramid_feature_list = torch.cat(
-                            inner_s_channel_increase_pyramid_feature_list)
+                                t_s_cls_entropy = ce_loss(
+                                    s_flatten_cls_scores[t_pos_inds].detach(),
+                                    t_flatten_cls_scores[t_pos_inds].detach())
+                                t_s_cls_entropy = t_s_cls_entropy.sum(1)
+                                t_s_cls_entropy = t_s_cls_entropy - t_s_cls_entropy.min(
+                                ) + 1e-6
+                                t_s_cls_entropy /= t_s_cls_entropy.max()
+                                t_s_pred_ious = bbox_overlaps(
+                                    s_pred_bboxes, t_pred_bboxes,
+                                    is_aligned=True).detach()
 
-                    if self.pyramid_decoupling:
-                        s_cls_pyramid_feature_list = torch.cat(
-                            s_cls_pyramid_feature_list)
-                        s_reg_pyramid_feature_list = torch.cat(
-                            s_reg_pyramid_feature_list)
+                                if self.learn_from_each_other:
+                                    assert self.freeze_teacher == False
+                                    assert self.ignore_low_ious == False
 
-                    if self.learn_from_each_other:
-                        t_channel_decrease_pyramid_feature_list = torch.cat(
-                            t_channel_decrease_pyramid_feature_list)
-                        s_pyramid_feature_list = torch.cat(
-                            s_pyramid_feature_list)
+                                    # Online learning with learn from each other
+                                    student_zero_inds = ((
+                                        s_g_ious < t_g_ious)).nonzero().reshape(-1)
+                                    teacher_zero_inds = ((
+                                        s_g_ious > t_g_ious)).nonzero().reshape(-1)
+                                    student_weight = bbox_overlaps(
+                                        s_pred_bboxes,
+                                        t_pred_bboxes,
+                                        is_aligned=True).detach()
+                                    teacher_weight = bbox_overlaps(
+                                        s_pred_bboxes,
+                                        t_pred_bboxes,
+                                        is_aligned=True).detach()
+
+                                    s_pyramid_pos_predictions = s_channel_increase_pyramid_feature_list[
+                                        t_pos_inds]
+                                    t_pyramid_pos_targets = t_pyramid_feature_list[
+                                        t_pos_inds].detach()
+                                    t_pyramid_pos_predictions = t_channel_decrease_pyramid_feature_list[
+                                        t_pos_inds]
+                                    s_pyramid_pos_targets = s_pyramid_feature_list[
+                                        t_pos_inds].detach()
+
+                                    student_weight[student_zero_inds] = 0
+                                    teacher_weight[teacher_zero_inds] = 0
+                                    student_learn_from_teacher_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                        s_pyramid_pos_predictions,
+                                        t_pyramid_pos_targets,
+                                        weight=student_weight,
+                                        avg_factor=student_weight.sum())
+                                    teacher_learn_from_student_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                        t_pyramid_pos_predictions,
+                                        s_pyramid_pos_targets,
+                                        weight=teacher_weight,
+                                        avg_factor=teacher_weight.sum())
+                                else:
+                                    # NOTE: Offline mode alignment requires larger weight (w=10 or 15)
+                                    iou_attention_weight = t_s_pred_ious
+                                    cls_attention_weight = t_s_cls_entropy
+                                    if self.pyramid_decoupling:
+                                        attention_cls_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                            s_cls_pyramid_feature_list[t_pos_inds]
+                                            *
+                                            s_reg_pyramid_feature_list[t_pos_inds].
+                                            detach(),
+                                            t_pyramid_feature_list[t_pos_inds].
+                                            detach(),
+                                            weight=cls_attention_weight,
+                                            avg_factor=cls_attention_weight.sum())
+                                        attention_reg_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                            s_cls_pyramid_feature_list[t_pos_inds].
+                                            detach() *
+                                            s_reg_pyramid_feature_list[t_pos_inds],
+                                            t_pyramid_feature_list[t_pos_inds].
+                                            detach(),
+                                            weight=iou_attention_weight,
+                                            avg_factor=iou_attention_weight.sum())
+                                    else:
+                                        attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                            s_channel_increase_pyramid_feature_list[
+                                                t_pos_inds],
+                                            t_pyramid_feature_list[t_pos_inds].
+                                            detach(),
+                                            weight=iou_attention_weight,
+                                            avg_factor=iou_attention_weight.sum())
+                                        '''
+                                        attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
+                                            s_channel_increase_pyramid_feature_list[t_pos_inds],
+                                            t_pyramid_feature_list[t_pos_inds].detach(),
+                                            weight=t_s_cls_entropy)
+                                        '''
+                            else:
+                                if self.learn_from_each_other:
+                                    student_learn_from_teacher_attention_loss = s_channel_increase_pyramid_feature_list[
+                                        t_pos_inds].sum()
+                                    teacher_learn_from_student_attention_loss = t_pyramid_feature_list[
+                                        t_pos_inds].sum()
+                                else:
+                                    if self.pyramid_decoupling:
+                                        attention_cls_pyramid_hint_loss = s_cls_pyramid_feature_list[
+                                            t_pos_inds].sum()
+                                        attention_reg_pyramid_hint_loss = s_reg_pyramid_feature_list[
+                                            t_pos_inds].sum()
+                                    else:
+                                        attention_iou_pyramid_hint_loss = s_channel_increase_pyramid_feature_list[
+                                            t_pos_inds].sum()
+
+                            if self.learn_from_each_other:
+                                loss_dict.update({
+                                    'student_learn_from_teacher_attention_loss':
+                                    student_learn_from_teacher_attention_loss,
+                                    'teacher_learn_from_student_attention_loss':
+                                    teacher_learn_from_student_attention_loss
+                                })
+                            else:
+                                if self.inner_opt:
+                                    self.inner_itr = math.floor(
+                                        t_g_ious.mean() * 10) + 1
+                                    if self.inner_itr > 5:
+                                        # NOTE: Only train the alignment network
+                                        self.inner_optimizer.zero_grad()
+                                        self.t_s_pyramid_align.zero_grad()
+
+                                        inner_pyramid_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                            inner_s_channel_increase_pyramid_feature_list[
+                                                t_pos_inds],
+                                            t_pyramid_feature_list[t_pos_inds].
+                                            detach(),
+                                            weight=iou_attention_weight,
+                                            avg_factor=iou_attention_weight.sum())
+
+                                        inner_pyramid_attention_loss.backward(
+                                            retain_graph=True)
+                                        self.inner_optimizer.step()
+
+                                    if self.train_step == 8 * 7330:
+                                        for g in self.inner_optimizer.param_groups:
+                                            g['lr'] = 0.001
 
                     if self.pyramid_wise_attention:
-                        # FIXME: Pyramid attention should be merge to pyramid alignement loss,
                         if self.pyramid_decoupling:
-                            assert self.learn_from_each_other != self.pyramid_decoupling
-                        if len(t_pos_inds) != 0:
-                            t_pred_cls = t_flatten_cls_scores.max(1)[1]
-                            s_pred_cls = s_flatten_cls_scores.max(1)[1]
-                            ce_loss = torch.nn.BCEWithLogitsLoss(reduce=False)
-
-                            t_s_cls_entropy = ce_loss(
-                                s_flatten_cls_scores[t_pos_inds].detach(),
-                                t_flatten_cls_scores[t_pos_inds].detach())
-                            t_s_cls_entropy = t_s_cls_entropy.sum(1)
-                            t_s_cls_entropy = t_s_cls_entropy - t_s_cls_entropy.min(
-                            ) + 1e-6
-                            t_s_cls_entropy /= t_s_cls_entropy.max()
-                            t_s_pred_ious = bbox_overlaps(
-                                s_pred_bboxes, t_pred_bboxes,
-                                is_aligned=True).detach()
-
-                            if self.learn_from_each_other:
-                                assert self.freeze_teacher == False
-                                assert self.ignore_low_ious == False
-
-                                # Online learning with learn from each other
-                                student_zero_inds = ((
-                                    s_g_ious < t_g_ious)).nonzero().reshape(-1)
-                                teacher_zero_inds = ((
-                                    s_g_ious > t_g_ious)).nonzero().reshape(-1)
-                                student_weight = bbox_overlaps(
-                                    s_pred_bboxes,
-                                    t_pred_bboxes,
-                                    is_aligned=True).detach()
-                                teacher_weight = bbox_overlaps(
-                                    s_pred_bboxes,
-                                    t_pred_bboxes,
-                                    is_aligned=True).detach()
-
-                                s_pyramid_pos_predictions = s_channel_increase_pyramid_feature_list[
-                                    t_pos_inds]
-                                t_pyramid_pos_targets = t_pyramid_feature_list[
-                                    t_pos_inds].detach()
-                                t_pyramid_pos_predictions = t_channel_decrease_pyramid_feature_list[
-                                    t_pos_inds]
-                                s_pyramid_pos_targets = s_pyramid_feature_list[
-                                    t_pos_inds].detach()
-
-                                student_weight[student_zero_inds] = 0
-                                teacher_weight[teacher_zero_inds] = 0
-                                student_learn_from_teacher_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                    s_pyramid_pos_predictions,
-                                    t_pyramid_pos_targets,
-                                    weight=student_weight,
-                                    avg_factor=student_weight.sum())
-                                teacher_learn_from_student_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                    t_pyramid_pos_predictions,
-                                    s_pyramid_pos_targets,
-                                    weight=teacher_weight,
-                                    avg_factor=teacher_weight.sum())
-                            else:
-                                # NOTE: Offline mode alignment requires larger weight (w=10 or 15)
-                                iou_attention_weight = t_s_pred_ious
-                                cls_attention_weight = t_s_cls_entropy
-                                if self.pyramid_decoupling:
-                                    attention_cls_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                        s_cls_pyramid_feature_list[t_pos_inds]
-                                        *
-                                        s_reg_pyramid_feature_list[t_pos_inds].
-                                        detach(),
-                                        t_pyramid_feature_list[t_pos_inds].
-                                        detach(),
-                                        weight=cls_attention_weight,
-                                        avg_factor=cls_attention_weight.sum())
-                                    attention_reg_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                        s_cls_pyramid_feature_list[t_pos_inds].
-                                        detach() *
-                                        s_reg_pyramid_feature_list[t_pos_inds],
-                                        t_pyramid_feature_list[t_pos_inds].
-                                        detach(),
-                                        weight=iou_attention_weight,
-                                        avg_factor=iou_attention_weight.sum())
-                                else:
-                                    attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                        s_channel_increase_pyramid_feature_list[
-                                            t_pos_inds],
-                                        t_pyramid_feature_list[t_pos_inds].
-                                        detach(),
-                                        weight=iou_attention_weight,
-                                        avg_factor=iou_attention_weight.sum())
-                                    '''
-                                    attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
-                                        s_channel_increase_pyramid_feature_list[t_pos_inds],
-                                        t_pyramid_feature_list[t_pos_inds].detach(),
-                                        weight=t_s_cls_entropy)
-                                    '''
-                        else:
-                            if self.learn_from_each_other:
-                                student_learn_from_teacher_attention_loss = s_channel_increase_pyramid_feature_list[
-                                    t_pos_inds].sum()
-                                teacher_learn_from_student_attention_loss = t_pyramid_feature_list[
-                                    t_pos_inds].sum()
-                            else:
-                                if self.pyramid_decoupling:
-                                    attention_cls_pyramid_hint_loss = s_cls_pyramid_feature_list[
-                                        t_pos_inds].sum()
-                                    attention_reg_pyramid_hint_loss = s_reg_pyramid_feature_list[
-                                        t_pos_inds].sum()
-                                else:
-                                    attention_iou_pyramid_hint_loss = s_channel_increase_pyramid_feature_list[
-                                        t_pos_inds].sum()
-
-                        if self.learn_from_each_other:
                             loss_dict.update({
-                                'student_learn_from_teacher_attention_loss':
-                                student_learn_from_teacher_attention_loss,
-                                'teacher_learn_from_student_attention_loss':
-                                teacher_learn_from_student_attention_loss
+                                'attention_cls_pyramid_hint_loss':
+                                attention_cls_pyramid_hint_loss,
+                                'attention_reg_pyramid_hint_loss':
+                                attention_reg_pyramid_hint_loss
                             })
                         else:
-                            if self.inner_opt:
-                                self.inner_step += 1
+                            loss_dict.update({
+                                'attention_iou_pyramid_hint_loss':
+                                attention_iou_pyramid_hint_loss,
+                                # 'attention_cls_pyramid_hint_loss':
+                                # attention_cls_pyramid_hint_loss
+                            })
 
-                                self.inner_itr = math.floor(
-                                    t_g_ious.mean() * 10) + 1
-                                if self.inner_itr > 5:
-                                    # NOTE: Only train the alignment network
-                                    self.inner_optimizer.zero_grad()
-                                    self.t_s_pyramid_align.zero_grad()
-
-                                    inner_pyramid_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                        inner_s_channel_increase_pyramid_feature_list[
-                                            t_pos_inds],
-                                        t_pyramid_feature_list[t_pos_inds].
-                                        detach(),
-                                        weight=iou_attention_weight,
-                                        avg_factor=iou_attention_weight.sum())
-
-                                    inner_pyramid_attention_loss.backward(
-                                        retain_graph=True)
-                                    self.inner_optimizer.step()
-
-                                if self.inner_step == 8 * 7330:
-                                    for g in self.inner_optimizer.param_groups:
-                                        g['lr'] = 0.001
-
-                if self.pyramid_wise_attention:
-                    if self.pyramid_decoupling:
-                        loss_dict.update({
-                            'attention_cls_pyramid_hint_loss':
-                            attention_cls_pyramid_hint_loss,
-                            'attention_reg_pyramid_hint_loss':
-                            attention_reg_pyramid_hint_loss
-                        })
-                    else:
-                        loss_dict.update({
-                            'attention_iou_pyramid_hint_loss':
-                            attention_iou_pyramid_hint_loss,
-                            # 'attention_cls_pyramid_hint_loss':
-                            # attention_cls_pyramid_hint_loss
-                        })
-
-                if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
-                    if not self.learn_from_each_other and not self.pyramid_decoupling:
-                        pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                            s_channel_increase_pyramid_feature_list,
-                            t_pyramid_feature_list.detach())
-                        loss_dict.update(
-                            {'pyramid_hint_loss': pyramid_hint_loss})
-                    elif self.pyramid_decoupling:
-                        pyramid_cls_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                            s_cls_pyramid_feature_list *
-                            s_reg_pyramid_feature_list.detach(),
-                            t_pyramid_feature_list.detach())
-                        pyramid_reg_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                            s_cls_pyramid_feature_list.detach() *
-                            s_reg_pyramid_feature_list,
-                            t_pyramid_feature_list.detach())
-                        loss_dict.update({
-                            'pyramid_cls_hint_loss':
-                            pyramid_cls_hint_loss,
-                            'pyramid_reg_hint_loss':
-                            pyramid_reg_hint_loss
-                        })
+                    if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
+                        if not self.learn_from_each_other and not self.pyramid_decoupling:
+                            pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                s_channel_increase_pyramid_feature_list,
+                                t_pyramid_feature_list.detach())
+                            loss_dict.update(
+                                {'pyramid_hint_loss': pyramid_hint_loss})
+                        elif self.pyramid_decoupling:
+                            pyramid_cls_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                s_cls_pyramid_feature_list *
+                                s_reg_pyramid_feature_list.detach(),
+                                t_pyramid_feature_list.detach())
+                            pyramid_reg_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                s_cls_pyramid_feature_list.detach() *
+                                s_reg_pyramid_feature_list,
+                                t_pyramid_feature_list.detach())
+                            loss_dict.update({
+                                'pyramid_cls_hint_loss':
+                                pyramid_cls_hint_loss,
+                                'pyramid_reg_hint_loss':
+                                pyramid_reg_hint_loss
+                            })
 
             # NOTE: pri (bottom-up pyramid) 1-3 levels
             if self.apply_pri_pyramid_wise_alignment:
