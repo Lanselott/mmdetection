@@ -752,7 +752,8 @@ class FCOSTSFullMaskHead(nn.Module):
 
             self.train_step += 1
             # NOTE: Do alignment when teacher distribution 'stable'
-            if self.train_step > 7330 * 2:
+            # TODO: Add to configure
+            if self.train_step >= 0:
                 # TODO: Polishing conditions here...
                 if self.apply_pyramid_wise_alignment or self.siamese_distill or self.pyramid_correlation:
                     if self.freeze_teacher:
