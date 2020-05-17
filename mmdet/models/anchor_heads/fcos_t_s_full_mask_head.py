@@ -753,7 +753,8 @@ class FCOSTSFullMaskHead(nn.Module):
             self.train_step += 1
             # NOTE: Do alignment when teacher distribution 'stable'
             # TODO: Add to configure
-            if self.train_step >= 0:
+            if (self.train_step >= 2 * 7330 and self.inner_opt == False) or (
+                (self.train_step >= 6 * 7330 and self.inner_opt == True)):
                 # TODO: Polishing conditions here...
                 if self.apply_pyramid_wise_alignment or self.siamese_distill or self.pyramid_correlation:
                     if self.freeze_teacher:
@@ -766,7 +767,8 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_g_ious = bbox_overlaps(
                         t_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
                     t_s_ious = bbox_overlaps(
-                        s_pred_bboxes, t_pred_bboxes, is_aligned=True).detach()
+                        s_pred_bboxes, t_pred_bboxes,
+                        is_aligned=True).detach()
                     s_g_ious = bbox_overlaps(
                         s_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
 
@@ -779,9 +781,11 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_cls_pyramid_feature_list = []
                         s_reg_pyramid_feature_list = []
 
-                        for j, pyramid_hint_pair in enumerate(pyramid_hint_pairs):
+                        for j, pyramid_hint_pair in enumerate(
+                                pyramid_hint_pairs):
                             s_pyramid_feature = pyramid_hint_pair[0]
-                            inner_s_pyramid_feature = pyramid_hint_pair[0].detach()
+                            inner_s_pyramid_feature = pyramid_hint_pair[
+                                0].detach()
                             t_pyramid_feature = pyramid_hint_pair[1]
                             if self.spatial_ratio > 1:
                                 if self.pyramid_decoupling:
@@ -878,7 +882,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                         0, 2, 3,
                                         1).reshape(-1, self.s_feat_channels))
 
-                        t_pyramid_feature_list = torch.cat(t_pyramid_feature_list)
+                        t_pyramid_feature_list = torch.cat(
+                            t_pyramid_feature_list)
                         s_channel_increase_pyramid_feature_list = torch.cat(
                             s_channel_increase_pyramid_feature_list)
 
@@ -905,7 +910,8 @@ class FCOSTSFullMaskHead(nn.Module):
                             if len(t_pos_inds) != 0:
                                 t_pred_cls = t_flatten_cls_scores.max(1)[1]
                                 s_pred_cls = s_flatten_cls_scores.max(1)[1]
-                                ce_loss = torch.nn.BCEWithLogitsLoss(reduce=False)
+                                ce_loss = torch.nn.BCEWithLogitsLoss(
+                                    reduce=False)
 
                                 t_s_cls_entropy = ce_loss(
                                     s_flatten_cls_scores[t_pos_inds].detach(),
@@ -915,7 +921,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                 ) + 1e-6
                                 t_s_cls_entropy /= t_s_cls_entropy.max()
                                 t_s_pred_ious = bbox_overlaps(
-                                    s_pred_bboxes, t_pred_bboxes,
+                                    s_pred_bboxes,
+                                    t_pred_bboxes,
                                     is_aligned=True).detach()
 
                                 if self.learn_from_each_other:
@@ -923,10 +930,12 @@ class FCOSTSFullMaskHead(nn.Module):
                                     assert self.ignore_low_ious == False
 
                                     # Online learning with learn from each other
-                                    student_zero_inds = ((
-                                        s_g_ious < t_g_ious)).nonzero().reshape(-1)
-                                    teacher_zero_inds = ((
-                                        s_g_ious > t_g_ious)).nonzero().reshape(-1)
+                                    student_zero_inds = (
+                                        (s_g_ious <
+                                         t_g_ious)).nonzero().reshape(-1)
+                                    teacher_zero_inds = (
+                                        (s_g_ious >
+                                         t_g_ious)).nonzero().reshape(-1)
                                     student_weight = bbox_overlaps(
                                         s_pred_bboxes,
                                         t_pred_bboxes,
@@ -963,22 +972,25 @@ class FCOSTSFullMaskHead(nn.Module):
                                     cls_attention_weight = t_s_cls_entropy
                                     if self.pyramid_decoupling:
                                         attention_cls_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                            s_cls_pyramid_feature_list[t_pos_inds]
-                                            *
-                                            s_reg_pyramid_feature_list[t_pos_inds].
-                                            detach(),
+                                            s_cls_pyramid_feature_list[
+                                                t_pos_inds] *
+                                            s_reg_pyramid_feature_list[
+                                                t_pos_inds].detach(),
                                             t_pyramid_feature_list[t_pos_inds].
                                             detach(),
                                             weight=cls_attention_weight,
-                                            avg_factor=cls_attention_weight.sum())
+                                            avg_factor=cls_attention_weight.
+                                            sum())
                                         attention_reg_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                            s_cls_pyramid_feature_list[t_pos_inds].
-                                            detach() *
-                                            s_reg_pyramid_feature_list[t_pos_inds],
+                                            s_cls_pyramid_feature_list[
+                                                t_pos_inds].detach() *
+                                            s_reg_pyramid_feature_list[
+                                                t_pos_inds],
                                             t_pyramid_feature_list[t_pos_inds].
                                             detach(),
                                             weight=iou_attention_weight,
-                                            avg_factor=iou_attention_weight.sum())
+                                            avg_factor=iou_attention_weight.
+                                            sum())
                                     else:
                                         attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                             s_channel_increase_pyramid_feature_list[
@@ -986,7 +998,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                             t_pyramid_feature_list[t_pos_inds].
                                             detach(),
                                             weight=iou_attention_weight,
-                                            avg_factor=iou_attention_weight.sum())
+                                            avg_factor=iou_attention_weight.
+                                            sum())
                                         '''
                                         attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
                                             s_channel_increase_pyramid_feature_list[t_pos_inds],
@@ -1018,9 +1031,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                 })
                             else:
                                 if self.inner_opt:
-                                    self.inner_itr = math.floor(
-                                        t_g_ious.mean() * 10) + 1
-                                    if self.inner_itr > 5:
+                                    for _ in range(self.inner_itr):
                                         # NOTE: Only train the alignment network
                                         self.inner_optimizer.zero_grad()
                                         self.t_s_pyramid_align.zero_grad()

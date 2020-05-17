@@ -124,7 +124,7 @@ model = dict(
             loss_weight=1.0),
         loss_regression_distill=dict(type='IoULoss', loss_weight=1.0),
         reg_distill_threshold=0.5,
-        inner_opt=False,
+        inner_opt=True,
         # loss_iou_similiarity=dict(
         #     type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
         loss_iou_similiarity=dict(type='MSELoss', loss_weight=1.0),
