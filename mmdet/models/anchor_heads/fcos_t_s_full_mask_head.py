@@ -1042,7 +1042,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                             t_pyramid_feature_list[t_pos_inds].
                                             detach(),
                                             weight=iou_attention_weight,
-                                            avg_factor=iou_attention_weight.sum())
+                                            avg_factor=iou_attention_weight.
+                                            sum())
 
                                         inner_pyramid_attention_loss.backward(
                                             retain_graph=True)
@@ -1345,7 +1346,9 @@ class FCOSTSFullMaskHead(nn.Module):
                 loss_dict.update(t_logits_reg=t_logits_reg)
 
             if self.finetune_student:
-                if self.train_step >= 6 * 7330 and self.inner_opt == True:
+                if (self.train_step >= 6 * 7330 and self.inner_opt == False
+                    ) or (self.train_step >= 6 * 7330
+                          and self.inner_opt == True):
                     if self.apply_soft_regression_distill:
                         t_s_pos_centerness = bbox_overlaps(
                             s_pred_bboxes, t_pred_bboxes,
