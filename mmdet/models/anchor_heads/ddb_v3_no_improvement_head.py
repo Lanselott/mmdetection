@@ -543,8 +543,8 @@ class DDBV3NPHead(nn.Module):
                 flatten_labels,
                 avg_factor=pruned_num_pos +
                 num_imgs)  # avoid pruned_num_pos is 0
-            pos_centerness_targets = pos_centerness_targets / (
-                pos_centerness_targets.max() + 1e-6)
+            # pos_centerness_targets = pos_centerness_targets / (
+            #     pos_centerness_targets.max() + 1e-6)
 
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
