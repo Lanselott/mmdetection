@@ -145,7 +145,8 @@ class FCOSTSFullMaskHead(nn.Module):
                      use_sigmoid=True,
                      loss_weight=1.0),
                  conv_cfg=None,
-                 norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
+                 norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
+                 rouse_student_point=0):
         super(FCOSTSFullMaskHead, self).__init__()
 
         self.num_classes = num_classes
@@ -238,6 +239,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.inner_opt = inner_opt
         self.inner_lr = 0.01
         self.train_step = 0
+        self.rouse_student_point = rouse_student_point
         self._init_teacher_layers()
         self._init_student_layers()
 
@@ -541,7 +543,35 @@ class FCOSTSFullMaskHead(nn.Module):
             for m in scale.parameters():
                 m.requires_grad = False
 
+    def copy_heads(self):
+        for t_reg_head, s_reg_head in zip(self.reg_convs, self.s_reg_convs):
+            t_reg_head_conv_data = t_reg_head.conv.weight.data.permute(
+                2, 3, 0, 1).detach()
+            s_reg_head.conv.weight.data.copy_(
+                F.interpolate(
+                    t_reg_head_conv_data,
+                    size=s_reg_head.conv.weight.shape[:2],
+                    mode='bilinear').permute(2, 3, 0, 1))
+            t_reg_head_gn_data = t_reg_head.gn.weight.data.unsqueeze(
+                0).unsqueeze(0)
+            s_reg_head.gn.weight.data.copy_(
+                F.interpolate(
+                    t_reg_head_gn_data,
+                    size=s_reg_head.gn.weight.shape[0],
+                    mode='linear').view(-1))
+            t_reg_head_gn_bias = t_reg_head.gn.bias.data.unsqueeze(
+                0).unsqueeze(0)
+            s_reg_head.gn.bias.data.copy_(
+                F.interpolate(
+                    t_reg_head_gn_bias,
+                    size=s_reg_head.gn.bias.shape[0],
+                    mode='linear').view(-1))
+
     def forward(self, feats):
+        self.train_step += 1
+        if self.rouse_student_point == self.train_step:
+            self.copy_heads()
+        
         t_feats = feats[0]
         s_feats = feats[1]
 
@@ -750,11 +780,12 @@ class FCOSTSFullMaskHead(nn.Module):
                     loss_dict.update(
                         {'hint_loss_block_{}'.format(j): hint_loss})
 
-            self.train_step += 1
             # NOTE: Do alignment when teacher distribution 'stable'
             # TODO: Add to configure
-            if (self.train_step >= 6 * 7330 and self.inner_opt == False) or (
-                (self.train_step >= 6 * 7330 and self.inner_opt == True)):
+            if (self.train_step >= self.rouse_student_point
+                    and self.inner_opt == False) or (
+                        (self.train_step >= self.rouse_student_point
+                         and self.inner_opt == True)):
                 # TODO: Polishing conditions here...
                 if self.apply_pyramid_wise_alignment or self.siamese_distill or self.pyramid_correlation:
                     if self.freeze_teacher:
@@ -1346,9 +1377,10 @@ class FCOSTSFullMaskHead(nn.Module):
                 loss_dict.update(t_logits_reg=t_logits_reg)
 
             if self.finetune_student:
-                if (self.train_step >= 6 * 7330 and self.inner_opt == False
-                    ) or (self.train_step >= 6 * 7330
-                          and self.inner_opt == True):
+                if (self.train_step >= self.rouse_student_point
+                        and self.inner_opt == False) or (
+                            self.train_step >= self.rouse_student_point
+                            and self.inner_opt == True):
                     if self.apply_soft_regression_distill:
                         t_s_pos_centerness = bbox_overlaps(
                             s_pred_bboxes, t_pred_bboxes,

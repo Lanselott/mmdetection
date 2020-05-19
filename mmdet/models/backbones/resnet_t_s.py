@@ -404,7 +404,8 @@ class ResTSNet(nn.Module):
                  gen_attention=None,
                  stage_with_gen_attention=((), (), (), ()),
                  with_cp=False,
-                 zero_init_residual=True):
+                 zero_init_residual=True,
+                 rouse_student_point=0):
         super(ResTSNet, self).__init__()
         if depth not in self.arch_settings:
             raise KeyError('invalid depth {} for resnet'.format(depth))
@@ -441,6 +442,8 @@ class ResTSNet(nn.Module):
         self.block, stage_blocks = self.arch_settings[depth]
         self.stage_blocks = stage_blocks[:num_stages]
         self.inplanes = 64
+        self.rouse_student_point = rouse_student_point
+        self.train_step = 0
 
         self._make_stem_layer(in_channels)
 
@@ -563,82 +566,104 @@ class ResTSNet(nn.Module):
             for param in m.parameters():
                 param.requires_grad = False
 
+    def copy_backbone(self):
+        for m in self.modules():
+            if hasattr(m, 's_layer1'):
+                t_layers1 = m.layer1
+                s_layers1 = m.s_layer1
+                t_layers2 = m.layer2
+                s_layers2 = m.s_layer2
+                t_layers3 = m.layer3
+                s_layers3 = m.s_layer3
+                t_layers4 = m.layer4
+                s_layers4 = m.s_layer4
+                t_bottleneck_list = [t_layers1, t_layers2, t_layers3, t_layers4]
+                s_bottleneck_list = [s_layers1, s_layers2, s_layers3, s_layers4]
+                # t_bottleneck_list = [t_layers1]
+                # s_bottleneck_list = [s_layers1]
+                for t_layers, s_layers in zip(t_bottleneck_list, s_bottleneck_list):
+                    for t_layer, s_layer in zip(t_layers, s_layers):
+                        # conv
+                        t_layer_conv1_data = t_layer.conv1.weight.data.permute(
+                            2, 3, 0, 1).detach()
+                        s_layer.conv1.weight.data.copy_(F.interpolate(
+                            t_layer_conv1_data,
+                            size=s_layer.conv1.weight.shape[:2],
+                            mode='bilinear').permute(2, 3, 0, 1))
+                        t_layer_conv2_data = t_layer.conv2.weight.data.permute(
+                            2, 3, 0, 1).detach()
+                        s_layer.conv2.weight.data.copy_(F.interpolate(
+                            t_layer_conv2_data,
+                            size=s_layer.conv2.weight.shape[:2],
+                            mode='bilinear').permute(2, 3, 0, 1))
+                        t_layer_conv3_data = t_layer.conv3.weight.data.permute(
+                            2, 3, 0, 1).detach()
+                        s_layer.conv3.weight.data.copy_(F.interpolate(
+                            t_layer_conv3_data,
+                            size=s_layer.conv3.weight.shape[:2],
+                            mode='bilinear').permute(2, 3, 0, 1))
+                        # bn
+                        t_layer_bn1_bias = t_layer.bn1.bias.data.unsqueeze(
+                            0).unsqueeze(0)
+                        s_layer.bn1.bias.data.copy_(F.interpolate(
+                            t_layer_bn1_bias,
+                            size=s_layer.bn1.bias.shape[0],
+                            mode='linear').view(-1))
+                        t_layer_bn2_bias = t_layer.bn2.bias.data.unsqueeze(
+                            0).unsqueeze(0)
+                        s_layer.bn2.bias.data.copy_(F.interpolate(
+                            t_layer_bn2_bias,
+                            size=s_layer.bn2.bias.shape[0],
+                            mode='linear').view(-1))
+                        t_layer_bn3_bias = t_layer.bn3.bias.data.unsqueeze(
+                            0).unsqueeze(0)
+                        s_layer.bn3.bias.data.copy_(F.interpolate(
+                            t_layer_bn3_bias,
+                            size=s_layer.bn3.bias.shape[0],
+                            mode='linear').view(-1))
+                        # bn bias
+                        t_layer_bn1_data = t_layer.bn1.bias.data.unsqueeze(
+                            0).unsqueeze(0)
+                        s_layer.bn1.bias.data.copy_(F.interpolate(
+                            t_layer_bn1_data,
+                            size=s_layer.bn1.bias.shape[0],
+                            mode='linear').view(-1))
+                        t_layer_bn2_data = t_layer.bn2.bias.data.unsqueeze(
+                            0).unsqueeze(0)
+                        s_layer.bn2.bias.data.copy_(F.interpolate(
+                            t_layer_bn2_data,
+                            size=s_layer.bn2.bias.shape[0],
+                            mode='linear').view(-1))
+                        t_layer_bn3_data = t_layer.bn3.bias.data.unsqueeze(
+                            0).unsqueeze(0)
+                        s_layer.bn3.bias.data.copy_(F.interpolate(
+                            t_layer_bn3_data,
+                            size=s_layer.bn3.bias.shape[0],
+                            mode='linear').view(-1))
+
+                        if t_layer.downsample is not None:
+                            # donwsample
+                            t_layer_downsample_conv_data = t_layer.downsample[
+                                0].weight.data.permute(2, 3, 0, 1)
+                            s_layer.downsample[0].weight.data.copy_(F.interpolate(
+                                t_layer_downsample_conv_data,
+                                size=s_layer.downsample[0].weight.shape[:2],
+                                mode='bilinear').permute(2, 3, 0, 1))
+                            t_layer_downsample_bias_data = t_layer.downsample[
+                                1].weight.data.unsqueeze(0).unsqueeze(0)
+                            s_layer.downsample[1].weight.data.copy_(F.interpolate(
+                                t_layer_downsample_bias_data,
+                                size=s_layer.downsample[1].weight.shape[0],
+                                mode='linear').view(-1))
+
     def init_weights(self, pretrained=None):
         if isinstance(pretrained, str):
             logger = logging.getLogger()
             load_checkpoint(self, pretrained, strict=False, logger=logger)
             #
             if self.good_initial:
-                for m in self.modules():
-                    if hasattr(m, 's_layer1'):
-                        t_layers1 = m.layer1
-                        s_layers1 = m.s_layer1
-                        t_layers2 = m.layer2
-                        s_layers2 = m.s_layer2
-                        t_layers3 = m.layer3
-                        s_layers3 = m.s_layer3
-                        t_layers4 = m.layer4
-                        s_layers4 = m.s_layer4
-                        t_bottleneck_list = [t_layers1, t_layers2, t_layers3, t_layers4]
-                        s_bottleneck_list = [s_layers1, s_layers2, s_layers3, s_layers4]
-                        # t_bottleneck_list = [t_layers1]
-                        # s_bottleneck_list = [s_layers1]
-                        for t_layers, s_layers in zip(t_bottleneck_list, s_bottleneck_list):
-                            for t_layer, s_layer in zip(t_layers, s_layers):
-                                # conv
-                                t_layer_conv1_data = t_layer.conv1.weight.data.permute(
-                                    2, 3, 0, 1).detach()
-                                s_layer.conv1.weight.data.copy_(F.interpolate(
-                                    t_layer_conv1_data,
-                                    size=s_layer.conv1.weight.shape[:2],
-                                    mode='bilinear').permute(2, 3, 0, 1))
-                                t_layer_conv2_data = t_layer.conv2.weight.data.permute(
-                                    2, 3, 0, 1).detach()
-                                s_layer.conv2.weight.data.copy_(F.interpolate(
-                                    t_layer_conv2_data,
-                                    size=s_layer.conv2.weight.shape[:2],
-                                    mode='bilinear').permute(2, 3, 0, 1))
-                                t_layer_conv3_data = t_layer.conv3.weight.data.permute(
-                                    2, 3, 0, 1).detach()
-                                s_layer.conv3.weight.data.copy_(F.interpolate(
-                                    t_layer_conv3_data,
-                                    size=s_layer.conv3.weight.shape[:2],
-                                    mode='bilinear').permute(2, 3, 0, 1))
-                                # bn
-                                t_layer_bn1_data = t_layer.bn1.weight.data.unsqueeze(
-                                    0).unsqueeze(0)
-                                s_layer.bn1.weight.data.copy_(F.interpolate(
-                                    t_layer_bn1_data,
-                                    size=s_layer.bn1.weight.shape[0],
-                                    mode='linear').view(-1))
-                                t_layer_bn2_data = t_layer.bn2.weight.data.unsqueeze(
-                                    0).unsqueeze(0)
-                                s_layer.bn2.weight.data.copy_(F.interpolate(
-                                    t_layer_bn2_data,
-                                    size=s_layer.bn2.weight.shape[0],
-                                    mode='linear').view(-1))
-                                t_layer_bn3_data = t_layer.bn3.weight.data.unsqueeze(
-                                    0).unsqueeze(0)
-                                s_layer.bn3.weight.data.copy_(F.interpolate(
-                                    t_layer_bn3_data,
-                                    size=s_layer.bn3.weight.shape[0],
-                                    mode='linear').view(-1))
+                self.copy_backbone()
 
-                                if t_layer.downsample is not None:
-                                    # donwsample
-                                    t_layer_downsample_conv_data = t_layer.downsample[
-                                        0].weight.data.permute(2, 3, 0, 1)
-                                    s_layer.downsample[0].weight.data.copy_(F.interpolate(
-                                        t_layer_downsample_conv_data,
-                                        size=s_layer.downsample[0].weight.shape[:2],
-                                        mode='bilinear').permute(2, 3, 0, 1))
-                                    t_layer_downsample_bias_data = t_layer.downsample[
-                                        1].weight.data.unsqueeze(0).unsqueeze(0)
-                                    s_layer.downsample[1].weight.data.copy_(F.interpolate(
-                                        t_layer_downsample_bias_data,
-                                        size=s_layer.downsample[1].weight.shape[0],
-                                        mode='linear').view(-1))
-                        
         elif pretrained is None:
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):
@@ -662,6 +687,10 @@ class ResTSNet(nn.Module):
             raise TypeError('pretrained must be a str or None')
 
     def forward(self, x):
+        self.train_step += 1
+        if self.rouse_student_point == self.train_step:
+            self.copy_backbone()
+
         x = self.conv1(x)
         x = self.norm1(x)
         x = self.relu(x)

@@ -29,7 +29,8 @@ class FPNTS(nn.Module):
                  freeze_teacher=False,
                  conv_cfg=None,
                  norm_cfg=None,
-                 activation=None):
+                 activation=None,
+                 rouse_student_point=0):
         super(FPNTS, self).__init__()
         assert isinstance(in_channels, list)
         self.in_channels = in_channels
@@ -46,6 +47,8 @@ class FPNTS(nn.Module):
         self.no_norm_on_lateral = no_norm_on_lateral
         self.freeze_teacher = freeze_teacher
         self.fp16_enabled = False
+        self.rouse_student_point = rouse_student_point
+        self.train_step = 0
 
         if end_level == -1:
             self.backbone_end_level = self.num_ins
@@ -259,8 +262,32 @@ class FPNTS(nn.Module):
                                            origin_lateral_conv.parameters()):
                 param = origin_param.detach()
 
+    def copy_pyramid(self):
+        for s_fpn_conv, t_fpn_conv in zip(self.s_fpn_convs, self.fpn_convs):
+            t_layer_conv_data = t_fpn_conv.conv.weight.data.permute(
+                2, 3, 0, 1).detach()
+            s_fpn_conv.conv.weight.data.copy_(
+                F.interpolate(
+                    t_layer_conv_data,
+                    size=s_fpn_conv.conv.weight.shape[:2],
+                    mode='bilinear').permute(2, 3, 0, 1))
+
+        for s_lateral_conv, t_lateral_conv in zip(self.s_lateral_convs, self.lateral_convs):
+            t_lateral_layer_conv_data = t_lateral_conv.conv.weight.data.permute(
+                2, 3, 0, 1).detach()
+            s_lateral_conv.conv.weight.data.copy_(
+                F.interpolate(
+                    t_lateral_layer_conv_data,
+                    size=s_lateral_conv.conv.weight.shape[:2],
+                    mode='bilinear').permute(2, 3, 0, 1))
+
     @auto_fp16()
     def forward(self, inputs):
+        self.train_step += 1
+
+        if self.rouse_student_point == self.train_step:
+            self.copy_pyramid()
+
         # Teacher Net
         t_outs = self.single_forward(inputs[0], self.fpn_convs,
                                      self.lateral_convs)
