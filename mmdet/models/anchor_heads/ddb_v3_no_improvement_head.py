@@ -347,10 +347,14 @@ class DDBV3NPHead(nn.Module):
                     pos_inds = pos_inds.expand(self.box_num, -1).reshape(-1)
 
                 pos_scores_obj = pos_scores[obj_mask_inds]
-                # pos_scores_obj = pos_scores
-                # mean IoU of an object
-                regression_reduced_threshold = pos_centerness_obj.mean()
-                classification_reduced_threshold = pos_scores_obj.mean()
+
+                if self.sorted_warmup > 0:
+                    regression_reduced_threshold = 0
+                    classification_reduced_threshold = 0
+                else:
+                    # mean IoU of an object
+                    regression_reduced_threshold = pos_centerness_obj.mean()
+                    classification_reduced_threshold = pos_scores_obj.mean()
 
                 regression_mask = pos_centerness_obj < regression_reduced_threshold
                 classification_mask = pos_scores_obj < classification_reduced_threshold
@@ -574,8 +578,7 @@ class DDBV3NPHead(nn.Module):
                     loss_cls=loss_cls,
                     loss_bbox=loss_bbox,
                     # loss_sorted_bbox=loss_sorted_bbox,
-                    # loss_centerness=loss_centerness,
-                )
+                    loss_centerness=loss_centerness)
             else:
                 return dict(
                     loss_cls=loss_cls,
