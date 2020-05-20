@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mmcv.cnn import normal_init
 
-from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms, bbox_overlaps
+from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms, bbox_overlaps, bbox_unions
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import ConvModule, Scale, bias_init_with_prob
@@ -254,9 +254,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     'params': self.t_s_pyramid_align.parameters()
                 },
             ],
-                                             lr=1e-2,
-                                             momentum=0.9,
-                                             weight_decay=0.0001)
+                lr=1e-2,
+                momentum=0.9,
+                weight_decay=0.0001)
         else:
             self.inner_itr = 1
 
@@ -571,7 +571,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.train_step += 1
         if self.rouse_student_point == self.train_step:
             self.copy_heads()
-        
+
         t_feats = feats[0]
         s_feats = feats[1]
 
@@ -955,6 +955,12 @@ class FCOSTSFullMaskHead(nn.Module):
                                     s_pred_bboxes,
                                     t_pred_bboxes,
                                     is_aligned=True).detach()
+                                t_s_pred_unions = bbox_unions(
+                                    s_pred_bboxes, t_pred_bboxes, is_aligned=True).detach()
+                                c_lt = torch.min(s_pred_bboxes[..., (0, 1)], t_pred_bboxes[..., (0, 1)])
+                                c_rb = torch.max(s_pred_bboxes[..., (2, 3)], t_pred_bboxes[..., (2, 3)])
+                                c_area = (c_rb[..., 1] - c_lt[..., 1]) * (c_rb[..., 0] - c_lt[..., 0]).detach()
+                                t_s_gious = t_s_pred_ious - (c_area - t_s_pred_unions) / c_area
 
                                 if self.learn_from_each_other:
                                     assert self.freeze_teacher == False
@@ -1001,6 +1007,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                     # NOTE: Offline mode alignment requires larger weight (w=10 or 15)
                                     iou_attention_weight = t_s_pred_ious
                                     cls_attention_weight = t_s_cls_entropy
+                                    giou_attention_weight = t_s_gious.detach().clamp(0)
+
                                     if self.pyramid_decoupling:
                                         attention_cls_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                             s_cls_pyramid_feature_list[
@@ -1028,8 +1036,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                                 t_pos_inds],
                                             t_pyramid_feature_list[t_pos_inds].
                                             detach(),
-                                            weight=iou_attention_weight,
-                                            avg_factor=iou_attention_weight.
+                                            weight=giou_attention_weight,
+                                            avg_factor=giou_attention_weight.
                                             sum())
                                         '''
                                         attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
@@ -1072,8 +1080,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                                 t_pos_inds],
                                             t_pyramid_feature_list[t_pos_inds].
                                             detach(),
-                                            weight=iou_attention_weight,
-                                            avg_factor=iou_attention_weight.
+                                            weight=giou_attention_weight,
+                                            avg_factor=giou_attention_weight.
                                             sum())
 
                                         inner_pyramid_attention_loss.backward(
@@ -1537,7 +1545,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                                 0).float()
+                    0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
