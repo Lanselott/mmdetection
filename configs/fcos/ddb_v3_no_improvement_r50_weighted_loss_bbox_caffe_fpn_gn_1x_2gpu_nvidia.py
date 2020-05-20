@@ -30,10 +30,12 @@ model = dict(
         mask_origin_bbox_loss=False,
         origin_bbox_loss_downgrade=False,
         iou_delta = 0.0,
-        apply_iou_cache=True,
+        apply_iou_cache=False,
         consistency_weight=False,
         hook_debug=True,
-        box_weighted=True,
+        box_weighted=False,
+        no_scale=True,
+        sorted_warmup=500,
         weighted_mask=False,
         loss_cls=dict(
             type='FocalLoss',
@@ -127,7 +129,7 @@ lr_config = dict(
     policy='step',
     warmup='constant',
     warmup_iters=500,
-    warmup_ratio=1.0 / 3,
+    warmup_ratio=1.0,
     step=[8, 11])
 checkpoint_config = dict(interval=1)
 # yapf:disable
