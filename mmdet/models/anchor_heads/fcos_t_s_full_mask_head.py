@@ -1036,9 +1036,9 @@ class FCOSTSFullMaskHead(nn.Module):
                                                 t_pos_inds],
                                             t_pyramid_feature_list[t_pos_inds].
                                             detach(),
-                                            weight=giou_attention_weight,
-                                            avg_factor=giou_attention_weight.
-                                            sum())
+                                            weight=giou_attention_weight)
+                                            # avg_factor=giou_attention_weight.
+                                            # sum())
                                         '''
                                         attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
                                             s_channel_increase_pyramid_feature_list[t_pos_inds],
@@ -1080,9 +1080,9 @@ class FCOSTSFullMaskHead(nn.Module):
                                                 t_pos_inds],
                                             t_pyramid_feature_list[t_pos_inds].
                                             detach(),
-                                            weight=giou_attention_weight,
-                                            avg_factor=giou_attention_weight.
-                                            sum())
+                                            weight=giou_attention_weight)
+                                            # avg_factor=giou_attention_weight.
+                                            # sum())
 
                                         inner_pyramid_attention_loss.backward(
                                             retain_graph=True)
