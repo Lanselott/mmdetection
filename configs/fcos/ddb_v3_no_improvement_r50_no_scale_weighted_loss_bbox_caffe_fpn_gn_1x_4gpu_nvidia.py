@@ -36,7 +36,7 @@ model = dict(
         no_scale=True,
         hook_debug=True,
         sorted_warmup=500,
-        weighted_mask=True,
+        weighted_mask=False,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
@@ -129,7 +129,7 @@ lr_config = dict(
     policy='step',
     warmup='constant',
     warmup_iters=500,
-    warmup_ratio=1.0,
+    warmup_ratio=1.0 / 4,
     step=[8, 11])
 checkpoint_config = dict(interval=1)
 # yapf:disable
