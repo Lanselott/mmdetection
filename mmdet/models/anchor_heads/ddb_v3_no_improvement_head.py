@@ -173,8 +173,7 @@ class DDBV3NPHead(nn.Module):
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
 
-        # trick: centerness to reg branch
-        centerness = self.fcos_centerness(reg_feat)
+        centerness = self.fcos_centerness(cls_feat)
 
         if self.apply_boundary_centerness:
             bd_centerness = self.bd_centerness(reg_feat)
