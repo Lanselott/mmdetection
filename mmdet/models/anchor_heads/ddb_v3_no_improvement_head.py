@@ -59,6 +59,7 @@ class DDBV3NPHead(nn.Module):
                  loss_dist_scores=dict(
                      type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
                  giou_centerness=False,
+                 scaled_centerness=False,
                  bd_threshold=0.0,
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
@@ -100,6 +101,7 @@ class DDBV3NPHead(nn.Module):
         self.hook_debug = hook_debug
         self.sorted_warmup = sorted_warmup
         self.giou_centerness = giou_centerness
+        self.scaled_centerness = scaled_centerness
 
         self._init_layers()
 
@@ -301,7 +303,6 @@ class DDBV3NPHead(nn.Module):
                 # c = torch.cat([c_lt, c_rb], 1)
                 c_area = (c_rb[..., 1] - c_lt[..., 1]) * \
                     (c_rb[..., 0] - c_lt[..., 0])
-                # from IPython import embed;embed()
                 ious = bbox_overlaps(
                     pos_decoded_bbox_preds, pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
                 unions = bbox_unions(
@@ -556,8 +557,9 @@ class DDBV3NPHead(nn.Module):
                 flatten_labels,
                 avg_factor=pruned_num_pos +
                 num_imgs)  # avoid pruned_num_pos is 0
-            # pos_centerness_targets = pos_centerness_targets / (
-            #     pos_centerness_targets.max() + 1e-6)
+            if self.scaled_centerness:
+                pos_centerness_targets = 2 / (
+                    2 - pos_centerness_targets ** 2) - 1
 
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
@@ -681,7 +683,6 @@ class DDBV3NPHead(nn.Module):
             cfg.nms,
             cfg.max_per_img)
             # score_factors=mlvl_centerness)
-        # embed()
         '''
         det_bboxes, det_labels = multiclass_nms(
             mlvl_bboxes,
