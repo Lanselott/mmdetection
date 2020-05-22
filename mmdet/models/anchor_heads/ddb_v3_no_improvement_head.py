@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from mmcv.cnn import normal_init
 
-from mmdet.core import multi_apply, multiclass_nms, multiclass_nms_sorting, distance2bbox, bbox2delta, bbox_overlaps
+from mmdet.core import multi_apply, multiclass_nms, multiclass_nms_sorting, distance2bbox, bbox2delta, bbox_overlaps, bbox_unions
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import bias_init_with_prob, Scale, ConvModule
@@ -58,6 +58,7 @@ class DDBV3NPHead(nn.Module):
                      loss_weight=1.0),
                  loss_dist_scores=dict(
                      type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
+                 giou_centerness=False,
                  bd_threshold=0.0,
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
@@ -98,6 +99,7 @@ class DDBV3NPHead(nn.Module):
         self.norm_cfg = norm_cfg
         self.hook_debug = hook_debug
         self.sorted_warmup = sorted_warmup
+        self.giou_centerness = giou_centerness
 
         self._init_layers()
 
@@ -283,10 +285,6 @@ class DDBV3NPHead(nn.Module):
                     self.box_num, -1, 4).reshape(-1, 4)
                 pos_decoded_target_preds = distance2bbox(
                     pos_points, pos_bbox_targets)
-                pos_centerness_targets = bbox_overlaps(
-                    pos_decoded_bbox_preds.clone().detach(),
-                    pos_decoded_target_preds,
-                    is_aligned=True)
                 pos_centerness = pos_centerness.expand(self.box_num,
                                                        -1).reshape(-1)
             else:
@@ -294,6 +292,22 @@ class DDBV3NPHead(nn.Module):
                                                        pos_bbox_preds)
                 pos_decoded_target_preds = distance2bbox(
                     pos_points, pos_bbox_targets)
+
+            if self.giou_centerness:
+                c_lt = torch.min(
+                    pos_decoded_bbox_preds[..., (0, 1)], pos_decoded_target_preds[..., (0, 1)])
+                c_rb = torch.max(
+                    pos_decoded_bbox_preds[..., (2, 3)], pos_decoded_target_preds[..., (2, 3)])
+                # c = torch.cat([c_lt, c_rb], 1)
+                c_area = (c_rb[..., 1] - c_lt[..., 1]) * \
+                    (c_rb[..., 0] - c_lt[..., 0])
+                # from IPython import embed;embed()
+                ious = bbox_overlaps(
+                    pos_decoded_bbox_preds, pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
+                unions = bbox_unions(
+                    pos_decoded_bbox_preds, pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
+                pos_centerness_targets = (ious - (c_area - unions) / c_area).detach()
+            else:
                 pos_centerness_targets = bbox_overlaps(
                     pos_decoded_bbox_preds.clone().detach(),
                     pos_decoded_target_preds,
