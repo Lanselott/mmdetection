@@ -558,8 +558,11 @@ class DDBV3NPHead(nn.Module):
                 avg_factor=pruned_num_pos +
                 num_imgs)  # avoid pruned_num_pos is 0
             if self.scaled_centerness:
+                # shape_num < 1: gaussian shape
+                # shape_num > 1:  sharp shape
+                shape_num = 1 / 4
                 pos_centerness_targets = 2 / (
-                    2 - pos_centerness_targets ** 2) - 1
+                    2 - pos_centerness_targets ** shape_num) - 1
 
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
