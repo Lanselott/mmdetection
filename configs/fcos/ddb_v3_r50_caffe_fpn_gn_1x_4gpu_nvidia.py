@@ -32,6 +32,7 @@ model = dict(
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
+        sorted_warmup=500,
         loss_bbox=dict(type='GIoULoss', loss_weight=1.0),
         loss_sorted_bbox=dict(type='GIoULoss', loss_weight=1.0),
         bd_threshold=0.0,
