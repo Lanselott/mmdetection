@@ -155,7 +155,7 @@ class DDBV3Head(nn.Module):
                 deformable_groups=deformable_groups)
         self.relu = nn.ReLU(inplace=True)
 
-        self.scales = nn.ModuleList([Scale(4.0) for _ in self.strides])
+        self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
     def init_weights(self):
         for m in self.cls_convs:
@@ -172,7 +172,7 @@ class DDBV3Head(nn.Module):
             normal_init(self.centerness_offset, std=0.1)
             normal_init(self.centerness_adaption, std=0.01)
         else:
-            normal_init(self.fcos_reg, std=0.01)
+            normal_init(self.fcos_reg, std=0.04)
             normal_init(self.fcos_centerness, std=0.01)
 
     def forward(self, feats):
