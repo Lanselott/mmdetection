@@ -155,7 +155,7 @@ class DDBV3Head(nn.Module):
                 deformable_groups=deformable_groups)
         self.relu = nn.ReLU(inplace=True)
 
-        self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
+        self.scales = nn.ModuleList([Scale(4.0) for _ in self.strides])
 
     def init_weights(self):
         for m in self.cls_convs:
