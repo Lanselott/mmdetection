@@ -496,6 +496,7 @@ class DDBV3NPHead(nn.Module):
             sorted_bbox_weight = _bd_sort_iou.mean(1)[0]
             bbox_weight = _bd_iou.mean(1)[0]
             '''
+            mask_weight = 2
             # apply hook to mask origin/sort gradients
             if self.hook_debug:
                 debug_mask = torch.cat([
@@ -511,11 +512,11 @@ class DDBV3NPHead(nn.Module):
 
                 if self.weighted_mask:
                     pos_decoded_sort_bbox_preds.register_hook(
-                        lambda grad: grad * debug_mask * sorted_ious_weights.
+                        lambda grad: grad * mask_weight * debug_mask * sorted_ious_weights.
                         view(-1, 1))
                 else:
                     pos_decoded_sort_bbox_preds.register_hook(
-                        lambda grad: grad * debug_mask)
+                        lambda grad: grad * mask_weight * debug_mask)
             else:
                 pos_decoded_sort_bbox_preds.register_hook(
                     lambda grad: grad * sort_gradient_mask)
@@ -523,7 +524,7 @@ class DDBV3NPHead(nn.Module):
                 #     lambda grad: grad * 0)
             if self.weighted_mask:
                 pos_decoded_bbox_preds.register_hook(
-                    lambda grad: grad * origin_gradient_mask * ious_weights.
+                    lambda grad: grad * mask_weight * origin_gradient_mask * ious_weights.
                     view(-1, 1))
             else:
                 pos_decoded_bbox_preds.register_hook(
