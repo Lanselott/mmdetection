@@ -585,6 +585,7 @@ class FCOSTSFullMaskHead(nn.Module):
             t_decreased_feats = []
             s_t_align_layer = self.s_t_pyramid_align
             for t_feat in t_feats:
+                t_feat = t_feat.detach()
                 for s_t_align_layer in self.s_t_pyramid_align:
                     t_decreased_pyramid_feat = s_t_align_layer(t_feat)
                     t_decreased_feats.append(t_decreased_pyramid_feat)
@@ -630,8 +631,9 @@ class FCOSTSFullMaskHead(nn.Module):
         # downsample(align) teacher pyramid features
         # NOTE: the input should be aligned and detached as input images
         if self.learn_from_teacher_backbone:
-            t_decreased_cls_feat = t_decreased_feat.detach()
-            t_decreased_reg_feat = t_decreased_feat.detach()
+            t_decreased_cls_feat = t_decreased_feat
+            t_decreased_reg_feat = t_decreased_feat
+            
         cls_hint_pairs = []
         reg_hint_pairs = []
 
