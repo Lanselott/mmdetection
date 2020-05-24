@@ -48,6 +48,8 @@ class FCOSTSFullMaskHead(nn.Module):
                  t_s_ratio=1,
                  spatial_ratio=1,
                  eval_student=True,
+                 eval_teacher_backbone=False,
+                 pyramid_merging=False,
                  training=True,
                  learn_when_train=False,
                  finetune_student=False,
@@ -199,6 +201,8 @@ class FCOSTSFullMaskHead(nn.Module):
         self.adap_distill_loss_weight = adap_distill_loss_weight
         self.training = training
         self.eval_student = eval_student
+        self.eval_teacher_backbone = eval_teacher_backbone
+        self.pyramid_merging = pyramid_merging
         self.learn_when_train = learn_when_train
         self.finetune_student = finetune_student
         self.train_teacher = train_teacher
@@ -635,6 +639,10 @@ class FCOSTSFullMaskHead(nn.Module):
             t_decreased_cls_feat = t_decreased_feat
             t_decreased_reg_feat = t_decreased_feat
 
+            if self.pyramid_merging:
+                s_cls_feat = (s_cls_feat + t_decreased_cls_feat) / 2
+                s_reg_feat = (s_reg_feat + t_decreased_reg_feat) / 2
+
         cls_hint_pairs = []
         reg_hint_pairs = []
 
@@ -729,6 +737,9 @@ class FCOSTSFullMaskHead(nn.Module):
         else:
             if self.eval_student:
                 return s_cls_score, s_bbox_pred, s_centerness
+            elif self.eval_teacher_backbone:
+                assert self.learn_from_teacher_backbone == True
+                return t_decreased_cls_score, t_decreased_bbox_pred, t_decreased_centerness
             else:
                 return cls_score, bbox_pred, centerness
 

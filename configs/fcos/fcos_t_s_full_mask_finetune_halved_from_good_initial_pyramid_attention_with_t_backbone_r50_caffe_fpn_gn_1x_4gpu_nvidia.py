@@ -52,6 +52,7 @@ model = dict(
         learn_when_train=True,
         finetune_student=True,
         learn_from_teacher_backbone=True,
+        pyramid_merging=True,
         apply_iou_similarity=False,
         apply_soft_cls_distill=False,
         apply_feature_alignment=False,  # regression
