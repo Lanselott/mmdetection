@@ -35,7 +35,6 @@ model = dict(
         box_sampling=True,
         box_num=2,
         box_weighted=True,
-        no_scale=True,
         hook_debug=True,
         sorted_warmup=500,
         loss_cls=dict(

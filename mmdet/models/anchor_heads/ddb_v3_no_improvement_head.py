@@ -135,12 +135,9 @@ class DDBV3NPHead(nn.Module):
         self.fcos_cls = nn.Conv2d(
             self.feat_channels, self.cls_out_channels, 3, padding=1)
         if self.box_sampling:
-            assert self.box_num > 1
+            self.fcos_reg = nn.Conv2d(self.feat_channels, 4 * 3, 3, padding=1)
         else:
-            assert self.box_num == 1
-
-        self.fcos_reg = nn.Conv2d(
-            self.feat_channels, 4 * self.box_num, 3, padding=1)
+            self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
 
         if self.apply_boundary_centerness:
@@ -182,12 +179,17 @@ class DDBV3NPHead(nn.Module):
         if self.apply_boundary_centerness:
             bd_centerness = self.bd_centerness(reg_feat)
 
-        if self.no_scale:
-            bbox_pred = self.fcos_reg(reg_feat).float().exp()
-        elif self.relu_scale:
-            bbox_pred = F.relu(self.fcos_reg(reg_feat).float())
-        elif self.softplus_scale:
-            bbox_pred = self.fcos_reg(reg_feat).float().exp().sqrt()
+        if self.box_sampling:
+            bbox_pred_bits = self.fcos_reg(reg_feat)
+            n, c, w, h = bbox_pred_bits.shape
+            bbox_pred = torch.zeros([n, 4, w, h], device=bbox_pred_bits.device)
+            bbox_pred_bits = bbox_pred_bits.reshape(-1, 4, 3, w, h)
+            bbox_pred[:,0] = bbox_pred_bits[:, 0, 0] + 10 * bbox_pred_bits[:, 0, 1] + 100 * bbox_pred_bits[:, 0, 2] 
+            bbox_pred[:,1] = bbox_pred_bits[:, 1, 0] + 10 * bbox_pred_bits[:, 1, 1] + 100 * bbox_pred_bits[:, 1, 2]
+            bbox_pred[:,2] = bbox_pred_bits[:, 2, 0] + 10 * bbox_pred_bits[:, 2, 1] + 100 * bbox_pred_bits[:, 2, 2] 
+            bbox_pred[:,3] = bbox_pred_bits[:, 3, 0] + 10 * bbox_pred_bits[:, 3, 1] + 100 * bbox_pred_bits[:, 3, 2] 
+            bbox_pred = nn.functional.relu(bbox_pred)
+            # embed()
         else:
             bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
             # bbox_pred = scale(self.fcos_reg(reg_feat)).float()
@@ -229,7 +231,7 @@ class DDBV3NPHead(nn.Module):
             for cls_score in cls_scores
         ]
         flatten_bbox_preds = [
-            bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4 * self.box_num)
+            bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
             for bbox_pred in bbox_preds
         ]
         flatten_centerness = [
@@ -275,39 +277,28 @@ class DDBV3NPHead(nn.Module):
             NOTE: 
             Strided box and Origin box
             '''
-            if self.box_sampling:
-                pos_bbox_preds = pos_bbox_preds.reshape(-1, 4)
-                pos_decoded_bbox_preds = []
-                pos_points = pos_points.expand(self.box_num, -1,
-                                               2).reshape(-1, 2)
-                pos_decoded_bbox_preds.append(
-                    distance2bbox(pos_points, pos_bbox_preds))
-                pos_decoded_bbox_preds = torch.cat(pos_decoded_bbox_preds)
-                pos_bbox_targets = pos_bbox_targets.expand(
-                    self.box_num, -1, 4).reshape(-1, 4)
-                pos_decoded_target_preds = distance2bbox(
-                    pos_points, pos_bbox_targets)
-                pos_centerness = pos_centerness.expand(self.box_num,
-                                                       -1).reshape(-1)
-            else:
-                pos_decoded_bbox_preds = distance2bbox(pos_points,
-                                                       pos_bbox_preds)
-                pos_decoded_target_preds = distance2bbox(
-                    pos_points, pos_bbox_targets)
+            pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
+            pos_decoded_target_preds = distance2bbox(pos_points,
+                                                     pos_bbox_targets)
 
             if self.giou_centerness:
-                c_lt = torch.min(
-                    pos_decoded_bbox_preds[..., (0, 1)], pos_decoded_target_preds[..., (0, 1)])
-                c_rb = torch.max(
-                    pos_decoded_bbox_preds[..., (2, 3)], pos_decoded_target_preds[..., (2, 3)])
+                c_lt = torch.min(pos_decoded_bbox_preds[..., (0, 1)],
+                                 pos_decoded_target_preds[..., (0, 1)])
+                c_rb = torch.max(pos_decoded_bbox_preds[..., (2, 3)],
+                                 pos_decoded_target_preds[..., (2, 3)])
                 # c = torch.cat([c_lt, c_rb], 1)
                 c_area = (c_rb[..., 1] - c_lt[..., 1]) * \
                     (c_rb[..., 0] - c_lt[..., 0])
                 ious = bbox_overlaps(
-                    pos_decoded_bbox_preds, pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
+                    pos_decoded_bbox_preds,
+                    pos_decoded_target_preds,
+                    is_aligned=True).clamp(min=1e-6)
                 unions = bbox_unions(
-                    pos_decoded_bbox_preds, pos_decoded_target_preds, is_aligned=True).clamp(min=1e-6)
-                pos_centerness_targets = (ious - (c_area - unions) / c_area).detach()
+                    pos_decoded_bbox_preds,
+                    pos_decoded_target_preds,
+                    is_aligned=True).clamp(min=1e-6)
+                pos_centerness_targets = (ious -
+                                          (c_area - unions) / c_area).detach()
             else:
                 pos_centerness_targets = bbox_overlaps(
                     pos_decoded_bbox_preds.clone().detach(),
@@ -321,9 +312,9 @@ class DDBV3NPHead(nn.Module):
             '''
             # generate instance levels index
             instance_counter = torch.zeros(
-                num_pos * self.box_num, device=pos_labels.device)
+                num_pos, device=pos_labels.device)
             remove = torch.zeros(
-                num_pos * self.box_num, device=pos_labels.device)
+                num_pos, device=pos_labels.device)
             obj_id = 0
 
             # NOTE: get mask for each obj
@@ -354,11 +345,6 @@ class DDBV3NPHead(nn.Module):
             for dist_conf_mask in dist_conf_mask_list:
                 obj_mask_inds = dist_conf_mask.nonzero().reshape(-1)
                 pos_centerness_obj = pos_centerness_targets[obj_mask_inds]
-
-                if self.box_sampling:
-                    pos_scores = pos_scores.expand(self.box_num,
-                                                   -1).reshape(-1)
-                    pos_inds = pos_inds.expand(self.box_num, -1).reshape(-1)
 
                 pos_scores_obj = pos_scores[obj_mask_inds]
 
@@ -562,7 +548,7 @@ class DDBV3NPHead(nn.Module):
                 # shape_num > 1:  sharp shape
                 shape_num = 1 / 4
                 pos_centerness_targets = 2 / (
-                    2 - pos_centerness_targets ** shape_num) - 1
+                    2 - pos_centerness_targets**shape_num) - 1
 
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
