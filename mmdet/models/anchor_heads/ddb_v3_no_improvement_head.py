@@ -52,6 +52,7 @@ class DDBV3NPHead(nn.Module):
                  sorted_warmup=0,
                  box_sampling=False,
                  box_num=1,
+                 sorting_loss_only=False,
                  loss_centerness=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -87,6 +88,7 @@ class DDBV3NPHead(nn.Module):
         self.softplus_scale = softplus_scale
         self.box_sampling = box_sampling
         self.box_num = box_num
+        self.sorting_loss_only = sorting_loss_only
         self.stable_noise = stable_noise
         self.apply_boundary_centerness = apply_boundary_centerness
         self.apply_cls_awareness = apply_cls_awareness
@@ -189,7 +191,6 @@ class DDBV3NPHead(nn.Module):
             bbox_pred[:,2] = bbox_pred_bits[:, 2, 0] + 10 * bbox_pred_bits[:, 2, 1] + 100 * bbox_pred_bits[:, 2, 2] 
             bbox_pred[:,3] = bbox_pred_bits[:, 3, 0] + 10 * bbox_pred_bits[:, 3, 1] + 100 * bbox_pred_bits[:, 3, 2] 
             bbox_pred = nn.functional.relu(bbox_pred)
-            # embed()
         else:
             bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
             # bbox_pred = scale(self.fcos_reg(reg_feat)).float()
@@ -411,7 +412,6 @@ class DDBV3NPHead(nn.Module):
 
             pos_gradient_update_anti_mapping = torch.zeros_like(
                 pos_dist_scores_sorted, dtype=torch.int64)
-
             inds_shift = 0
             for dist_conf_mask in dist_conf_mask_list:
                 obj_mask_inds = (
@@ -495,60 +495,37 @@ class DDBV3NPHead(nn.Module):
                     reshape(-1, 1)
                 ], 1)
 
-                if self.weighted_mask:
-                    pos_decoded_sort_bbox_preds.register_hook(
-                        lambda grad: grad * debug_mask * sorted_ious_weights.
-                        view(-1, 1))
-                else:
+                if not self.sorting_loss_only:
                     pos_decoded_sort_bbox_preds.register_hook(
                         lambda grad: grad * debug_mask)
+                
             else:
                 pos_decoded_sort_bbox_preds.register_hook(
                     lambda grad: grad * sort_gradient_mask)
-                # pos_decoded_sort_bbox_preds.register_hook(
-                #     lambda grad: grad * 0)
-            if self.weighted_mask:
-                pos_decoded_bbox_preds.register_hook(
-                    lambda grad: grad * origin_gradient_mask * ious_weights.
-                    view(-1, 1))
-            else:
-                pos_decoded_bbox_preds.register_hook(
-                    lambda grad: grad * origin_gradient_mask)
+             
+            pos_decoded_bbox_preds.register_hook(
+                lambda grad: grad * origin_gradient_mask)
             # pos_decoded_bbox_preds.register_hook(
             #     lambda grad: grad * 0)
 
-            if self.box_weighted:
-                # sorted bboxes
-                loss_sorted_bbox = self.loss_sorted_bbox(
-                    pos_decoded_sort_bbox_preds,
-                    pos_decoded_target_preds,
-                    weight=sorted_ious_weights,
-                    avg_factor=sorted_ious_weights.sum())
-                # origin boxes
-                loss_bbox = self.loss_bbox(
-                    pos_decoded_bbox_preds,
-                    pos_decoded_target_preds,
-                    weight=ious_weights,
-                    avg_factor=ious_weights.sum())
-            else:
-                # sorted bboxes
-                loss_sorted_bbox = self.loss_sorted_bbox(
-                    pos_decoded_sort_bbox_preds, pos_decoded_target_preds)
-                # origin boxes
-                loss_bbox = self.loss_bbox(pos_decoded_bbox_preds,
-                                           pos_decoded_target_preds)
+            # sorted bboxes
+            loss_sorted_bbox = self.loss_sorted_bbox(
+                pos_decoded_sort_bbox_preds,
+                pos_decoded_target_preds,
+                weight=sorted_ious_weights,
+                avg_factor=sorted_ious_weights.sum())
+            # origin boxes
+            loss_bbox = self.loss_bbox(
+                pos_decoded_bbox_preds,
+                pos_decoded_target_preds,
+                weight=ious_weights,
+                avg_factor=ious_weights.sum())
 
             loss_cls = self.loss_cls(
                 flatten_cls_scores,
                 flatten_labels,
                 avg_factor=pruned_num_pos +
                 num_imgs)  # avoid pruned_num_pos is 0
-            if self.scaled_centerness:
-                # shape_num < 1: gaussian shape
-                # shape_num > 1:  sharp shape
-                shape_num = 1 / 4
-                pos_centerness_targets = 2 / (
-                    2 - pos_centerness_targets**shape_num) - 1
 
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
@@ -580,11 +557,18 @@ class DDBV3NPHead(nn.Module):
                     # loss_sorted_bbox=loss_sorted_bbox,
                     loss_centerness=loss_centerness)
             else:
-                return dict(
-                    loss_cls=loss_cls,
-                    loss_bbox=loss_bbox,
-                    loss_sorted_bbox=loss_sorted_bbox,
-                    loss_centerness=loss_centerness)
+                if self.sorting_loss_only:
+                    return dict(
+                        loss_cls=loss_cls,
+                        # loss_bbox=loss_bbox,
+                        loss_sorted_bbox=loss_sorted_bbox,
+                        loss_centerness=loss_centerness)
+                else:
+                    return dict(
+                        loss_cls=loss_cls,
+                        loss_bbox=loss_bbox,
+                        loss_sorted_bbox=loss_sorted_bbox,
+                        loss_centerness=loss_centerness)
 
     def get_bboxes(self,
                    cls_scores,
