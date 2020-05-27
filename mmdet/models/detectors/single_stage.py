@@ -65,10 +65,16 @@ class SingleStageDetector(BaseDetector):
                       img_metas,
                       gt_bboxes,
                       gt_labels,
+                      gt_masks=None,
                       gt_bboxes_ignore=None):
         x = self.extract_feat(img)
         outs = self.bbox_head(x)
-        loss_inputs = outs + (gt_bboxes, gt_labels, img_metas, self.train_cfg)
+        if gt_masks is not None:
+            loss_inputs = outs + (gt_bboxes, gt_labels,
+                                  gt_masks, img_metas, self.train_cfg)
+        else:
+            loss_inputs = outs + (gt_bboxes, gt_labels,
+                                  img_metas, self.train_cfg)
         losses = self.bbox_head.loss(
             *loss_inputs, gt_bboxes_ignore=gt_bboxes_ignore)
         return losses
@@ -84,7 +90,7 @@ class SingleStageDetector(BaseDetector):
         ]
         return bbox_results[0]
 
-    def merge_aug_results(self, aug_bboxes, aug_scores, aug_centernesses,img_metas):
+    def merge_aug_results(self, aug_bboxes, aug_scores, aug_centernesses, img_metas):
         """Merge augmented detection bboxes and scores.
 
         Args:
@@ -113,7 +119,6 @@ class SingleStageDetector(BaseDetector):
                 centernesses = torch.cat(aug_centernesses, dim=0)
                 return bboxes, scores, centernesses
 
-
     def aug_test(self, imgs, img_metas, rescale=False):
         # recompute feats to save memory
         feats = self.extract_feats(imgs)
@@ -126,7 +131,8 @@ class SingleStageDetector(BaseDetector):
             # only one image in the batch
             outs = self.bbox_head(x)
             bbox_inputs = outs + (img_meta, self.test_cfg, False, False)
-            det_bboxes, det_scores,det_centerness = self.bbox_head.get_bboxes(*bbox_inputs)[0]
+            det_bboxes, det_scores, det_centerness = self.bbox_head.get_bboxes(
+                *bbox_inputs)[0]
             aug_bboxes.append(det_bboxes)
             aug_scores.append(det_scores)
             aug_centernesses.append(det_centerness)
@@ -136,7 +142,7 @@ class SingleStageDetector(BaseDetector):
         det_bboxes, det_labels = multiclass_nms(merged_bboxes, merged_scores,
                                                 self.test_cfg.score_thr,
                                                 self.test_cfg.nms,
-                                                self.test_cfg.max_per_img,score_factors=merged_centernesses)
+                                                self.test_cfg.max_per_img, score_factors=merged_centernesses)
         if rescale:
             _det_bboxes = det_bboxes
         else:

@@ -974,7 +974,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                                 if str(self.pyramid_hint_loss) == 'CrossEntropyLoss()':
                                     t_pyramid_feature_list = t_pyramid_feature_list.sigmoid()
-                                embed()
+
                                 attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                     s_channel_increase_pyramid_feature_list[
                                         t_pos_inds],

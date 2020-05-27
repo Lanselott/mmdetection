@@ -106,12 +106,12 @@ model = dict(
         gamma=2,
         adap_distill_loss_weight=0.5,
         strides=[8, 16, 32, 64, 128],
-        # pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
-        pyramid_hint_loss=dict(
-            type='CrossEntropyLoss',
-            use_sigmoid=True,
-            # reduction='none',
-            loss_weight=1.0),
+        pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
+        # pyramid_hint_loss=dict(
+        #     type='CrossEntropyLoss',
+        #     use_sigmoid=True,
+        #     # reduction='none',
+        #     loss_weight=1.0),
         reg_head_hint_loss=dict(type='MSELoss', loss_weight=1),
         cls_head_hint_loss=dict(type='MSELoss', loss_weight=1),
         cls_reg_distribution_hint_loss=dict(type='MSELoss', loss_weight=1),

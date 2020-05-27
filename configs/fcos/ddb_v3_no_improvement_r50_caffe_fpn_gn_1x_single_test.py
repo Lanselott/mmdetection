@@ -43,8 +43,8 @@ model = dict(
         stable_noise=False,
         hook_debug=True,
         apply_boundary_centerness=False,
-        sorted_warmup = 0,
-        giou_centerness = False,
+        sorted_warmup=0,
+        giou_centerness=False,
         apply_cls_awareness=False,
         sorting_loss_only=True,
         loss_cls=dict(
@@ -86,13 +86,13 @@ img_norm_cfg = dict(
     mean=[102.9801, 115.9465, 122.7717], std=[1.0, 1.0, 1.0], to_rgb=False)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='LoadAnnotations', with_bbox=True),
+    dict(type='LoadAnnotations', with_bbox=True, with_mask=True),
     dict(type='Resize', img_scale=(1333, 800), keep_ratio=True),
     dict(type='RandomFlip', flip_ratio=0.5),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
     dict(type='DefaultFormatBundle'),
-    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels']),
+    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_masks']),
 ]
 test_pipeline = [
     dict(type='LoadImageFromFile'),
@@ -156,6 +156,6 @@ total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
-load_from = None
-resume_from = None #'./work/dirs/ddb_v3_no_improvement_single/epoch_11.pth'
+load_from = './work/dirs/ddbv3_np_r50/fcos_2gpu.pth'
+resume_from = None  # './work/dirs/ddb_v3_no_improvement_single/epoch_11.pth'
 workflow = [('train', 1)]

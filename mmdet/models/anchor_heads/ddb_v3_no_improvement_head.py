@@ -104,7 +104,8 @@ class DDBV3NPHead(nn.Module):
         self.sorted_warmup = sorted_warmup
         self.giou_centerness = giou_centerness
         self.scaled_centerness = scaled_centerness
-
+        self.sc_image_counter = 0
+        self.sc_avg_ratio = 0
         self._init_layers()
 
     def _init_layers(self):
@@ -186,10 +187,14 @@ class DDBV3NPHead(nn.Module):
             n, c, w, h = bbox_pred_bits.shape
             bbox_pred = torch.zeros([n, 4, w, h], device=bbox_pred_bits.device)
             bbox_pred_bits = bbox_pred_bits.reshape(-1, 4, 3, w, h)
-            bbox_pred[:,0] = bbox_pred_bits[:, 0, 0] + 10 * bbox_pred_bits[:, 0, 1] + 100 * bbox_pred_bits[:, 0, 2] 
-            bbox_pred[:,1] = bbox_pred_bits[:, 1, 0] + 10 * bbox_pred_bits[:, 1, 1] + 100 * bbox_pred_bits[:, 1, 2]
-            bbox_pred[:,2] = bbox_pred_bits[:, 2, 0] + 10 * bbox_pred_bits[:, 2, 1] + 100 * bbox_pred_bits[:, 2, 2] 
-            bbox_pred[:,3] = bbox_pred_bits[:, 3, 0] + 10 * bbox_pred_bits[:, 3, 1] + 100 * bbox_pred_bits[:, 3, 2] 
+            bbox_pred[:, 0] = bbox_pred_bits[:, 0, 0] + 10 * \
+                bbox_pred_bits[:, 0, 1] + 100 * bbox_pred_bits[:, 0, 2]
+            bbox_pred[:, 1] = bbox_pred_bits[:, 1, 0] + 10 * \
+                bbox_pred_bits[:, 1, 1] + 100 * bbox_pred_bits[:, 1, 2]
+            bbox_pred[:, 2] = bbox_pred_bits[:, 2, 0] + 10 * \
+                bbox_pred_bits[:, 2, 1] + 100 * bbox_pred_bits[:, 2, 2]
+            bbox_pred[:, 3] = bbox_pred_bits[:, 3, 0] + 10 * \
+                bbox_pred_bits[:, 3, 1] + 100 * bbox_pred_bits[:, 3, 2]
             bbox_pred = nn.functional.relu(bbox_pred)
         else:
             bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
@@ -209,6 +214,7 @@ class DDBV3NPHead(nn.Module):
              bd_centernesses,
              gt_bboxes,
              gt_labels,
+             gt_masks,
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
@@ -312,10 +318,8 @@ class DDBV3NPHead(nn.Module):
             instance levels mask
             '''
             # generate instance levels index
-            instance_counter = torch.zeros(
-                num_pos, device=pos_labels.device)
-            remove = torch.zeros(
-                num_pos, device=pos_labels.device)
+            instance_counter = torch.zeros(num_pos, device=pos_labels.device)
+            remove = torch.zeros(num_pos, device=pos_labels.device)
             obj_id = 0
 
             # NOTE: get mask for each obj
@@ -358,12 +362,14 @@ class DDBV3NPHead(nn.Module):
                 # consistency:
                 consistency_mask = (regression_mask + classification_mask) == 2
                 masks_for_all[obj_mask_inds[consistency_mask]] = 0
-
             # cls branch
             reduced_mask = (masks_for_all == 0).nonzero()
             # FIXME:
             flatten_labels[pos_inds[
                 reduced_mask]] = 0  # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
+            # NOTE: Draw positive images
+            sc_masks = self.draw_sc_masks(flatten_labels, labels,
+                                          featmap_sizes, gt_masks)
             saved_target_mask = masks_for_all.nonzero().reshape(-1)
             pos_centerness = pos_centerness[saved_target_mask].reshape(-1)
 
@@ -498,11 +504,11 @@ class DDBV3NPHead(nn.Module):
                 if not self.sorting_loss_only:
                     pos_decoded_sort_bbox_preds.register_hook(
                         lambda grad: grad * debug_mask)
-                
+
             else:
                 pos_decoded_sort_bbox_preds.register_hook(
                     lambda grad: grad * sort_gradient_mask)
-             
+
             pos_decoded_bbox_preds.register_hook(
                 lambda grad: grad * origin_gradient_mask)
             # pos_decoded_bbox_preds.register_hook(
@@ -805,3 +811,47 @@ class DDBV3NPHead(nn.Module):
         bbox_targets = bbox_targets[range(num_points), min_area_inds]
 
         return labels, bbox_targets
+
+    def draw_sc_masks(self, flatten_labels, labels, featmap_sizes, gt_masks):
+        crop_point = 0
+        area = labels[0].shape[0]
+        _w, _h = featmap_sizes[0]
+        n = area // (_w * _h)
+        sum_masks = torch.zeros([n, _w, _h], device=labels[0].device).float()
+        for featmap_size, label in zip(featmap_sizes, labels):
+            w, h = featmap_size
+            mask = flatten_labels[crop_point:crop_point + n * w * h].reshape(
+                n, w, h).float()
+            sum_masks += F.interpolate(
+                mask.unsqueeze(0), size=featmap_sizes[0],
+                mode='nearest').reshape(n, _w, _h)
+            crop_point += n * w * h
+
+        from scipy.misc import imsave
+        for sum_mask, gt_mask in zip(sum_masks, gt_masks):
+            self.sc_image_counter += 1
+            gt_mask = torch.tensor(
+                gt_mask, device=sum_masks.device).float().sum(0)
+            gt_mask = F.interpolate(
+                gt_mask.unsqueeze(0).unsqueeze(0),
+                size=featmap_sizes[0],
+                mode='nearest').reshape(_w, _h)
+
+            gt_mask = gt_mask.reshape(-1)
+            sum_mask = sum_mask.reshape(-1)
+            gt_mask[gt_mask != 0] = 1
+            sum_mask[sum_mask != 0] = 1
+
+            gt_area = gt_mask.sum()
+            sc_area = ((sum_mask + gt_mask) == 2).sum()
+            inside_ratio = sc_area / gt_area
+            effective_ratio = sc_area / sum_mask.sum()
+            # print("effective_ratio:", effective_ratio)
+            # print("sc_ratio:", sc_ratio)
+            self.sc_avg_ratio += effective_ratio
+            # imsave("./visualize/sum_masks_{}.png".format(self.sc_image_counter), sum_mask.cpu().numpy())
+            if self.sc_image_counter == 1000:
+                print("avg_sc_ratio:",
+                      self.sc_avg_ratio / self.sc_image_counter)
+                embed()
+        return None

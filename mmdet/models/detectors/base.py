@@ -8,6 +8,7 @@ import torch.nn as nn
 
 from mmdet.core import auto_fp16, get_classes, tensor2imgs
 
+from IPython import embed
 
 class BaseDetector(nn.Module):
     """Base class for detectors"""

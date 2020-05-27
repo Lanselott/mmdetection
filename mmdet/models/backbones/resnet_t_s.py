@@ -602,7 +602,7 @@ class ResTSNet(nn.Module):
                             t_layer_conv3_data,
                             size=s_layer.conv3.weight.shape[:2],
                             mode='bilinear').permute(2, 3, 0, 1))
-                        # bn
+                        # bn bias
                         t_layer_bn1_bias = t_layer.bn1.bias.data.unsqueeze(
                             0).unsqueeze(0)
                         s_layer.bn1.bias.data.copy_(F.interpolate(
@@ -621,24 +621,24 @@ class ResTSNet(nn.Module):
                             t_layer_bn3_bias,
                             size=s_layer.bn3.bias.shape[0],
                             mode='linear').view(-1))
-                        # bn bias
-                        t_layer_bn1_data = t_layer.bn1.bias.data.unsqueeze(
+                        # bn weight
+                        t_layer_bn1_data = t_layer.bn1.weight.data.unsqueeze(
                             0).unsqueeze(0)
-                        s_layer.bn1.bias.data.copy_(F.interpolate(
+                        s_layer.bn1.weight.data.copy_(F.interpolate(
                             t_layer_bn1_data,
-                            size=s_layer.bn1.bias.shape[0],
+                            size=s_layer.bn1.weight.shape[0],
                             mode='linear').view(-1))
-                        t_layer_bn2_data = t_layer.bn2.bias.data.unsqueeze(
+                        t_layer_bn2_data = t_layer.bn2.weight.data.unsqueeze(
                             0).unsqueeze(0)
-                        s_layer.bn2.bias.data.copy_(F.interpolate(
+                        s_layer.bn2.weight.data.copy_(F.interpolate(
                             t_layer_bn2_data,
-                            size=s_layer.bn2.bias.shape[0],
+                            size=s_layer.bn2.weight.shape[0],
                             mode='linear').view(-1))
-                        t_layer_bn3_data = t_layer.bn3.bias.data.unsqueeze(
+                        t_layer_bn3_data = t_layer.bn3.weight.data.unsqueeze(
                             0).unsqueeze(0)
-                        s_layer.bn3.bias.data.copy_(F.interpolate(
+                        s_layer.bn3.weight.data.copy_(F.interpolate(
                             t_layer_bn3_data,
-                            size=s_layer.bn3.bias.shape[0],
+                            size=s_layer.bn3.weight.shape[0],
                             mode='linear').view(-1))
 
                         if t_layer.downsample is not None:
