@@ -634,6 +634,8 @@ class ResTSNet(nn.Module):
                                 t_layer_bn3_bias,
                                 size=s_layer.bn3.bias.shape[0],
                                 mode='linear').view(-1))
+                        '''
+                        # NOTE: it looks like copy bn is not stable for training
                         # bn weight
                         t_layer_bn1_data = t_layer.bn1.weight.data.unsqueeze(
                             0).unsqueeze(0)
@@ -656,7 +658,7 @@ class ResTSNet(nn.Module):
                                 t_layer_bn3_data,
                                 size=s_layer.bn3.weight.shape[0],
                                 mode='linear').view(-1))
-
+                        '''
                         if t_layer.downsample is not None:
                             # donwsample
                             t_layer_downsample_conv_data = t_layer.downsample[
@@ -703,22 +705,23 @@ class ResTSNet(nn.Module):
                         # NOTE: remove gamma value close to zero
                         bn1_topk_inds = t_layer.bn1.weight.abs().topk(
                             t_layer.bn1.weight.shape[0] // self.t_s_ratio)[1]
+                        bn2_topk_inds = t_layer.bn2.weight.abs().topk(
+                            t_layer.bn2.weight.shape[0] // self.t_s_ratio)[1]
+                        bn3_topk_inds = t_layer.bn3.weight.abs().topk(
+                            t_layer.bn3.weight.shape[0] // self.t_s_ratio)[1]
+                        '''
                         t_layer_bn1_data = t_layer.bn1.weight.data
                         s_layer.bn1.weight.data.copy_(
                             t_layer_bn1_data[bn1_topk_inds])
 
-                        bn2_topk_inds = t_layer.bn2.weight.abs().topk(
-                            t_layer.bn2.weight.shape[0] // self.t_s_ratio)[1]
                         t_layer_bn2_data = t_layer.bn2.weight.data
                         s_layer.bn2.weight.data.copy_(
                             t_layer_bn2_data[bn2_topk_inds])
 
-                        bn3_topk_inds = t_layer.bn3.weight.abs().topk(
-                            t_layer.bn3.weight.shape[0] // self.t_s_ratio)[1]
                         t_layer_bn3_data = t_layer.bn3.weight.data
                         s_layer.bn3.weight.data.copy_(
                             t_layer_bn3_data[bn3_topk_inds])
-
+                        '''
                         # bn bias
                         t_layer_bn1_bias = t_layer.bn1.bias.data
                         s_layer.bn1.bias.data.copy_(
