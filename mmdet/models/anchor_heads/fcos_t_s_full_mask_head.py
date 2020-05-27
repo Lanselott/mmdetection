@@ -548,8 +548,8 @@ class FCOSTSFullMaskHead(nn.Module):
 
     def forward(self, feats):
         self.train_step += 1
-        if self.rouse_student_point == self.train_step:
-            self.copy_heads()
+        # if self.rouse_student_point == self.train_step:
+            # self.copy_heads()
 
         t_feats = feats[0]
         s_feats = feats[1]
