@@ -271,6 +271,7 @@ class FPNTS(nn.Module):
                     t_layer_conv_data,
                     size=s_fpn_conv.conv.weight.shape[:2],
                     mode='bilinear').permute(2, 3, 0, 1))
+            embed()
 
         for s_lateral_conv, t_lateral_conv in zip(self.s_lateral_convs, self.lateral_convs):
             t_lateral_layer_conv_data = t_lateral_conv.conv.weight.data.permute(
@@ -285,9 +286,11 @@ class FPNTS(nn.Module):
     def forward(self, inputs):
         self.train_step += 1
 
+        '''
         if self.rouse_student_point == self.train_step:
             self.copy_pyramid()
-
+        '''
+        
         # Teacher Net
         t_outs = self.single_forward(inputs[0], self.fpn_convs,
                                      self.lateral_convs)

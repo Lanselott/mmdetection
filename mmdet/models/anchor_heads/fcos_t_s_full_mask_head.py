@@ -972,8 +972,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                 giou_attention_weight = t_s_gious.detach(
                                 ).clamp(0)
 
-                                if str(self.pyramid_hint_loss) == 'CrossEntropyLoss()':
-                                    t_pyramid_feature_list = t_pyramid_feature_list.sigmoid()
+                                # if str(self.pyramid_hint_loss) == 'CrossEntropyLoss()':
+                                #     t_pyramid_feature_list = t_pyramid_feature_list.sigmoid()
 
                                 attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                     s_channel_increase_pyramid_feature_list[
