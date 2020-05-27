@@ -76,11 +76,11 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_data_free_mode=False,
                  learn_from_missing_annotation=False,
                  learn_from_teacher_backbone=False,
-                 use_additional_generator=False,
                  block_wise_attention=False,
                  pyramid_wise_attention=False,
                  apply_discriminator=False,
                  siamese_distill=False,
+                 use_intermediate_learner=False,
                  pyramid_full_attention=False,
                  corr_out_channels=32,
                  pyramid_correlation=False,
@@ -173,7 +173,6 @@ class FCOSTSFullMaskHead(nn.Module):
         self.pyramid_wise_attention = pyramid_wise_attention
         self.apply_discriminator = apply_discriminator
         self.siamese_distill = siamese_distill
-        self.use_additional_generator = use_additional_generator
         self.pyramid_full_attention = pyramid_full_attention
         self.pyramid_correlation = pyramid_correlation
         self.pyramid_learn_high_quality = pyramid_learn_high_quality
@@ -216,6 +215,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_data_free_mode = apply_data_free_mode
         self.learn_from_missing_annotation = learn_from_missing_annotation
         self.learn_from_teacher_backbone = learn_from_teacher_backbone
+        self.use_intermediate_learner = use_intermediate_learner
         self.fix_student_train_teacher = fix_student_train_teacher
         self.train_student_only = train_student_only
         self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
@@ -243,8 +243,13 @@ class FCOSTSFullMaskHead(nn.Module):
         self.inner_lr = 0.01
         self.train_step = 0
         self.rouse_student_point = rouse_student_point
+        self.intermediate_channel = self.s_feat_channels + (
+            self.feat_channels - self.s_feat_channels) // 2
         self._init_teacher_layers()
         self._init_student_layers()
+
+        if self.use_intermediate_learner:
+            self._init_intermediate_layers()
 
         if self.siamese_distill:
             self._init_siamese()
@@ -342,6 +347,39 @@ class FCOSTSFullMaskHead(nn.Module):
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
+    def _init_intermediate_layers(self):
+        self.i_cls_convs = nn.ModuleList()
+        self.i_reg_convs = nn.ModuleList()
+        for i in range(self.stacked_convs):
+            chn = self.in_channels if i == 0 else self.feat_channels
+            self.i_cls_convs.append(
+                ConvModule(
+                    self.intermediate_channel,
+                    self.intermediate_channel,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=self.norm_cfg is None))
+            self.i_reg_convs.append(
+                ConvModule(
+                    self.intermediate_channel,
+                    self.intermediate_channel,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=self.norm_cfg is None))
+        self.i_fcos_cls = nn.Conv2d(
+            self.intermediate_channel, self.cls_out_channels, 3, padding=1)
+        self.i_fcos_reg = nn.Conv2d(self.intermediate_channel, 4, 3, padding=1)
+        self.i_fcos_centerness = nn.Conv2d(
+            self.intermediate_channel, 1, 3, padding=1)
+
+        self.i_scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
+
     def _init_student_layers(self):
         self.s_cls_convs = nn.ModuleList()
         self.s_reg_convs = nn.ModuleList()
@@ -378,6 +416,10 @@ class FCOSTSFullMaskHead(nn.Module):
         self.t_s_correlation_conv = nn.ModuleList()
         self.t_s_pyramid_align = nn.ModuleList()
 
+        if self.use_intermediate_learner:
+            self.t_i_pyramid_align = nn.ModuleList()
+            self.s_i_pyramid_align = nn.ModuleList()
+
         if self.learn_from_teacher_backbone:
             self.s_t_pyramid_align = nn.ModuleList()
 
@@ -386,22 +428,24 @@ class FCOSTSFullMaskHead(nn.Module):
                 self.inner_opt_head = nn.Conv2d(
                     self.feat_channels, self.feat_channels, 3, padding=1)
 
-            for i in range(self.multi_levels):
-                channel_delta = (self.feat_channels -
-                                 self.s_feat_channels) // self.multi_levels
+            if self.use_intermediate_learner:
+                self.t_i_pyramid_align.append(
+                    nn.Conv2d(
+                        self.feat_channels,
+                        self.intermediate_channel,
+                        3,
+                        padding=1))
+                self.s_i_pyramid_align.append(
+                    nn.Conv2d(
+                        self.s_feat_channels,
+                        self.intermediate_channel,
+                        3,
+                        padding=1))
+            else:
+                for i in range(self.multi_levels):
+                    channel_delta = (self.feat_channels -
+                                     self.s_feat_channels) // self.multi_levels
 
-                if self.inner_opt:
-                    self.t_s_pyramid_align.append(
-                        ConvModule(
-                            self.s_feat_channels + channel_delta * i,
-                            self.s_feat_channels + channel_delta * (i + 1),
-                            3,
-                            stride=1,
-                            padding=1,
-                            conv_cfg=self.conv_cfg,
-                            norm_cfg=self.norm_cfg,
-                            bias=self.norm_cfg is None))
-                else:
                     self.t_s_pyramid_align.append(
                         nn.Conv2d(
                             self.s_feat_channels + channel_delta * i,
@@ -409,13 +453,13 @@ class FCOSTSFullMaskHead(nn.Module):
                             3,
                             padding=1))
 
-                if self.learn_from_teacher_backbone:
-                    self.s_t_pyramid_align.append(
-                        nn.Conv2d(
-                            self.feat_channels - channel_delta * i,
-                            self.feat_channels - channel_delta * (i + 1),
-                            3,
-                            padding=1))
+                    if self.learn_from_teacher_backbone:
+                        self.s_t_pyramid_align.append(
+                            nn.Conv2d(
+                                self.feat_channels - channel_delta * i,
+                                self.feat_channels - channel_delta * (i + 1),
+                                3,
+                                padding=1))
 
         if self.apply_pri_pyramid_wise_alignment:
             for level in range(1, 3):
@@ -469,6 +513,17 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
         normal_init(self.fcos_centerness, std=0.01)
+
+        if self.use_intermediate_learner:
+            for m in self.i_cls_convs:
+                normal_init(m.conv, std=0.01)
+            for m in self.i_reg_convs:
+                normal_init(m.conv, std=0.01)
+            bias_cls = bias_init_with_prob(0.01)
+            normal_init(self.i_fcos_cls, std=0.01, bias=bias_cls)
+            normal_init(self.i_fcos_reg, std=0.01)
+            normal_init(self.i_fcos_centerness, std=0.01)
+
         # student model
         for m in self.s_cls_convs:
             normal_init(m.conv, std=0.01)
@@ -479,17 +534,18 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_reg, std=0.01)
         normal_init(self.fcos_s_centerness, std=0.01)
         if self.apply_pyramid_wise_alignment or self.pyramid_correlation:
-            if self.inner_opt:
-                for m in self.t_s_pyramid_align:
-                    normal_init(m.conv, std=0.01)
-                normal_init(self.inner_opt_head, std=0.01)
+            if self.use_intermediate_learner:
+                for align_conv in self.t_i_pyramid_align:
+                    normal_init(align_conv, std=0.01)
+                for align_conv in self.s_i_pyramid_align:
+                    normal_init(align_conv, std=0.01)
             else:
                 for align_conv in self.t_s_pyramid_align:
                     normal_init(align_conv, std=0.01)
 
-            if self.learn_from_teacher_backbone:
-                for align_conv in self.s_t_pyramid_align:
-                    normal_init(align_conv, std=0.01)
+                if self.learn_from_teacher_backbone:
+                    for align_conv in self.s_t_pyramid_align:
+                        normal_init(align_conv, std=0.01)
 
         if self.apply_pri_pyramid_wise_alignment:
             for t_s_pri_pyramid_convs in self.t_s_pri_pyramid_align:
@@ -549,7 +605,7 @@ class FCOSTSFullMaskHead(nn.Module):
     def forward(self, feats):
         self.train_step += 1
         # if self.rouse_student_point == self.train_step:
-            # self.copy_heads()
+        # self.copy_heads()
 
         t_feats = feats[0]
         s_feats = feats[1]
@@ -577,21 +633,22 @@ class FCOSTSFullMaskHead(nn.Module):
             hint_pairs += tuple('N')
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
-                               self.s_scales, hint_pairs)
+                               self.s_scales, self.i_scales, hint_pairs)
         elif self.copy_teacher_fpn:
             t_fpn_features = feats[4]
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
-                               self.s_scales, placeholder, t_fpn_features)
+                               self.s_scales, self.i_scales, placeholder,
+                               t_fpn_features)
         elif self.learn_from_teacher_backbone:
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
-                               self.s_scales, placeholder, placeholder,
-                               t_decreased_feats)
+                               self.s_scales, self.i_scales, placeholder,
+                               placeholder, t_decreased_feats)
         else:
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
-                               self.s_scales)
+                               self.s_scales, self.i_scales)
 
     def forward_single(self,
                        t_x,
@@ -600,6 +657,7 @@ class FCOSTSFullMaskHead(nn.Module):
                        s_pri_x,
                        scale,
                        s_scale,
+                       i_scale=None,
                        hint_pairs=None,
                        t_fpn_feat=None,
                        t_decreased_feat=None):
@@ -626,6 +684,37 @@ class FCOSTSFullMaskHead(nn.Module):
 
         cls_hint_pairs = []
         reg_hint_pairs = []
+
+        if self.use_intermediate_learner:
+            pyramid_hint_quads = []
+            pyramid_hint_quads.append(s_x)
+            pyramid_hint_quads.append(t_x)
+
+            t_i_x = t_x
+            s_i_x = s_x
+
+            for t_i_pyramid_align_conv in self.t_i_pyramid_align:
+                t_i_x = t_i_pyramid_align_conv(t_i_x.detach()) # no update to teacher
+            for s_i_pyramid_align_conv in self.s_i_pyramid_align:
+                s_i_x = s_i_pyramid_align_conv(s_i_x)
+
+            pyramid_hint_quads.append(s_i_x)
+            pyramid_hint_quads.append(t_i_x)
+
+            # learn from teacher
+            i_cls_feat = t_i_x
+            i_reg_feat = t_i_x
+
+            # intermediate head
+            for i in range(len(self.i_cls_convs)):
+                i_cls_layer = self.i_cls_convs[i]
+                i_reg_layer = self.i_reg_convs[i]
+                i_cls_feat = i_cls_layer(i_cls_feat)
+                i_reg_feat = i_reg_layer(i_reg_feat)
+
+            i_cls_score = self.i_fcos_cls(i_cls_feat)
+            i_centerness = self.i_fcos_centerness(i_cls_feat)
+            i_bbox_pred = i_scale(self.i_fcos_reg(i_reg_feat)).float().exp()
 
         if self.copy_teacher_fpn:
             t_fpn_cls_feat = t_fpn_feat
@@ -701,20 +790,23 @@ class FCOSTSFullMaskHead(nn.Module):
             t_fpn_bbox_pred = s_scale(
                 self.fcos_s_reg(t_fpn_reg_feat)).float().exp()
 
+        # FIXME: fix variable num of parameters....
         if self.training:
             if self.apply_pyramid_wise_alignment or self.siamese_distill or self.pyramid_correlation and not self.apply_head_wise_alignment:
                 if self.copy_teacher_fpn:
-                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, t_fpn_bbox_pred, t_fpn_cls_score, t_fpn_centerness, None, None, None, None
+                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, t_fpn_bbox_pred, t_fpn_cls_score, t_fpn_centerness, None, None, None, None, None, None, None
                 elif self.learn_from_teacher_backbone:
-                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, t_decreased_cls_score, t_decreased_bbox_pred, t_decreased_centerness, t_decreased_pyramid_hint_features
+                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, t_decreased_cls_score, t_decreased_bbox_pred, t_decreased_centerness, t_decreased_pyramid_hint_features, None, None, None
+                elif self.use_intermediate_learner:
+                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, i_cls_score, i_bbox_pred, i_centerness, pyramid_hint_quads
                 else:
-                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None
+                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, None, None, None
             elif self.apply_head_wise_alignment or self.siamese_distill and not self.apply_pyramid_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, head_hint_pairs, None, None, None, None, None, None, None, None, None
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, head_hint_pairs, None, None, None, None, None, None, None, None, None, None, None, None
             elif self.apply_pyramid_wise_alignment or self.siamese_distill and self.apply_head_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, head_hint_pairs, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, head_hint_pairs, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, None, None, None
             else:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None, corr_pairs, None, None, None, None, None, None, None, None
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None, corr_pairs, None, None, None, None, None, None, None, None, None, None, None
         else:
             if self.eval_student:
                 return s_cls_score, s_bbox_pred, s_centerness
@@ -744,6 +836,10 @@ class FCOSTSFullMaskHead(nn.Module):
              t_decreased_bbox_preds,
              t_decreased_centernesses,
              t_decreased_pyramid_hint_features,
+             i_cls_scores,
+             i_bbox_preds,
+             i_centernesses,
+             pyramid_hint_quads,
              gt_bboxes,
              gt_labels,
              img_metas,
@@ -819,6 +915,24 @@ class FCOSTSFullMaskHead(nn.Module):
                 't_fpn_loss_centerness': t_fpn_loss_centerness
             })
 
+        if self.use_intermediate_learner:
+            i_loss_cls, i_loss_bbox, i_loss_centerness, cls_avg_factor, i_flatten_cls_scores, _, i_iou_maps, _, _, i_pred_bboxes, i_gt_bboxes, _, _, i_pred_centerness, i_all_pred_bboxes, _ = self.loss_single(
+                i_cls_scores,
+                i_bbox_preds,
+                i_centernesses,
+                gt_bboxes,
+                gt_labels,
+                img_metas,
+                cfg,
+                gt_bboxes_ignore=None,
+                spatial_ratio=self.spatial_ratio)
+
+            loss_dict.update({
+                'i_loss_cls': i_loss_cls,
+                'i_loss_bbox': i_loss_bbox,
+                'i_loss_centerness': i_loss_centerness
+            })
+
         assert self.fix_student_train_teacher != self.learn_when_train
 
         if self.learn_when_train:
@@ -873,62 +987,86 @@ class FCOSTSFullMaskHead(nn.Module):
                         inner_s_channel_increase_pyramid_feature_list = []
                         t_pyramid_feature_list = []
                         s_channel_increase_pyramid_feature_list = []
-                        t_channel_decrease_pyramid_feature_list = []
                         s_cls_pyramid_feature_list = []
                         s_reg_pyramid_feature_list = []
 
-                        for j, pyramid_hint_pair in enumerate(
-                                pyramid_hint_pairs):
-                            s_pyramid_feature = pyramid_hint_pair[0]
-                            inner_s_pyramid_feature = pyramid_hint_pair[
-                                0].detach()
-                            t_pyramid_feature = pyramid_hint_pair[1]
-                            s_pyramid_feature_list.append(
-                                s_pyramid_feature.permute(0, 2, 3, 1).reshape(
-                                    -1, self.s_feat_channels))
-                            if self.spatial_ratio > 1:
-                                for t_s_pyramid_align_conv in self.t_s_pyramid_align:
-                                    s_pyramid_feature = t_s_pyramid_align_conv(
-                                        F.interpolate(
-                                            s_pyramid_feature,
-                                            size=pyramid_hint_pair[1].
-                                            shape[2:],
-                                            mode='nearest'))
+                        # if self.use_intermediate_learner:
+                        #     t_i_pyramid_feature_list = []
+                        #     s_i_pyramid_feature_list = []
 
-                            else:
-                                for t_s_pyramid_align_conv in self.t_s_pyramid_align:
-                                    s_pyramid_feature = t_s_pyramid_align_conv(
-                                        s_pyramid_feature)
+                        if not self.use_intermediate_learner:
+                            for j, pyramid_hint_pair in enumerate(
+                                    pyramid_hint_pairs):
+                                s_pyramid_feature = pyramid_hint_pair[0]
+                                inner_s_pyramid_feature = pyramid_hint_pair[
+                                    0].detach()
+                                t_pyramid_feature = pyramid_hint_pair[1]
+                                s_pyramid_feature_list.append(
+                                    s_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                                        -1, self.s_feat_channels))
+
+                                if self.spatial_ratio > 1:
+                                    for t_s_pyramid_align_conv in self.t_s_pyramid_align:
+                                        s_pyramid_feature = t_s_pyramid_align_conv(
+                                            F.interpolate(
+                                                s_pyramid_feature,
+                                                size=pyramid_hint_pair[1].
+                                                shape[2:],
+                                                mode='nearest'))
+
+                                else:
+                                    for t_s_pyramid_align_conv in self.t_s_pyramid_align:
+                                        s_pyramid_feature = t_s_pyramid_align_conv(
+                                            s_pyramid_feature)
+                                        if self.inner_opt:
+                                            inner_s_pyramid_feature = t_s_pyramid_align_conv(
+                                                inner_s_pyramid_feature)
                                     if self.inner_opt:
-                                        inner_s_pyramid_feature = t_s_pyramid_align_conv(
+                                        inner_s_pyramid_feature = self.inner_opt_head(
                                             inner_s_pyramid_feature)
+
+                                t_pyramid_feature_list.append(
+                                    t_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                                        -1, self.feat_channels))
+                                s_channel_increase_pyramid_feature_list.append(
+                                    s_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                                        -1, self.feat_channels))
                                 if self.inner_opt:
-                                    inner_s_pyramid_feature = self.inner_opt_head(
-                                        inner_s_pyramid_feature)
+                                    inner_s_channel_increase_pyramid_feature_list.append(
+                                        inner_s_pyramid_feature.permute(
+                                            0, 2, 3,
+                                            1).reshape(-1, self.feat_channels))
 
-                            delta_s_ious = s_g_ious.max() - s_g_ious.min()
-                            delta_t_ious = t_g_ious.max() - t_g_ious.min()
-                            mean_s_ious = s_g_ious.mean()
-                            mean_t_ious = t_g_ious.mean()
+                            s_pyramid_feature_list = torch.cat(
+                                s_pyramid_feature_list)
+                            t_pyramid_feature_list = torch.cat(
+                                t_pyramid_feature_list)
+                            s_channel_increase_pyramid_feature_list = torch.cat(
+                                s_channel_increase_pyramid_feature_list)
+                        else:
+                            for j, pyramid_hint_quad in enumerate(
+                                    pyramid_hint_quads):
+                                if self.use_intermediate_learner:
+                                    s_i_pyramid_feature = pyramid_hint_quad[2]
+                                    t_i_pyramid_feature = pyramid_hint_quad[3]
+                                    # TODO: Rename intermediate features
+                                    t_pyramid_feature_list.append(
+                                        t_i_pyramid_feature.permute(
+                                            0, 2, 3, 1).reshape(
+                                                -1, self.s_feat_channels +
+                                                (self.feat_channels -
+                                                self.s_feat_channels) // 2))
+                                    s_channel_increase_pyramid_feature_list.append(
+                                        s_i_pyramid_feature.permute(
+                                            0, 2, 3, 1).reshape(
+                                                -1, self.s_feat_channels +
+                                                (self.feat_channels -
+                                                self.s_feat_channels) // 2))
 
-                            t_pyramid_feature_list.append(
-                                t_pyramid_feature.permute(0, 2, 3, 1).reshape(
-                                    -1, self.feat_channels))
-                            s_channel_increase_pyramid_feature_list.append(
-                                s_pyramid_feature.permute(0, 2, 3, 1).reshape(
-                                    -1, self.feat_channels))
-                            if self.inner_opt:
-                                inner_s_channel_increase_pyramid_feature_list.append(
-                                    inner_s_pyramid_feature.permute(
-                                        0, 2, 3,
-                                        1).reshape(-1, self.feat_channels))
-
-                        s_pyramid_feature_list = torch.cat(
-                            s_pyramid_feature_list)
-                        t_pyramid_feature_list = torch.cat(
-                            t_pyramid_feature_list)
-                        s_channel_increase_pyramid_feature_list = torch.cat(
-                            s_channel_increase_pyramid_feature_list)
+                            t_pyramid_feature_list = torch.cat(
+                                t_pyramid_feature_list)
+                            s_channel_increase_pyramid_feature_list = torch.cat(
+                                s_channel_increase_pyramid_feature_list)
 
                         if self.inner_opt:
                             inner_s_channel_increase_pyramid_feature_list = torch.cat(
@@ -978,8 +1116,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                 attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                     s_channel_increase_pyramid_feature_list[
                                         t_pos_inds],
-                                    t_pyramid_feature_list[t_pos_inds].
-                                    detach(),
+                                    t_pyramid_feature_list[t_pos_inds].detach(
+                                    ),
                                     weight=iou_attention_weight,
                                     avg_factor=iou_attention_weight.sum())
                                 '''
