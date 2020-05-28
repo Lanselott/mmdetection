@@ -214,7 +214,7 @@ class DDBV3NPHead(nn.Module):
              bd_centernesses,
              gt_bboxes,
              gt_labels,
-             gt_masks,
+            #  gt_masks,
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
