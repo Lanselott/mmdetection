@@ -57,7 +57,6 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_iou_similarity=False,
                  apply_posprocessing_similarity=False,
                  apply_soft_regression_distill=False,
-                 choose_better_iou=False,
                  apply_soft_cls_distill=False,
                  apply_soft_centerness_distill=False,
                  temperature=1,
@@ -73,7 +72,6 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_head_wise_alignment=False,
                  simple_pyramid_alignment=False,
                  head_align_levels=[0],
-                 apply_data_free_mode=False,
                  learn_from_missing_annotation=False,
                  learn_from_teacher_backbone=False,
                  block_wise_attention=False,
@@ -207,12 +205,10 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_iou_similarity = apply_iou_similarity
         self.apply_posprocessing_similarity = apply_posprocessing_similarity
         self.apply_soft_regression_distill = apply_soft_regression_distill
-        self.choose_better_iou = choose_better_iou
         self.apply_soft_cls_distill = apply_soft_cls_distill
         self.apply_soft_centerness_distill = apply_soft_centerness_distill
         self.temperature = temperature
         self.apply_feature_alignment = apply_feature_alignment
-        self.apply_data_free_mode = apply_data_free_mode
         self.learn_from_missing_annotation = learn_from_missing_annotation
         self.learn_from_teacher_backbone = learn_from_teacher_backbone
         self.use_intermediate_learner = use_intermediate_learner
@@ -262,9 +258,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     'params': self.t_s_pyramid_align.parameters()
                 },
             ],
-                                             lr=1e-2,
-                                             momentum=0.9,
-                                             weight_decay=0.0001)
+                lr=1e-2,
+                momentum=0.9,
+                weight_decay=0.0001)
         else:
             self.inner_itr = 1
 
@@ -638,17 +634,17 @@ class FCOSTSFullMaskHead(nn.Module):
             t_fpn_features = feats[4]
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
-                               self.s_scales, self.i_scales, placeholder,
+                               self.s_scales, placeholder, placeholder,
                                t_fpn_features)
         elif self.learn_from_teacher_backbone:
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
-                               self.s_scales, self.i_scales, placeholder,
+                               self.s_scales, placeholder, placeholder,
                                placeholder, t_decreased_feats)
         else:
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
-                               self.s_scales, self.i_scales)
+                               self.s_scales, placeholder)
 
     def forward_single(self,
                        t_x,
@@ -694,7 +690,8 @@ class FCOSTSFullMaskHead(nn.Module):
             s_i_x = s_x
 
             for t_i_pyramid_align_conv in self.t_i_pyramid_align:
-                t_i_x = t_i_pyramid_align_conv(t_i_x.detach()) # no update to teacher
+                t_i_x = t_i_pyramid_align_conv(
+                    t_i_x.detach())  # no update to teacher
             for s_i_pyramid_align_conv in self.s_i_pyramid_align:
                 s_i_x = s_i_pyramid_align_conv(s_i_x)
 
@@ -794,19 +791,19 @@ class FCOSTSFullMaskHead(nn.Module):
         if self.training:
             if self.apply_pyramid_wise_alignment or self.siamese_distill or self.pyramid_correlation and not self.apply_head_wise_alignment:
                 if self.copy_teacher_fpn:
-                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, t_fpn_bbox_pred, t_fpn_cls_score, t_fpn_centerness, None, None, None, None, None, None, None
+                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, t_fpn_bbox_pred, t_fpn_cls_score, t_fpn_centerness, None, None, None, None, None, None, None, None
                 elif self.learn_from_teacher_backbone:
-                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, t_decreased_cls_score, t_decreased_bbox_pred, t_decreased_centerness, t_decreased_pyramid_hint_features, None, None, None
+                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, t_decreased_cls_score, t_decreased_bbox_pred, t_decreased_centerness, t_decreased_pyramid_hint_features, None, None, None, None
                 elif self.use_intermediate_learner:
                     return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, i_cls_score, i_bbox_pred, i_centerness, pyramid_hint_quads
                 else:
-                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, None, None, None
+                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, None, None, None, None
             elif self.apply_head_wise_alignment or self.siamese_distill and not self.apply_pyramid_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, head_hint_pairs, None, None, None, None, None, None, None, None, None, None, None, None
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, head_hint_pairs, None, None, None, None, None, None, None, None, None, None, None, None, None
             elif self.apply_pyramid_wise_alignment or self.siamese_distill and self.apply_head_wise_alignment:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, head_hint_pairs, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, None, None, None
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, head_hint_pairs, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, None, None, None, None
             else:
-                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None, corr_pairs, None, None, None, None, None, None, None, None, None, None, None
+                return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None, corr_pairs, None, None, None, None, None, None, None, None, None, None, None, None
         else:
             if self.eval_student:
                 return s_cls_score, s_bbox_pred, s_centerness
@@ -1055,13 +1052,13 @@ class FCOSTSFullMaskHead(nn.Module):
                                             0, 2, 3, 1).reshape(
                                                 -1, self.s_feat_channels +
                                                 (self.feat_channels -
-                                                self.s_feat_channels) // 2))
+                                                 self.s_feat_channels) // 2))
                                     s_channel_increase_pyramid_feature_list.append(
                                         s_i_pyramid_feature.permute(
                                             0, 2, 3, 1).reshape(
                                                 -1, self.s_feat_channels +
                                                 (self.feat_channels -
-                                                self.s_feat_channels) // 2))
+                                                 self.s_feat_channels) // 2))
 
                             t_pyramid_feature_list = torch.cat(
                                 t_pyramid_feature_list)
@@ -1599,7 +1596,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                                 0).float()
+                    0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
