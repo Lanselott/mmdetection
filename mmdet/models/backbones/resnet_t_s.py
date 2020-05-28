@@ -612,6 +612,7 @@ class ResTSNet(nn.Module):
                                 t_layer_conv3_data,
                                 size=s_layer.conv3.weight.shape[:2],
                                 mode='bilinear').permute(2, 3, 0, 1))
+                        '''
                         # bn bias
                         t_layer_bn1_bias = t_layer.bn1.bias.data.unsqueeze(
                             0).unsqueeze(0)
@@ -634,7 +635,6 @@ class ResTSNet(nn.Module):
                                 t_layer_bn3_bias,
                                 size=s_layer.bn3.bias.shape[0],
                                 mode='linear').view(-1))
-                        '''
                         # NOTE: it looks like copy bn is not stable for training
                         # bn weight
                         t_layer_bn1_data = t_layer.bn1.weight.data.unsqueeze(
@@ -669,13 +669,15 @@ class ResTSNet(nn.Module):
                                     size=s_layer.downsample[0].weight.
                                     shape[:2],
                                     mode='bilinear').permute(2, 3, 0, 1))
-                            t_layer_downsample_bias_data = t_layer.downsample[
+                            '''
+                            t_layer_downsample_weight_data = t_layer.downsample[
                                 1].weight.data.unsqueeze(0).unsqueeze(0)
                             s_layer.downsample[1].weight.data.copy_(
                                 F.interpolate(
-                                    t_layer_downsample_bias_data,
+                                    t_layer_downsample_weight_data,
                                     size=s_layer.downsample[1].weight.shape[0],
                                     mode='linear').view(-1))
+                            '''
 
     def copy_backbone_topk(self):
         for m in self.modules():
@@ -721,7 +723,6 @@ class ResTSNet(nn.Module):
                         t_layer_bn3_data = t_layer.bn3.weight.data
                         s_layer.bn3.weight.data.copy_(
                             t_layer_bn3_data[bn3_topk_inds])
-                        '''
                         # bn bias
                         t_layer_bn1_bias = t_layer.bn1.bias.data
                         s_layer.bn1.bias.data.copy_(
@@ -732,6 +733,7 @@ class ResTSNet(nn.Module):
                         t_layer_bn3_bias = t_layer.bn3.bias.data
                         s_layer.bn3.bias.data.copy_(
                             t_layer_bn3_bias[bn3_topk_inds])
+                        '''
                         # conv
                         t_layer_conv1_data = t_layer.conv1.weight.data
                         if prev_bn_topk_inds is None:
@@ -751,15 +753,17 @@ class ResTSNet(nn.Module):
                             [:, bn2_topk_inds])
                         # Residue part
                         if t_layer.downsample is not None:
-                            t_layer_downsample_bn_data = t_layer.downsample[
-                                1].weight.data
                             downsample_bn_topk_inds = t_layer.downsample[
                                 1].weight.data.abs().topk(
                                     t_layer.downsample[1].weight.shape[0] //
                                     self.t_s_ratio)[1]
+                            '''
+                            t_layer_downsample_bn_data = t_layer.downsample[
+                                1].weight.data
                             s_layer.downsample[1].weight.data.copy_(
                                 t_layer_downsample_bn_data[
                                     downsample_bn_topk_inds])
+                            '''
                             # donwsample
                             t_layer_downsample_conv_data = t_layer.downsample[
                                 0].weight.data
