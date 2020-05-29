@@ -245,3 +245,27 @@ def distance2bboxV2(points, distance, max_shape=None):
         x2 = x2.clamp(min=0, max=max_shape[1] - 1)
         y2 = y2.clamp(min=0, max=max_shape[0] - 1)
     return torch.stack([x1, y1, x2, y2], -1)
+
+def distance2bboxV3(points, distance, max_shape=None):
+    """Decode distance prediction to bounding box.
+
+    Args:
+        points (Tensor): Shape (n, 2), [x, y].
+        distance (Tensor): Distance from points to center (delta_x, delta_y, w, h)
+        max_shape (tuple): Shape of the image.
+
+    Returns:
+        Tensor: Decoded bboxes.
+    """
+    center_x = points[:, 0] + distance[:, 0]
+    center_y = points[:, 1] + distance[:, 1]
+    x1 = center_x - distance[:, 2]
+    y1 = center_y - distance[:, 3]
+    x2 = center_x + distance[:, 4]
+    y2 = center_y + distance[:, 5]
+    if max_shape is not None:
+        x1 = x1.clamp(min=0, max=max_shape[1] - 1)
+        y1 = y1.clamp(min=0, max=max_shape[0] - 1)
+        x2 = x2.clamp(min=0, max=max_shape[1] - 1)
+        y2 = y2.clamp(min=0, max=max_shape[0] - 1)
+    return torch.stack([x1, y1, x2, y2], -1)

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from mmcv.cnn import normal_init
 
-from mmdet.core import multi_apply, multiclass_nms, multiclass_nms_sorting, distance2bbox, distance2bboxV2, bbox2delta, bbox_overlaps, bbox_unions
+from mmdet.core import multi_apply, multiclass_nms, multiclass_nms_sorting, distance2bbox, distance2bboxV2, distance2bboxV3, bbox2delta, bbox_overlaps, bbox_unions
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import bias_init_with_prob, Scale, ConvModule
@@ -52,6 +52,7 @@ class DDBV3NPHead(nn.Module):
                  sorted_warmup=0,
                  box_sampling=False,
                  apply_new_box_coding=False,
+                 apply_6d_box_coding=False,
                  box_num=1,
                  sorting_loss_only=False,
                  loss_centerness=dict(
@@ -89,6 +90,7 @@ class DDBV3NPHead(nn.Module):
         self.softplus_scale = softplus_scale
         self.box_sampling = box_sampling
         self.apply_new_box_coding = apply_new_box_coding
+        self.apply_6d_box_coding = apply_6d_box_coding
         self.box_num = box_num
         self.sorting_loss_only = sorting_loss_only
         self.stable_noise = stable_noise
@@ -142,7 +144,10 @@ class DDBV3NPHead(nn.Module):
         if self.box_sampling:
             self.fcos_reg = nn.Conv2d(self.feat_channels, 4 * 3, 3, padding=1)
         else:
-            self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
+            if self.apply_6d_box_coding:
+                self.fcos_reg = nn.Conv2d(self.feat_channels, 6, 3, padding=1)
+            else:
+                self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
@@ -227,10 +232,16 @@ class DDBV3NPHead(nn.Module):
             cls_score.permute(0, 2, 3, 1).reshape(-1, self.cls_out_channels)
             for cls_score in cls_scores
         ]
-        flatten_bbox_preds = [
-            bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
-            for bbox_pred in bbox_preds
-        ]
+        if self.apply_6d_box_coding:
+            flatten_bbox_preds = [
+                bbox_pred.permute(0, 2, 3, 1).reshape(-1, 6)
+                for bbox_pred in bbox_preds
+            ]
+        else:
+            flatten_bbox_preds = [
+                bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
+                for bbox_pred in bbox_preds
+            ]
         flatten_centerness = [
             centerness.permute(0, 2, 3, 1).reshape(-1)
             for centerness in centernesses
@@ -266,7 +277,12 @@ class DDBV3NPHead(nn.Module):
             Strided box and Origin box
             '''
             if self.apply_new_box_coding:
+                assert self.apply_new_box_coding != self.apply_6d_box_coding
                 pos_decoded_bbox_preds = distance2bboxV2(
+                    pos_points, pos_bbox_preds)
+            elif self.apply_6d_box_coding:
+                assert self.apply_new_box_coding != self.apply_6d_box_coding
+                pos_decoded_bbox_preds = distance2bboxV3(
                     pos_points, pos_bbox_preds)
             else:
                 pos_decoded_bbox_preds = distance2bbox(pos_points,
@@ -617,8 +633,13 @@ class DDBV3NPHead(nn.Module):
                 centerness = centerness[topk_inds]
 
             if self.apply_new_box_coding:
+                assert self.apply_new_box_coding != self.apply_6d_box_coding
                 bboxes = distance2bboxV2(
                     points, bbox_pred, max_shape=img_shape)
+            elif self.apply_6d_box_coding:
+                assert self.apply_new_box_coding != self.apply_6d_box_coding
+                pos_decoded_bbox_preds = distance2bboxV3(
+                    points, bbox_pred)
             else:
                 bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
 
