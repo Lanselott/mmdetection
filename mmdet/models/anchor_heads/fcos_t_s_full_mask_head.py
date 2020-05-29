@@ -629,7 +629,7 @@ class FCOSTSFullMaskHead(nn.Module):
             hint_pairs += tuple('N')
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
-                               self.s_scales, self.i_scales, hint_pairs)
+                               self.s_scales, placeholder, hint_pairs)
         elif self.copy_teacher_fpn:
             t_fpn_features = feats[4]
             return multi_apply(self.forward_single, t_feats, s_feats,

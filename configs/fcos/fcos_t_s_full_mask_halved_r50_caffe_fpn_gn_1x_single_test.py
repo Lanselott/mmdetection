@@ -1,5 +1,5 @@
 # model settings
-ALIGN = False
+BLOCK_ALIGN = False
 PYRAMID_ALIGN = True
 PRI_PYRAMID_ALIGN = False
 PYRAMID_CORRELATION = False
@@ -25,7 +25,7 @@ model = dict(
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe',
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
-        apply_block_wise_alignment=ALIGN,
+        apply_block_wise_alignment=BLOCK_ALIGN,
         freeze_teacher=FREEZE_TEACHER,
         good_initial=GOOD_INITIAL,
         bn_topk_selection=BN_TOPK_SELECTION,
@@ -42,7 +42,7 @@ model = dict(
         extra_convs_on_inputs=False,  # use P5
         num_outs=5,
         relu_before_extra_convs=True,
-        apply_block_wise_alignment=ALIGN,
+        apply_block_wise_alignment=BLOCK_ALIGN,
         copy_teacher_fpn=COPY_TEACHER_FPN,
         freeze_teacher=FREEZE_TEACHER,
         rouse_student_point=ROUSE_STUDENT_POINT),
@@ -69,7 +69,7 @@ model = dict(
         pyramid_decoupling=False,
         temperature=1,
         align_level=0,
-        apply_block_wise_alignment=ALIGN,
+        apply_block_wise_alignment=BLOCK_ALIGN,
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         apply_discriminator=False,
         siamese_distill=False,

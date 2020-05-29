@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from mmcv.cnn import normal_init
 
-from mmdet.core import multi_apply, multiclass_nms, multiclass_nms_sorting, distance2bbox, bbox2delta, bbox_overlaps, bbox_unions
+from mmdet.core import multi_apply, multiclass_nms, multiclass_nms_sorting, distance2bbox, distance2bboxV2, bbox2delta, bbox_overlaps, bbox_unions
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import bias_init_with_prob, Scale, ConvModule
@@ -51,6 +51,7 @@ class DDBV3NPHead(nn.Module):
                  loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),
                  sorted_warmup=0,
                  box_sampling=False,
+                 apply_new_box_coding=False,
                  box_num=1,
                  sorting_loss_only=False,
                  loss_centerness=dict(
@@ -87,6 +88,7 @@ class DDBV3NPHead(nn.Module):
         self.relu_scale = relu_scale
         self.softplus_scale = softplus_scale
         self.box_sampling = box_sampling
+        self.apply_new_box_coding = apply_new_box_coding
         self.box_num = box_num
         self.sorting_loss_only = sorting_loss_only
         self.stable_noise = stable_noise
@@ -143,9 +145,6 @@ class DDBV3NPHead(nn.Module):
             self.fcos_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
 
-        if self.apply_boundary_centerness:
-            self.bd_centerness = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
-
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
     def init_weights(self):
@@ -158,9 +157,6 @@ class DDBV3NPHead(nn.Module):
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
         normal_init(self.fcos_centerness, std=0.01)
-
-        if self.apply_boundary_centerness:
-            normal_init(self.bd_centerness, std=0.01)
 
     def forward(self, feats):
         return multi_apply(self.forward_single, feats, self.scales)
@@ -178,9 +174,6 @@ class DDBV3NPHead(nn.Module):
             reg_feat = reg_layer(reg_feat)
 
         centerness = self.fcos_centerness(cls_feat)
-
-        if self.apply_boundary_centerness:
-            bd_centerness = self.bd_centerness(reg_feat)
 
         if self.box_sampling:
             bbox_pred_bits = self.fcos_reg(reg_feat)
@@ -200,24 +193,21 @@ class DDBV3NPHead(nn.Module):
             bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
             # bbox_pred = scale(self.fcos_reg(reg_feat)).float()
 
-        if self.apply_boundary_centerness:
-            return cls_score, bbox_pred, None, bd_centerness
-        else:
-            return cls_score, bbox_pred, centerness, None
+        return cls_score, bbox_pred, centerness
 
     # def regression_hook()
 
-    def loss(self,
-             cls_scores,
-             bbox_preds,
-             centernesses,
-             bd_centernesses,
-             gt_bboxes,
-             gt_labels,
+    def loss(
+            self,
+            cls_scores,
+            bbox_preds,
+            centernesses,
+            gt_bboxes,
+            gt_labels,
             #  gt_masks,
-             img_metas,
-             cfg,
-             gt_bboxes_ignore=None):
+            img_metas,
+            cfg,
+            gt_bboxes_ignore=None):
 
         assert len(cls_scores) == len(bbox_preds) == len(centernesses)
         dist_conf_mask_list = []
@@ -241,18 +231,11 @@ class DDBV3NPHead(nn.Module):
             bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
             for bbox_pred in bbox_preds
         ]
-        if self.apply_boundary_centerness:
-            flatten_bd_centerness = [
-                bd_centerness.permute(0, 2, 3, 1).reshape(-1, 4)
-                for bd_centerness in bd_centernesses
-            ]
-            flatten_bd_centerness = torch.cat(flatten_bd_centerness)
-        else:
-            flatten_centerness = [
-                centerness.permute(0, 2, 3, 1).reshape(-1)
-                for centerness in centernesses
-            ]
-            flatten_centerness = torch.cat(flatten_centerness)
+        flatten_centerness = [
+            centerness.permute(0, 2, 3, 1).reshape(-1)
+            for centerness in centernesses
+        ]
+        flatten_centerness = torch.cat(flatten_centerness)
 
         flatten_cls_scores = torch.cat(flatten_cls_scores)
         flatten_bbox_preds = torch.cat(flatten_bbox_preds)
@@ -274,11 +257,7 @@ class DDBV3NPHead(nn.Module):
         # pos_bbox_strides = flatten_bbox_strides[pos_inds]
 
         pos_labels = flatten_labels[pos_inds]
-
-        if self.apply_boundary_centerness:
-            pos_bd_centerness = flatten_bd_centerness[pos_inds]
-        else:
-            pos_centerness = flatten_centerness[pos_inds]
+        pos_centerness = flatten_centerness[pos_inds]
 
         if num_pos > 0:
             pos_points = flatten_points[pos_inds]
@@ -286,7 +265,13 @@ class DDBV3NPHead(nn.Module):
             NOTE: 
             Strided box and Origin box
             '''
-            pos_decoded_bbox_preds = distance2bbox(pos_points, pos_bbox_preds)
+            if self.apply_new_box_coding:
+                pos_decoded_bbox_preds = distance2bboxV2(
+                    pos_points, pos_bbox_preds)
+            else:
+                pos_decoded_bbox_preds = distance2bbox(pos_points,
+                                                       pos_bbox_preds)
+
             pos_decoded_target_preds = distance2bbox(pos_points,
                                                      pos_bbox_targets)
 
@@ -376,11 +361,7 @@ class DDBV3NPHead(nn.Module):
             '''
             saved_target_mask = masks_for_all.nonzero().reshape(-1)
 
-            if self.apply_boundary_centerness:
-                pos_bd_centerness = pos_bd_centerness[
-                    saved_target_mask].reshape(-1, 4)
-            else:
-                pos_centerness = pos_centerness[saved_target_mask].reshape(-1)
+            pos_centerness = pos_centerness[saved_target_mask].reshape(-1)
             '''
             consistency between regression and classification
             '''
@@ -412,7 +393,7 @@ class DDBV3NPHead(nn.Module):
             pos_dist_scores_sorted = torch.abs(
                 pos_decoded_target_preds -
                 pos_decoded_sort_bbox_preds).detach()
-            
+
             pos_dist_scores = torch.abs(pos_decoded_target_preds -
                                         pos_decoded_bbox_preds)
             pos_dist_scores = pos_dist_scores.permute(
@@ -539,55 +520,39 @@ class DDBV3NPHead(nn.Module):
                 avg_factor=pruned_num_pos +
                 num_imgs)  # avoid pruned_num_pos is 0
 
-            if self.apply_boundary_centerness:
-                loss_bd_centerness = self.loss_centerness(
-                    pos_bd_centerness, torch.max(_bd_sort_iou, _bd_iou))
-            else:
-                loss_centerness = self.loss_centerness(pos_centerness,
-                                                       pos_centerness_targets)
+            loss_centerness = self.loss_centerness(pos_centerness,
+                                                   pos_centerness_targets)
 
         else:
             loss_sorted_bbox = pos_bbox_preds.sum()
             loss_bbox = pos_bbox_preds.sum()
-            if self.apply_boundary_centerness:
-                loss_bd_centerness = pos_bd_centerness.sum()
-            else:
-                loss_centerness = pos_centerness.sum()
+            loss_centerness = pos_centerness.sum()
 
-        if self.apply_boundary_centerness:
+        if self.sorted_warmup > 0:
+            self.sorted_warmup -= 1
             return dict(
                 loss_cls=loss_cls,
                 loss_bbox=loss_bbox,
-                loss_sorted_bbox=loss_sorted_bbox,
-                # loss_centerness=loss_centerness,
-                loss_bd_centerness=loss_bd_centerness)
+                # loss_sorted_bbox=loss_sorted_bbox,
+                loss_centerness=loss_centerness)
         else:
-            if self.sorted_warmup > 0:
-                self.sorted_warmup -= 1
+            if self.sorting_loss_only:
+                return dict(
+                    loss_cls=loss_cls,
+                    # loss_bbox=loss_bbox,
+                    loss_sorted_bbox=loss_sorted_bbox,
+                    loss_centerness=loss_centerness)
+            else:
                 return dict(
                     loss_cls=loss_cls,
                     loss_bbox=loss_bbox,
-                    # loss_sorted_bbox=loss_sorted_bbox,
+                    loss_sorted_bbox=loss_sorted_bbox,
                     loss_centerness=loss_centerness)
-            else:
-                if self.sorting_loss_only:
-                    return dict(
-                        loss_cls=loss_cls,
-                        # loss_bbox=loss_bbox,
-                        loss_sorted_bbox=loss_sorted_bbox,
-                        loss_centerness=loss_centerness)
-                else:
-                    return dict(
-                        loss_cls=loss_cls,
-                        loss_bbox=loss_bbox,
-                        loss_sorted_bbox=loss_sorted_bbox,
-                        loss_centerness=loss_centerness)
 
     def get_bboxes(self,
                    cls_scores,
                    bbox_preds,
                    centernesses,
-                   bd_centernesses,
                    img_metas,
                    cfg,
                    rescale=None):
@@ -607,6 +572,7 @@ class DDBV3NPHead(nn.Module):
             centerness_pred_list = [
                 centernesses[i][img_id].detach() for i in range(num_levels)
             ]
+
             img_shape = img_metas[img_id]['img_shape']
             scale_factor = img_metas[img_id]['scale_factor']
             det_bboxes = self.get_bboxes_single(cls_score_list, bbox_pred_list,
@@ -634,7 +600,9 @@ class DDBV3NPHead(nn.Module):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
+
             centerness = centerness.permute(1, 2, 0).reshape(-1).sigmoid()
+
             bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
 
             nms_pre = cfg.get('nms_pre', -1)
@@ -648,7 +616,11 @@ class DDBV3NPHead(nn.Module):
                 scores = scores[topk_inds, :]
                 centerness = centerness[topk_inds]
 
-            bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
+            if self.apply_new_box_coding:
+                bboxes = distance2bboxV2(
+                    points, bbox_pred, max_shape=img_shape)
+            else:
+                bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
 
             mlvl_bboxes.append(bboxes)
             mlvl_scores.append(scores)

@@ -43,6 +43,7 @@ model = dict(
         stable_noise=False,
         hook_debug=True,
         apply_boundary_centerness=True,
+        apply_new_box_coding=True,
         sorted_warmup=0,
         giou_centerness=False,
         apply_cls_awareness=False,
