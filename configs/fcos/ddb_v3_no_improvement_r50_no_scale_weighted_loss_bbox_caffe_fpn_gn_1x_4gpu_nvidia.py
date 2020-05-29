@@ -33,6 +33,7 @@ model = dict(
         apply_iou_cache=False,
         consistency_weight=False,
         box_weighted=True,
+        apply_new_box_coding=True,
         no_scale=False,
         hook_debug=True,
         sorted_warmup=0,
