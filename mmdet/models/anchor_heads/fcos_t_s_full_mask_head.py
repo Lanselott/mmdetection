@@ -97,6 +97,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  head_teacher_reg_attention=False,
                  consider_cls_reg_distribution=False,
                  teacher_iou_attention=False,
+                 direct_downsample=False,
                  attention_threshold=0.5,
                  freeze_teacher=False,
                  beta=1,
@@ -191,6 +192,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.head_teacher_reg_attention = head_teacher_reg_attention
         self.consider_cls_reg_distribution = consider_cls_reg_distribution
         self.teacher_iou_attention = teacher_iou_attention
+        self.direct_downsample = direct_downsample
         self.attention_threshold = attention_threshold
         self.freeze_teacher = freeze_teacher
         self.beta = beta
@@ -260,9 +262,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     'params': self.t_s_pyramid_align.parameters()
                 },
             ],
-                lr=1e-2,
-                momentum=0.9,
-                weight_decay=0.0001)
+                                             lr=1e-2,
+                                             momentum=0.9,
+                                             weight_decay=0.0001)
         else:
             self.inner_itr = 1
 
@@ -1001,22 +1003,37 @@ class FCOSTSFullMaskHead(nn.Module):
                                     0].detach()
                                 t_pyramid_feature = pyramid_hint_pair[1]
                                 s_pyramid_feature_list.append(
-                                    s_pyramid_feature.permute(0, 2, 3, 1).reshape(
-                                        -1, self.s_feat_channels))
+                                    s_pyramid_feature.permute(
+                                        0, 2, 3,
+                                        1).reshape(-1, self.s_feat_channels))
 
                                 if self.spatial_ratio > 1:
                                     for t_s_pyramid_align_conv in self.t_s_pyramid_align:
-                                        s_pyramid_feature = t_s_pyramid_align_conv(
-                                            F.interpolate(
-                                                s_pyramid_feature,
+                                        if self.direct_downsample:
+                                            s_pyramid_feature = F.interpolate(
+                                                s_pyramid_feature.unsqueeze(0),
                                                 size=pyramid_hint_pair[1].
-                                                shape[2:],
-                                                mode='nearest'))
+                                                shape[1:],
+                                                mode='nearest').squeeze(0)
+                                        else:
+                                            s_pyramid_feature = t_s_pyramid_align_conv(
+                                                F.interpolate(
+                                                    s_pyramid_feature,
+                                                    size=pyramid_hint_pair[1].
+                                                    shape[2:],
+                                                    mode='nearest'))
 
                                 else:
                                     for t_s_pyramid_align_conv in self.t_s_pyramid_align:
-                                        s_pyramid_feature = t_s_pyramid_align_conv(
-                                            s_pyramid_feature)
+                                        if self.direct_downsample:
+                                            s_pyramid_feature = F.interpolate(
+                                                s_pyramid_feature.unsqueeze(0),
+                                                size=pyramid_hint_pair[1].
+                                                shape[1:],
+                                                mode='nearest').squeeze(0)
+                                        else:
+                                            s_pyramid_feature = t_s_pyramid_align_conv(
+                                                s_pyramid_feature)
                                         if self.inner_opt:
                                             inner_s_pyramid_feature = t_s_pyramid_align_conv(
                                                 inner_s_pyramid_feature)
@@ -1025,11 +1042,13 @@ class FCOSTSFullMaskHead(nn.Module):
                                             inner_s_pyramid_feature)
 
                                 t_pyramid_feature_list.append(
-                                    t_pyramid_feature.permute(0, 2, 3, 1).reshape(
-                                        -1, self.feat_channels))
+                                    t_pyramid_feature.permute(
+                                        0, 2, 3,
+                                        1).reshape(-1, self.feat_channels))
                                 s_channel_increase_pyramid_feature_list.append(
-                                    s_pyramid_feature.permute(0, 2, 3, 1).reshape(
-                                        -1, self.feat_channels))
+                                    s_pyramid_feature.permute(
+                                        0, 2, 3,
+                                        1).reshape(-1, self.feat_channels))
                                 if self.inner_opt:
                                     inner_s_channel_increase_pyramid_feature_list.append(
                                         inner_s_pyramid_feature.permute(
@@ -1598,7 +1617,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                    0).float()
+                                 0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
