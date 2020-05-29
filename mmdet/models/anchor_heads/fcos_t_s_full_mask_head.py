@@ -146,6 +146,7 @@ class FCOSTSFullMaskHead(nn.Module):
                      loss_weight=1.0),
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
+                 s_norm_cfg=dict(type='GN', num_groups=16, requires_grad=True),
                  rouse_student_point=0):
         super(FCOSTSFullMaskHead, self).__init__()
 
@@ -233,6 +234,7 @@ class FCOSTSFullMaskHead(nn.Module):
         )  # build_loss(loss_iou_similiarity)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
+        self.s_norm_cfg = s_norm_cfg
         self.epoch_counter = 0
         self.fp16_enabled = False
         self.inner_opt = inner_opt
@@ -394,8 +396,8 @@ class FCOSTSFullMaskHead(nn.Module):
                     stride=1,
                     padding=1,
                     conv_cfg=self.conv_cfg,
-                    norm_cfg=self.norm_cfg,
-                    bias=self.norm_cfg is None))
+                    norm_cfg=self.s_norm_cfg,
+                    bias=self.s_norm_cfg is None))
             self.s_reg_convs.append(
                 ConvModule(
                     chn,
@@ -404,8 +406,8 @@ class FCOSTSFullMaskHead(nn.Module):
                     stride=1,
                     padding=1,
                     conv_cfg=self.conv_cfg,
-                    norm_cfg=self.norm_cfg,
-                    bias=self.norm_cfg is None))
+                    norm_cfg=self.s_norm_cfg,
+                    bias=self.s_norm_cfg is None))
         '''
         # Align student feature to teacher
         '''
