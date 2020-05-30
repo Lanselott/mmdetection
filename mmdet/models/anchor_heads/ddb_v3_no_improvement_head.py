@@ -619,7 +619,11 @@ class DDBV3NPHead(nn.Module):
 
             centerness = centerness.permute(1, 2, 0).reshape(-1).sigmoid()
 
-            bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
+            if self.apply_6d_box_coding:
+                assert self.apply_new_box_coding != self.apply_6d_box_coding
+                bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 6)
+            else:
+                bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
 
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
@@ -638,8 +642,8 @@ class DDBV3NPHead(nn.Module):
                     points, bbox_pred, max_shape=img_shape)
             elif self.apply_6d_box_coding:
                 assert self.apply_new_box_coding != self.apply_6d_box_coding
-                pos_decoded_bbox_preds = distance2bboxV3(
-                    points, bbox_pred)
+                bboxes = distance2bboxV3(
+                    points, bbox_pred, max_shape=img_shape)
             else:
                 bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
 
