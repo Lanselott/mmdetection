@@ -715,11 +715,9 @@ class ResTSNet(nn.Module):
                         t_layer_bn1_data = t_layer.bn1.weight.data
                         s_layer.bn1.weight.data.copy_(
                             t_layer_bn1_data[bn1_topk_inds])
-
                         t_layer_bn2_data = t_layer.bn2.weight.data
                         s_layer.bn2.weight.data.copy_(
                             t_layer_bn2_data[bn2_topk_inds])
-
                         t_layer_bn3_data = t_layer.bn3.weight.data
                         s_layer.bn3.weight.data.copy_(
                             t_layer_bn3_data[bn3_topk_inds])
