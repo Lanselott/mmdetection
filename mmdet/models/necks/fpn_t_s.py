@@ -271,7 +271,6 @@ class FPNTS(nn.Module):
                     t_layer_conv_data,
                     size=s_fpn_conv.conv.weight.shape[:2],
                     mode='bilinear').permute(2, 3, 0, 1))
-            embed()
 
         for s_lateral_conv, t_lateral_conv in zip(self.s_lateral_convs, self.lateral_convs):
             t_lateral_layer_conv_data = t_lateral_conv.conv.weight.data.permute(

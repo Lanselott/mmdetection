@@ -87,7 +87,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  ignore_low_ious=False,
                  pyramid_cls_reg_consistent=False,
                  pyramid_nms_aware=False,
-                 pyramid_attention_factor=1,
+                 pyramid_factor=1,
                  head_attention_factor=1,
                  pyramid_decoupling=False,
                  dynamic_weight=False,
@@ -182,7 +182,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.corr_out_channels = corr_out_channels
         self.pyramid_cls_reg_consistent = pyramid_cls_reg_consistent
         self.pyramid_nms_aware = pyramid_nms_aware
-        self.pyramid_attention_factor = pyramid_attention_factor
+        self.pyramid_factor = pyramid_factor
         self.head_attention_factor = head_attention_factor
         self.dynamic_weight = dynamic_weight
         self.head_wise_attention = head_wise_attention
@@ -974,7 +974,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     if self.freeze_teacher:
                         pyramid_lambda = 10
                     else:
-                        pyramid_lambda = 1
+                        pyramid_lambda = 1 + 1 * self.train_step // 7330
 
                     discrim_loss_list = []
                     generator_loss_list = []

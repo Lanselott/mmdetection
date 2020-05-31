@@ -53,13 +53,12 @@ model = dict(
         align_level=0,
         apply_block_wise_alignment=BLOCK_ALIGN,
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
-        pyramid_wise_attention=True,
-        pyramid_correlation=True,
+        apply_discriminator=True,
+        pyramid_wise_attention=False,
         pyramid_factor=1,
         apply_data_free_mode=False,
         apply_head_wise_alignment=HEAD_ALIGN,
         freeze_teacher=FREEZE_TEACHER,
-        head_wise_attention=True,
         block_teacher_attention=False,
         attention_threshold=0.5,  # duplicate
         # student distillation params
