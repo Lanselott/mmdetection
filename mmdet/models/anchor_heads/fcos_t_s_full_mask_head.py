@@ -147,6 +147,7 @@ class FCOSTSFullMaskHead(nn.Module):
                      loss_weight=1.0),
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
+                 i_norm_cfg=dict(type='GN', num_groups=24, requires_grad=True),
                  s_norm_cfg=dict(type='GN', num_groups=16, requires_grad=True),
                  rouse_student_point=0):
         super(FCOSTSFullMaskHead, self).__init__()
@@ -236,6 +237,7 @@ class FCOSTSFullMaskHead(nn.Module):
         )  # build_loss(loss_iou_similiarity)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
+        self.i_norm_cfg = i_norm_cfg
         self.s_norm_cfg = s_norm_cfg
         self.epoch_counter = 0
         self.fp16_enabled = False
@@ -370,8 +372,8 @@ class FCOSTSFullMaskHead(nn.Module):
                     stride=1,
                     padding=1,
                     conv_cfg=self.conv_cfg,
-                    norm_cfg=self.norm_cfg,
-                    bias=self.norm_cfg is None))
+                    norm_cfg=self.i_norm_cfg,
+                    bias=self.i_norm_cfg is None))
         self.i_fcos_cls = nn.Conv2d(
             self.intermediate_channel, self.cls_out_channels, 3, padding=1)
         self.i_fcos_reg = nn.Conv2d(self.intermediate_channel, 4, 3, padding=1)
@@ -429,6 +431,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     self.feat_channels, self.feat_channels, 3, padding=1)
 
             if self.use_intermediate_learner:
+                # NOTE: t -> i -> s
                 self.t_i_pyramid_align.append(
                     nn.Conv2d(
                         self.feat_channels,
@@ -648,7 +651,7 @@ class FCOSTSFullMaskHead(nn.Module):
         else:
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
-                               self.s_scales, placeholder)
+                               self.s_scales, self.i_scales)
 
     def forward_single(self,
                        t_x,
@@ -1071,15 +1074,11 @@ class FCOSTSFullMaskHead(nn.Module):
                                     t_pyramid_feature_list.append(
                                         t_i_pyramid_feature.permute(
                                             0, 2, 3, 1).reshape(
-                                                -1, self.s_feat_channels +
-                                                (self.feat_channels -
-                                                 self.s_feat_channels) // 2))
+                                                -1, self.intermediate_channel))
                                     s_channel_increase_pyramid_feature_list.append(
                                         s_i_pyramid_feature.permute(
                                             0, 2, 3, 1).reshape(
-                                                -1, self.s_feat_channels +
-                                                (self.feat_channels -
-                                                 self.s_feat_channels) // 2))
+                                                -1, self.intermediate_channel))
 
                             t_pyramid_feature_list = torch.cat(
                                 t_pyramid_feature_list)
@@ -1123,10 +1122,16 @@ class FCOSTSFullMaskHead(nn.Module):
                                     c_area - t_s_pred_unions) / c_area
 
                                 # NOTE: Offline mode alignment requires larger weight (w=10 or 15)
-                                iou_attention_weight = t_s_pred_ious
-                                cls_attention_weight = t_s_cls_entropy
-                                giou_attention_weight = t_s_gious.detach(
-                                ).clamp(0)
+                                if self.use_intermediate_learner:
+                                    iou_attention_weight = bbox_overlaps(
+                                        s_pred_bboxes,
+                                        i_pred_bboxes,
+                                        is_aligned=True).detach()
+                                else:
+                                    iou_attention_weight = t_s_pred_ious
+                                # cls_attention_weight = t_s_cls_entropy
+                                # giou_attention_weight = t_s_gious.detach(
+                                # ).clamp(0)
 
                                 # if str(self.pyramid_hint_loss) == 'CrossEntropyLoss()':
                                 #     t_pyramid_feature_list = t_pyramid_feature_list.sigmoid()
