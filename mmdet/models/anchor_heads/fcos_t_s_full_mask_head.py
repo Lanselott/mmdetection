@@ -979,7 +979,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     if self.freeze_teacher:
                         pyramid_lambda = 10
                     else:
-                        pyramid_lambda = 1 + 1 * self.train_step // 7330
+                        pyramid_lambda = 1 # + 1 * self.train_step // 7330
 
                     discrim_loss_list = []
                     generator_loss_list = []
