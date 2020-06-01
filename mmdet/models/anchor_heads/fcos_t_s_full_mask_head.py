@@ -627,7 +627,8 @@ class FCOSTSFullMaskHead(nn.Module):
                 t_feat = t_feat.detach()
                 for s_t_align_layer in self.s_t_pyramid_align:
                     t_decreased_pyramid_feat = s_t_align_layer(t_feat)
-                    t_decreased_feats.append(t_decreased_pyramid_feat)
+                    
+                t_decreased_feats.append(t_decreased_pyramid_feat)
             t_decreased_feats = tuple(t_decreased_feats)
 
         placeholder = tuple('N') * 5
