@@ -648,10 +648,14 @@ class FCOSTSFullMaskHead(nn.Module):
                                t_pri_feats, s_pri_feats, self.scales,
                                self.s_scales, placeholder, placeholder,
                                placeholder, t_decreased_feats)
-        else:
+        elif self.use_intermediate_learner:
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
                                self.s_scales, self.i_scales)
+        else:
+            return multi_apply(self.forward_single, t_feats, s_feats,
+                               t_pri_feats, s_pri_feats, self.scales,
+                               self.s_scales, placeholder)
 
     def forward_single(self,
                        t_x,
