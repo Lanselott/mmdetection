@@ -1198,12 +1198,15 @@ class FCOSTSFullMaskHead(nn.Module):
                             t_decreased_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                 s_pyramid_feature_list,
                                 t_decreased_pyramid_hint_feature_list.detach())
+                            t_decreased_iou_attention_weight = bbox_overlaps(
+                                s_pred_bboxes, t_decreased_pred_bboxes,
+                                is_aligned=True).detach()
                             t_decreased_pyramid_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
                                 s_pyramid_feature_list[t_pos_inds],
                                 t_decreased_pyramid_hint_feature_list[
                                     t_pos_inds].detach(),
-                                weight=iou_attention_weight,
-                                avg_factor=iou_attention_weight.sum())
+                                weight=t_decreased_iou_attention_weight,
+                                avg_factor=t_decreased_iou_attention_weight.sum())
                             loss_dict.update({
                                 't_decreased_pyramid_hint_loss':
                                 t_decreased_pyramid_hint_loss,
