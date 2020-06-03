@@ -259,7 +259,7 @@ class FCOSTSFullMaskHead(nn.Module):
             self._init_siamese()
 
         if self.inner_opt:
-            self.inner_itr = 2
+            self.inner_itr = 1
 
             self.inner_optimizer = optim.SGD([
                 {
@@ -269,8 +269,6 @@ class FCOSTSFullMaskHead(nn.Module):
                                              lr=1e-2,
                                              momentum=0.9,
                                              weight_decay=0.0001)
-        else:
-            self.inner_itr = 1
 
     def _init_siamese(self):
         self.t_s_siamese_align = nn.ModuleList()
@@ -447,7 +445,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
             for i in range(self.multi_levels):
                 channel_delta = (self.feat_channels -
-                                    self.s_feat_channels) // self.multi_levels
+                                 self.s_feat_channels) // self.multi_levels
                 self.t_s_pyramid_align.append(
                     nn.Conv2d(
                         self.s_feat_channels + channel_delta * i,
@@ -1170,6 +1168,9 @@ class FCOSTSFullMaskHead(nn.Module):
                                     inner_pyramid_loss.backward(
                                         retain_graph=True)
                                     self.inner_optimizer.step()
+
+                                self.inner_itr = max(
+                                    self.train_step // (7330 * 2) + 1, 4)
 
                                 if self.train_step == 8 * 7330:
                                     for g in self.inner_optimizer.param_groups:
