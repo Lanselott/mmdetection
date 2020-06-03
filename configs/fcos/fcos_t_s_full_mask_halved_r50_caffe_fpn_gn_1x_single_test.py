@@ -11,8 +11,9 @@ COPY_TEACHER_FPN = False
 GOOD_INITIAL = False
 BN_TOPK_SELECTION = False
 ROUSE_STUDENT_POINT = 7330 * 13
-USE_INTERMEDIATE_LEARNER = True
-SWITCH_TO_INTER_LEARNER = True
+USE_INTERMEDIATE_LEARNER = False
+# inference parameters
+SWITCH_TO_INTER_LEARNER = False
 model = dict(
     type='FCOSTS',
     pretrained='open-mmlab://resnet50_caffe',
@@ -140,7 +141,7 @@ model = dict(
             loss_weight=1.0),
         loss_regression_distill=dict(type='IoULoss', loss_weight=1.0),
         reg_distill_threshold=0.5,
-        inner_opt=False,
+        inner_opt=True,
         # loss_iou_similiarity=dict(
         #     type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
         loss_iou_similiarity=dict(type='MSELoss', loss_weight=1.0),
