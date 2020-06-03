@@ -1147,6 +1147,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                     t_pos_inds].sum()
 
                             if self.inner_opt:
+                                self.inner_itr = min(
+                                    self.train_step // (7330 * 2), 4)
                                 for _ in range(self.inner_itr):
                                     # NOTE: Only train the alignment network
                                     self.inner_optimizer.zero_grad()
@@ -1169,8 +1171,6 @@ class FCOSTSFullMaskHead(nn.Module):
                                         retain_graph=True)
                                     self.inner_optimizer.step()
 
-                                self.inner_itr = min(
-                                    self.train_step // (7330 * 2), 4)
 
                                 if self.train_step == 8 * 7330:
                                     for g in self.inner_optimizer.param_groups:
