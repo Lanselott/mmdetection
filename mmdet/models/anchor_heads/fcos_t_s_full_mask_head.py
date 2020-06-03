@@ -1130,26 +1130,24 @@ class FCOSTSFullMaskHead(nn.Module):
                                         is_aligned=True).detach()
 
                                 iou_attention_weight = t_s_pred_ious
-                                # cls_attention_weight = t_s_cls_entropy
-
-                                # if str(self.pyramid_hint_loss) == 'CrossEntropyLoss()':
-                                #     t_pyramid_feature_list = t_pyramid_feature_list.sigmoid()
-
+                                # iou_mask = (iou_attention_weight > inter_iou_attention_weight)
+                                inter_iou_attention_weight[iou_attention_weight > inter_iou_attention_weight] = 0
+                                iou_attention_weight[iou_attention_weight <= inter_iou_attention_weight] = 0
                                 t_attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                     s_t_pyramid_feature_list[t_pos_inds],
                                     t_pyramid_feature_list[t_pos_inds].detach(
                                     ),
-                                    weight=iou_attention_weight,
-                                    avg_factor=iou_attention_weight.sum())
+                                    weight=iou_attention_weight)#,
+                                    # avg_factor=iou_attention_weight.sum())
 
                                 if self.use_intermediate_learner:
                                     inter_attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                         s_i_pyramid_feature_list[t_pos_inds],
                                         t_i_pyramid_feature_list[t_pos_inds].
                                         detach(),
-                                        weight=inter_iou_attention_weight,
-                                        avg_factor=inter_iou_attention_weight.
-                                        sum())
+                                        weight=inter_iou_attention_weight)#,
+                                        # avg_factor=inter_iou_attention_weight.
+                                        # sum())
                                 '''
                                 attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
                                     s_t_pyramid_feature_list[t_pos_inds],
