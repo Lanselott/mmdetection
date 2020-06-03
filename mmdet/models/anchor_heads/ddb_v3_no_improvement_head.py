@@ -65,6 +65,7 @@ class DDBV3NPHead(nn.Module):
                  scaled_centerness=False,
                  bd_threshold=0.0,
                  conv_cfg=None,
+                 conv_scale=False,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
                  hook_debug=False):
         super(DDBV3NPHead, self).__init__()
@@ -108,6 +109,7 @@ class DDBV3NPHead(nn.Module):
         self.sorted_warmup = sorted_warmup
         self.giou_centerness = giou_centerness
         self.scaled_centerness = scaled_centerness
+        self.conv_scale = conv_scale
         self.sc_image_counter = 0
         self.sc_avg_ratio = 0
         self._init_layers()
@@ -151,6 +153,7 @@ class DDBV3NPHead(nn.Module):
         self.fcos_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
 
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
+        self.conv_scales = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
 
     def init_weights(self):
         for m in self.cls_convs:
@@ -159,9 +162,11 @@ class DDBV3NPHead(nn.Module):
             normal_init(m.conv, std=0.01)
 
         bias_cls = bias_init_with_prob(0.01)
+
         normal_init(self.fcos_cls, std=0.01, bias=bias_cls)
         normal_init(self.fcos_reg, std=0.01)
         normal_init(self.fcos_centerness, std=0.01)
+        normal_init(self.conv_scales, std=0.01)
 
     def forward(self, feats):
         return multi_apply(self.forward_single, feats, self.scales)
@@ -195,7 +200,12 @@ class DDBV3NPHead(nn.Module):
                 bbox_pred_bits[:, 3, 1] + 100 * bbox_pred_bits[:, 3, 2]
             bbox_pred = nn.functional.relu(bbox_pred)
         else:
-            bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
+            if self.conv_scale:
+                scale = self.conv_scales(reg_feat.detach() + cls_feat.detach())
+                embed()
+                bbox_pred = self.fcos_reg(reg_feat).float().exp() * scale
+            else:
+                bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
             # bbox_pred = scale(self.fcos_reg(reg_feat)).float()
 
         return cls_score, bbox_pred, centerness

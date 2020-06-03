@@ -38,6 +38,7 @@ model = dict(
         no_scale=False,
         relu_scale=False,
         softplus_scale=False,
+        conv_scale=True,
         box_sampling=False,
         box_num=1,
         stable_noise=False,
