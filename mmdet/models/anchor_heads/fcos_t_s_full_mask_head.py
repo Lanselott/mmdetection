@@ -79,6 +79,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_discriminator=False,
                  siamese_distill=False,
                  use_intermediate_learner=False,
+                 switch_to_inter_learner=False,
                  pyramid_full_attention=False,
                  corr_out_channels=32,
                  pyramid_correlation=False,
@@ -216,6 +217,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.learn_from_missing_annotation = learn_from_missing_annotation
         self.learn_from_teacher_backbone = learn_from_teacher_backbone
         self.use_intermediate_learner = use_intermediate_learner
+        self.switch_to_inter_learner = switch_to_inter_learner
         self.fix_student_train_teacher = fix_student_train_teacher
         self.train_student_only = train_student_only
         self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
@@ -431,7 +433,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     self.feat_channels, self.feat_channels, 3, padding=1)
 
             if self.use_intermediate_learner:
-                # NOTE: t -> i -> s
+                # NOTE:
+                #       t <------ s
+                #       t -> i <- s
                 self.t_i_pyramid_align.append(
                     nn.Conv2d(
                         self.feat_channels,
@@ -444,11 +448,10 @@ class FCOSTSFullMaskHead(nn.Module):
                         self.intermediate_channel,
                         3,
                         padding=1))
-            else:
+
                 for i in range(self.multi_levels):
                     channel_delta = (self.feat_channels -
                                      self.s_feat_channels) // self.multi_levels
-
                     self.t_s_pyramid_align.append(
                         nn.Conv2d(
                             self.s_feat_channels + channel_delta * i,
@@ -542,7 +545,6 @@ class FCOSTSFullMaskHead(nn.Module):
                     normal_init(align_conv, std=0.01)
                 for align_conv in self.s_i_pyramid_align:
                     normal_init(align_conv, std=0.01)
-            else:
                 for align_conv in self.t_s_pyramid_align:
                     normal_init(align_conv, std=0.01)
 
@@ -627,7 +629,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 t_feat = t_feat.detach()
                 for s_t_align_layer in self.s_t_pyramid_align:
                     t_decreased_pyramid_feat = s_t_align_layer(t_feat)
-                    
+
                 t_decreased_feats.append(t_decreased_pyramid_feat)
             t_decreased_feats = tuple(t_decreased_feats)
 
@@ -710,9 +712,14 @@ class FCOSTSFullMaskHead(nn.Module):
             pyramid_hint_quads.append(s_i_x)
             pyramid_hint_quads.append(t_i_x)
 
-            # learn from teacher
-            i_cls_feat = t_i_x
-            i_reg_feat = t_i_x
+            if self.eval_student and self.switch_to_inter_learner:
+                # eval from student backbone
+                i_cls_feat = s_i_x
+                i_reg_feat = s_i_x
+            else:
+                # learn from teacher
+                i_cls_feat = t_i_x
+                i_reg_feat = t_i_x
 
             # intermediate head
             for i in range(len(self.i_cls_convs)):
@@ -818,7 +825,10 @@ class FCOSTSFullMaskHead(nn.Module):
                 return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None, corr_pairs, None, None, None, None, None, None, None, None, None, None, None, None
         else:
             if self.eval_student:
-                return s_cls_score, s_bbox_pred, s_centerness
+                if self.use_intermediate_learner:
+                    return i_cls_score, i_bbox_pred, i_centerness
+                else:
+                    return s_cls_score, s_bbox_pred, s_centerness
             elif self.eval_teacher_backbone:
                 assert self.learn_from_teacher_backbone == True
                 return t_decreased_cls_score, t_decreased_bbox_pred, t_decreased_centerness
@@ -979,7 +989,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     if self.freeze_teacher:
                         pyramid_lambda = 10
                     else:
-                        pyramid_lambda = 1 # + 1 * self.train_step // 7330
+                        pyramid_lambda = 1  # + 1 * self.train_step // 7330
 
                     discrim_loss_list = []
                     generator_loss_list = []
@@ -993,106 +1003,104 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     for _ in range(self.inner_itr):
                         s_pyramid_feature_list = []
-                        inner_s_channel_increase_pyramid_feature_list = []
+                        inner_s_t_pyramid_feature_list = []
                         t_pyramid_feature_list = []
-                        s_channel_increase_pyramid_feature_list = []
+                        t_i_pyramid_feature_list = []
+                        s_t_pyramid_feature_list = []
+                        s_i_pyramid_feature_list = []
                         s_cls_pyramid_feature_list = []
                         s_reg_pyramid_feature_list = []
 
-                        # if self.use_intermediate_learner:
-                        #     t_i_pyramid_feature_list = []
-                        #     s_i_pyramid_feature_list = []
+                        if self.use_intermediate_learner:
+                            pyramid_hint_pairs = pyramid_hint_quads
 
-                        if not self.use_intermediate_learner:
-                            for j, pyramid_hint_pair in enumerate(
-                                    pyramid_hint_pairs):
-                                s_pyramid_feature = pyramid_hint_pair[0]
-                                inner_s_pyramid_feature = pyramid_hint_pair[
-                                    0].detach()
-                                t_pyramid_feature = pyramid_hint_pair[1]
-                                s_pyramid_feature_list.append(
-                                    s_pyramid_feature.permute(
-                                        0, 2, 3,
-                                        1).reshape(-1, self.s_feat_channels))
+                        for j, pyramid_hint_pair in enumerate(
+                                pyramid_hint_pairs):
+                            s_pyramid_feature = pyramid_hint_pair[0]
+                            inner_s_pyramid_feature = pyramid_hint_pair[
+                                0].detach()
+                            t_pyramid_feature = pyramid_hint_pair[1]
 
-                                if self.spatial_ratio > 1:
-                                    for t_s_pyramid_align_conv in self.t_s_pyramid_align:
-                                        if self.direct_downsample:
-                                            s_pyramid_feature = F.interpolate(
-                                                s_pyramid_feature.unsqueeze(0),
+                            s_pyramid_feature_list.append(
+                                s_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                                    -1, self.s_feat_channels))
+
+                            if self.spatial_ratio > 1:
+                                for t_s_pyramid_align_conv in self.t_s_pyramid_align:
+                                    if self.direct_downsample:
+                                        s_pyramid_feature = F.interpolate(
+                                            s_pyramid_feature.unsqueeze(0),
+                                            size=pyramid_hint_pair[1].
+                                            shape[1:],
+                                            mode='nearest').squeeze(0)
+                                    else:
+                                        s_pyramid_feature = t_s_pyramid_align_conv(
+                                            F.interpolate(
+                                                s_pyramid_feature,
                                                 size=pyramid_hint_pair[1].
-                                                shape[1:],
-                                                mode='nearest').squeeze(0)
-                                        else:
-                                            s_pyramid_feature = t_s_pyramid_align_conv(
-                                                F.interpolate(
-                                                    s_pyramid_feature,
-                                                    size=pyramid_hint_pair[1].
-                                                    shape[2:],
-                                                    mode='nearest'))
+                                                shape[2:],
+                                                mode='nearest'))
 
-                                else:
-                                    for t_s_pyramid_align_conv in self.t_s_pyramid_align:
-                                        if self.direct_downsample:
-                                            s_pyramid_feature = F.interpolate(
-                                                s_pyramid_feature.unsqueeze(0),
-                                                size=pyramid_hint_pair[1].
-                                                shape[1:],
-                                                mode='nearest').squeeze(0)
-                                        else:
-                                            s_pyramid_feature = t_s_pyramid_align_conv(
-                                                s_pyramid_feature)
-                                        if self.inner_opt:
-                                            inner_s_pyramid_feature = t_s_pyramid_align_conv(
-                                                inner_s_pyramid_feature)
+                            else:
+                                for t_s_pyramid_align_conv in self.t_s_pyramid_align:
+                                    if self.direct_downsample:
+                                        s_pyramid_feature = F.interpolate(
+                                            s_pyramid_feature.unsqueeze(0),
+                                            size=pyramid_hint_pair[1].
+                                            shape[1:],
+                                            mode='nearest').squeeze(0)
+                                    else:
+                                        s_pyramid_feature = t_s_pyramid_align_conv(
+                                            s_pyramid_feature)
                                     if self.inner_opt:
-                                        inner_s_pyramid_feature = self.inner_opt_head(
+                                        inner_s_pyramid_feature = t_s_pyramid_align_conv(
                                             inner_s_pyramid_feature)
-
-                                t_pyramid_feature_list.append(
-                                    t_pyramid_feature.permute(
-                                        0, 2, 3,
-                                        1).reshape(-1, self.feat_channels))
-                                s_channel_increase_pyramid_feature_list.append(
-                                    s_pyramid_feature.permute(
-                                        0, 2, 3,
-                                        1).reshape(-1, self.feat_channels))
                                 if self.inner_opt:
-                                    inner_s_channel_increase_pyramid_feature_list.append(
-                                        inner_s_pyramid_feature.permute(
-                                            0, 2, 3,
-                                            1).reshape(-1, self.feat_channels))
+                                    inner_s_pyramid_feature = self.inner_opt_head(
+                                        inner_s_pyramid_feature)
 
-                            s_pyramid_feature_list = torch.cat(
-                                s_pyramid_feature_list)
-                            t_pyramid_feature_list = torch.cat(
-                                t_pyramid_feature_list)
-                            s_channel_increase_pyramid_feature_list = torch.cat(
-                                s_channel_increase_pyramid_feature_list)
-                        else:
+                            t_pyramid_feature_list.append(
+                                t_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                                    -1, self.feat_channels))
+                            s_t_pyramid_feature_list.append(
+                                s_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                                    -1, self.feat_channels))
+                            if self.inner_opt:
+                                inner_s_t_pyramid_feature_list.append(
+                                    inner_s_pyramid_feature.permute(
+                                        0, 2, 3,
+                                        1).reshape(-1, self.feat_channels))
+
+                        s_pyramid_feature_list = torch.cat(
+                            s_pyramid_feature_list)
+                        t_pyramid_feature_list = torch.cat(
+                            t_pyramid_feature_list)
+                        s_t_pyramid_feature_list = torch.cat(
+                            s_t_pyramid_feature_list)
+
+                        if self.use_intermediate_learner:
                             for j, pyramid_hint_quad in enumerate(
                                     pyramid_hint_quads):
                                 if self.use_intermediate_learner:
                                     s_i_pyramid_feature = pyramid_hint_quad[2]
                                     t_i_pyramid_feature = pyramid_hint_quad[3]
                                     # TODO: Rename intermediate features
-                                    t_pyramid_feature_list.append(
+                                    t_i_pyramid_feature_list.append(
                                         t_i_pyramid_feature.permute(
                                             0, 2, 3, 1).reshape(
                                                 -1, self.intermediate_channel))
-                                    s_channel_increase_pyramid_feature_list.append(
+                                    s_i_pyramid_feature_list.append(
                                         s_i_pyramid_feature.permute(
                                             0, 2, 3, 1).reshape(
                                                 -1, self.intermediate_channel))
 
-                            t_pyramid_feature_list = torch.cat(
-                                t_pyramid_feature_list)
-                            s_channel_increase_pyramid_feature_list = torch.cat(
-                                s_channel_increase_pyramid_feature_list)
-
+                            t_i_pyramid_feature_list = torch.cat(
+                                t_i_pyramid_feature_list)
+                            s_i_pyramid_feature_list = torch.cat(
+                                s_i_pyramid_feature_list)
                         if self.inner_opt:
-                            inner_s_channel_increase_pyramid_feature_list = torch.cat(
-                                inner_s_channel_increase_pyramid_feature_list)
+                            inner_s_t_pyramid_feature_list = torch.cat(
+                                inner_s_t_pyramid_feature_list)
 
                         if self.pyramid_wise_attention:
                             # FIXME: Pyramid attention should be merge to pyramid alignement loss,
@@ -1113,49 +1121,43 @@ class FCOSTSFullMaskHead(nn.Module):
                                     s_pred_bboxes,
                                     t_pred_bboxes,
                                     is_aligned=True).detach()
-                                t_s_pred_unions = bbox_unions(
-                                    s_pred_bboxes,
-                                    t_pred_bboxes,
-                                    is_aligned=True).detach()
-                                c_lt = torch.min(s_pred_bboxes[..., (0, 1)],
-                                                 t_pred_bboxes[..., (0, 1)])
-                                c_rb = torch.max(s_pred_bboxes[..., (2, 3)],
-                                                 t_pred_bboxes[..., (2, 3)])
-                                c_area = (c_rb[..., 1] - c_lt[..., 1]) * (
-                                    c_rb[..., 0] - c_lt[..., 0]).detach()
-                                t_s_gious = t_s_pred_ious - (
-                                    c_area - t_s_pred_unions) / c_area
 
                                 # NOTE: Offline mode alignment requires larger weight (w=10 or 15)
                                 if self.use_intermediate_learner:
-                                    iou_attention_weight = bbox_overlaps(
+                                    inter_iou_attention_weight = bbox_overlaps(
                                         s_pred_bboxes,
                                         i_pred_bboxes,
                                         is_aligned=True).detach()
-                                else:
-                                    iou_attention_weight = t_s_pred_ious
+
+                                iou_attention_weight = t_s_pred_ious
                                 # cls_attention_weight = t_s_cls_entropy
-                                # giou_attention_weight = t_s_gious.detach(
-                                # ).clamp(0)
 
                                 # if str(self.pyramid_hint_loss) == 'CrossEntropyLoss()':
                                 #     t_pyramid_feature_list = t_pyramid_feature_list.sigmoid()
 
-                                attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                    s_channel_increase_pyramid_feature_list[
-                                        t_pos_inds],
+                                t_attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                    s_t_pyramid_feature_list[t_pos_inds],
                                     t_pyramid_feature_list[t_pos_inds].detach(
                                     ),
                                     weight=iou_attention_weight,
                                     avg_factor=iou_attention_weight.sum())
+
+                                if self.use_intermediate_learner:
+                                    inter_attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                        s_i_pyramid_feature_list[t_pos_inds],
+                                        t_i_pyramid_feature_list[t_pos_inds].
+                                        detach(),
+                                        weight=inter_iou_attention_weight,
+                                        avg_factor=inter_iou_attention_weight.
+                                        sum())
                                 '''
                                 attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
-                                    s_channel_increase_pyramid_feature_list[t_pos_inds],
+                                    s_t_pyramid_feature_list[t_pos_inds],
                                     t_pyramid_feature_list[t_pos_inds].detach(),
                                     weight=t_s_cls_entropy)
                                 '''
                             else:
-                                attention_iou_pyramid_hint_loss = s_channel_increase_pyramid_feature_list[
+                                t_attention_iou_pyramid_hint_loss = s_t_pyramid_feature_list[
                                     t_pos_inds].sum()
 
                             if self.inner_opt:
@@ -1165,7 +1167,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                     self.t_s_pyramid_align.zero_grad()
 
                                     inner_pyramid_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                        inner_s_channel_increase_pyramid_feature_list[
+                                        inner_s_t_pyramid_feature_list[
                                             t_pos_inds],
                                         t_pyramid_feature_list[t_pos_inds].
                                         detach(),
@@ -1182,32 +1184,45 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     if self.pyramid_wise_attention:
                         loss_dict.update({
-                            'attention_iou_pyramid_hint_loss':
-                            attention_iou_pyramid_hint_loss,
-                            # 'attention_cls_pyramid_hint_loss':
-                            # attention_cls_pyramid_hint_loss
+                            't_attention_iou_pyramid_hint_loss':
+                            t_attention_iou_pyramid_hint_loss,
                         })
+                        if self.use_intermediate_learner:
+                            loss_dict.update({
+                                'inter_attention_iou_pyramid_hint_loss':
+                                inter_attention_iou_pyramid_hint_loss,
+                            })
 
                     if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
-                        pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                            s_channel_increase_pyramid_feature_list,
+                        t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                            s_t_pyramid_feature_list,
                             t_pyramid_feature_list.detach())
                         loss_dict.update(
-                            {'pyramid_hint_loss': pyramid_hint_loss})
+                            {'t_pyramid_hint_loss': t_pyramid_hint_loss})
+                        if self.use_intermediate_learner:
+                            inter_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                s_i_pyramid_feature_list,
+                                t_i_pyramid_feature_list.detach())
+                            loss_dict.update({
+                                'inter_pyramid_hint_loss':
+                                inter_pyramid_hint_loss
+                            })
 
                         if self.learn_from_teacher_backbone:
                             t_decreased_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                 s_pyramid_feature_list,
                                 t_decreased_pyramid_hint_feature_list.detach())
                             t_decreased_iou_attention_weight = bbox_overlaps(
-                                s_pred_bboxes, t_decreased_pred_bboxes,
+                                s_pred_bboxes,
+                                t_decreased_pred_bboxes,
                                 is_aligned=True).detach()
                             t_decreased_pyramid_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
                                 s_pyramid_feature_list[t_pos_inds],
                                 t_decreased_pyramid_hint_feature_list[
                                     t_pos_inds].detach(),
                                 weight=t_decreased_iou_attention_weight,
-                                avg_factor=t_decreased_iou_attention_weight.sum())
+                                avg_factor=t_decreased_iou_attention_weight.
+                                sum())
                             loss_dict.update({
                                 't_decreased_pyramid_hint_loss':
                                 t_decreased_pyramid_hint_loss,
@@ -1261,8 +1276,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 # if affinity_size > len(t_pos_inds):
                 affinity_size = len(t_pos_inds)
                 t_pos_pyramid_feats = t_pyramid_feature_list[t_pos_inds]
-                s_pos_pyramid_feats = s_channel_increase_pyramid_feature_list[
-                    t_pos_inds]
+                s_pos_pyramid_feats = s_t_pyramid_feature_list[t_pos_inds]
 
                 if affinity_size == 0:
                     corr_affinity_loss = t_pos_pyramid_feats.sum()
