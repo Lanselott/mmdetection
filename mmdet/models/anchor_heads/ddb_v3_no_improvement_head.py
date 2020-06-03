@@ -64,6 +64,7 @@ class DDBV3NPHead(nn.Module):
                  giou_centerness=False,
                  scaled_centerness=False,
                  bd_threshold=0.0,
+                 stable_sort=False,
                  conv_cfg=None,
                  conv_scale=False,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
@@ -94,7 +95,6 @@ class DDBV3NPHead(nn.Module):
         self.apply_6d_box_coding = apply_6d_box_coding
         self.box_num = box_num
         self.sorting_loss_only = sorting_loss_only
-        self.stable_noise = stable_noise
         self.apply_boundary_centerness = apply_boundary_centerness
         self.apply_cls_awareness = apply_cls_awareness
         self.loss_cls = build_loss(loss_cls)
@@ -112,6 +112,8 @@ class DDBV3NPHead(nn.Module):
         self.conv_scale = conv_scale
         self.sc_image_counter = 0
         self.sc_avg_ratio = 0
+        self.train_counter = 0
+        self.stable_sort = stable_sort
         self._init_layers()
 
     def _init_layers(self):
@@ -492,10 +494,8 @@ class DDBV3NPHead(nn.Module):
             '''
             # NOTE: the grad of sorted branch is in sort order, diff from origin
             '''
-            sort_gradient_mask = (_bd_sort_iou >
-                                  (_bd_iou - self.iou_delta)).float()
-            origin_gradient_mask = ((_bd_sort_iou - self.iou_delta) <=
-                                    _bd_iou).float()
+            sort_gradient_mask = (_bd_sort_iou > _bd_iou).float()
+            origin_gradient_mask = (_bd_sort_iou <= _bd_iou).float()
             '''
             sorted_bbox_weight = _bd_sort_iou.mean(1)[0]
             bbox_weight = _bd_iou.mean(1)[0]
@@ -504,7 +504,7 @@ class DDBV3NPHead(nn.Module):
             if self.hook_debug:
                 debug_mask = torch.cat([
                     sort_gradient_mask[pos_gradient_update_mapping[..., 0], 0].
-                    reshape(-1, 1), 
+                    reshape(-1, 1),
                     sort_gradient_mask[pos_gradient_update_mapping[..., 1], 1].
                     reshape(-1, 1),
                     sort_gradient_mask[pos_gradient_update_mapping[..., 2], 2].
@@ -526,18 +526,24 @@ class DDBV3NPHead(nn.Module):
             # pos_decoded_bbox_preds.register_hook(
             #     lambda grad: grad * 0)
 
-            # sorted bboxes
             loss_sorted_bbox = self.loss_sorted_bbox(
                 pos_decoded_sort_bbox_preds,
                 pos_decoded_target_preds,
                 weight=sorted_ious_weights,
                 avg_factor=sorted_ious_weights.sum())
-            # origin boxes
-            loss_bbox = self.loss_bbox(
-                pos_decoded_bbox_preds,
-                pos_decoded_target_preds,
-                weight=ious_weights,
-                avg_factor=ious_weights.sum())
+
+            self.train_counter += 1
+            if self.stable_sort and self.train_counter <= 7330 * 2:
+                # sorted bboxes
+                loss_bbox = self.loss_bbox(pos_decoded_bbox_preds,
+                                           pos_decoded_target_preds)
+            else:
+                # origin boxes
+                loss_bbox = self.loss_bbox(
+                    pos_decoded_bbox_preds,
+                    pos_decoded_target_preds,
+                    weight=ious_weights,
+                    avg_factor=ious_weights.sum())
 
             loss_cls = self.loss_cls(
                 flatten_cls_scores,
@@ -566,6 +572,11 @@ class DDBV3NPHead(nn.Module):
                     loss_cls=loss_cls,
                     # loss_bbox=loss_bbox,
                     loss_sorted_bbox=loss_sorted_bbox,
+                    loss_centerness=loss_centerness)
+            elif self.stable_sort and self.train_counter <= 7330 * 2:
+                return dict(
+                    loss_cls=loss_cls,
+                    loss_bbox=loss_bbox,
                     loss_centerness=loss_centerness)
             else:
                 return dict(
