@@ -202,7 +202,6 @@ class DDBV3NPHead(nn.Module):
         else:
             if self.conv_scale:
                 scale = self.conv_scales(reg_feat.detach() + cls_feat.detach())
-                embed()
                 bbox_pred = self.fcos_reg(reg_feat).float().exp() * scale
             else:
                 bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
@@ -867,5 +866,4 @@ class DDBV3NPHead(nn.Module):
             if self.sc_image_counter == 1000:
                 print("avg_sc_ratio:",
                       self.sc_avg_ratio / self.sc_image_counter)
-                embed()
         return None
