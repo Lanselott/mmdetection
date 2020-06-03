@@ -495,7 +495,7 @@ class DDBV3NPHead(nn.Module):
             if self.hook_debug:
                 debug_mask = torch.cat([
                     sort_gradient_mask[pos_gradient_update_mapping[..., 0], 0].
-                    reshape(-1, 1),
+                    reshape(-1, 1), 
                     sort_gradient_mask[pos_gradient_update_mapping[..., 1], 1].
                     reshape(-1, 1),
                     sort_gradient_mask[pos_gradient_update_mapping[..., 2], 2].
