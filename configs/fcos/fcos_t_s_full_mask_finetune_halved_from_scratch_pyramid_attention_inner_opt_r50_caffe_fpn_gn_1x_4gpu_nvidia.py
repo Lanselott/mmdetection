@@ -59,7 +59,6 @@ model = dict(
         pyramid_wise_attention=True,
         inner_opt=True,
         pyramid_factor=1,
-        apply_data_free_mode=False,
         apply_head_wise_alignment=HEAD_ALIGN,
         freeze_teacher=FREEZE_TEACHER,
         block_teacher_attention=False,
