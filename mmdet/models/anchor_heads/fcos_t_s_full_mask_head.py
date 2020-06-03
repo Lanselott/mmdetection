@@ -1169,7 +1169,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                         retain_graph=True)
                                     self.inner_optimizer.step()
 
-                                self.inner_itr = max(
+                                self.inner_itr = min(
                                     self.train_step // (7330 * 2) + 1, 4)
 
                                 if self.train_step == 8 * 7330:
