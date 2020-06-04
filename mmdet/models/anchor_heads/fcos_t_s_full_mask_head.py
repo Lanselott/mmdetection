@@ -146,6 +146,7 @@ class FCOSTSFullMaskHead(nn.Module):
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
                      loss_weight=1.0),
+                 intermediate_channel=384, 
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
                  i_norm_cfg=dict(type='GN', num_groups=24, requires_grad=True),
@@ -247,7 +248,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.inner_lr = 0.01
         self.train_step = 0
         self.rouse_student_point = rouse_student_point
-        self.intermediate_channel = 320
+        self.intermediate_channel = intermediate_channel
         self._init_teacher_layers()
         self._init_student_layers()
 

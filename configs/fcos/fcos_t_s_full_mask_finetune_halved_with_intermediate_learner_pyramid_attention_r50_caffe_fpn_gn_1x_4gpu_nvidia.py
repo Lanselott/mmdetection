@@ -4,7 +4,7 @@ PYRAMID_ALIGN = True
 HEAD_ALIGN = False
 FREEZE_TEACHER = False
 RATIO = 2
-GOOD_INITIAL= False
+GOOD_INITIAL = False
 USE_INTERMEDIATE_LEARNER = True
 model = dict(
     type='FCOSTS',
@@ -71,6 +71,7 @@ model = dict(
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
         reg_head_hint_loss=dict(type='MSELoss', loss_weight=1),
         cls_head_hint_loss=dict(type='MSELoss', loss_weight=1),
+        intermediate_channel=320,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
