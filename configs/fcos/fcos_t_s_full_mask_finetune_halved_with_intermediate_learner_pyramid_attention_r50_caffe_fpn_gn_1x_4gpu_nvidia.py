@@ -71,8 +71,8 @@ model = dict(
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
         reg_head_hint_loss=dict(type='MSELoss', loss_weight=1),
         cls_head_hint_loss=dict(type='MSELoss', loss_weight=1),
-        intermediate_channel=448,
-        i_norm_cfg=dict(type='GN', num_groups=28, requires_grad=True),
+        intermediate_channel=320,
+        i_norm_cfg=dict(type='GN', num_groups=20, requires_grad=True),
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
