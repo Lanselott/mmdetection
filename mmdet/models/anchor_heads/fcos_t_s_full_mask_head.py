@@ -247,8 +247,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.inner_lr = 0.01
         self.train_step = 0
         self.rouse_student_point = rouse_student_point
-        self.intermediate_channel = self.s_feat_channels + (
-            self.feat_channels - self.s_feat_channels) // 2
+        self.intermediate_channel = 320
         self._init_teacher_layers()
         self._init_student_layers()
 

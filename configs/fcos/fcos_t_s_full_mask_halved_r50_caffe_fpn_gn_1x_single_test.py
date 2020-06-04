@@ -11,9 +11,9 @@ COPY_TEACHER_FPN = False
 GOOD_INITIAL = False
 BN_TOPK_SELECTION = False
 ROUSE_STUDENT_POINT = 7330 * 13
-USE_INTERMEDIATE_LEARNER = False
+USE_INTERMEDIATE_LEARNER = True
 # inference parameters
-SWITCH_TO_INTER_LEARNER = False
+SWITCH_TO_INTER_LEARNER = True
 model = dict(
     type='FCOSTS',
     pretrained='open-mmlab://resnet50_caffe',
