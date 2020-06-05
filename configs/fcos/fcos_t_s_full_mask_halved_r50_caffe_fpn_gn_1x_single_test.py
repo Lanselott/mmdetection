@@ -78,6 +78,7 @@ model = dict(
         siamese_distill=False,
         copy_teacher_fpn=COPY_TEACHER_FPN,
         multi_levels=2,
+        naive_conv=False,
         apply_pri_pyramid_wise_alignment=PRI_PYRAMID_ALIGN,
         simple_pyramid_alignment=False,
         learn_from_missing_annotation=False,

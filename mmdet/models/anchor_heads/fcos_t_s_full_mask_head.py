@@ -68,6 +68,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_pyramid_wise_alignment=False,
                  copy_teacher_fpn=False,
                  multi_levels=1,
+                 naive_conv=True,
                  apply_pri_pyramid_wise_alignment=False,
                  apply_head_wise_alignment=False,
                  simple_pyramid_alignment=False,
@@ -146,7 +147,7 @@ class FCOSTSFullMaskHead(nn.Module):
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
                      loss_weight=1.0),
-                 intermediate_channel=384, 
+                 intermediate_channel=384,
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
                  i_norm_cfg=dict(type='GN', num_groups=24, requires_grad=True),
@@ -170,6 +171,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.apply_pyramid_wise_alignment = apply_pyramid_wise_alignment
         self.copy_teacher_fpn = copy_teacher_fpn
         self.multi_levels = multi_levels
+        self.naive_conv = naive_conv
         self.apply_pri_pyramid_wise_alignment = apply_pri_pyramid_wise_alignment
         self.simple_pyramid_alignment = simple_pyramid_alignment
         self.block_wise_attention = block_wise_attention
@@ -446,12 +448,26 @@ class FCOSTSFullMaskHead(nn.Module):
             for i in range(self.multi_levels):
                 channel_delta = (self.feat_channels -
                                  self.s_feat_channels) // self.multi_levels
-                self.t_s_pyramid_align.append(
-                    nn.Conv2d(
-                        self.s_feat_channels + channel_delta * i,
-                        self.s_feat_channels + channel_delta * (i + 1),
-                        3,
-                        padding=1))
+                if self.naive_conv:
+                    # naive conv layers
+                    self.t_s_pyramid_align.append(
+                        nn.Conv2d(
+                            self.s_feat_channels + channel_delta * i,
+                            self.s_feat_channels + channel_delta * (i + 1),
+                            3,
+                            padding=1))
+                else:
+                    # conv blocks
+                    self.t_s_pyramid_align.append(
+                        ConvModule(
+                            self.s_feat_channels + channel_delta * i,
+                            self.s_feat_channels + channel_delta * (i + 1),
+                            3,
+                            stride=1,
+                            padding=1,
+                            conv_cfg=self.conv_cfg,
+                            norm_cfg=self.s_norm_cfg,
+                            bias=self.s_norm_cfg is None))
 
                 if self.learn_from_teacher_backbone:
                     self.s_t_pyramid_align.append(
@@ -460,6 +476,14 @@ class FCOSTSFullMaskHead(nn.Module):
                             self.feat_channels - channel_delta * (i + 1),
                             3,
                             padding=1))
+
+            if not self.naive_conv:
+                self.t_s_pyramid_align.append(
+                    nn.Conv2d(
+                        self.feat_channels,
+                        self.feat_channels,
+                        3,
+                        padding=1))
 
         if self.apply_pri_pyramid_wise_alignment:
             for level in range(1, 3):
@@ -1149,7 +1173,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             if self.inner_opt:
                                 self.inner_itr = min(
                                     self.train_step // (7330 * 3), 3)
-                                
+
                                 for _ in range(self.inner_itr):
                                     # NOTE: Only train the alignment network
                                     self.inner_optimizer.zero_grad()
