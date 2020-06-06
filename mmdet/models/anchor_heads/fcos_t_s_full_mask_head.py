@@ -147,7 +147,7 @@ class FCOSTSFullMaskHead(nn.Module):
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
                      loss_weight=1.0),
-                 intermediate_channel=384,
+                 intermediate_channel=192,
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
                  i_norm_cfg=dict(type='GN', num_groups=24, requires_grad=True),
@@ -436,14 +436,14 @@ class FCOSTSFullMaskHead(nn.Module):
                     nn.Conv2d(
                         self.feat_channels,
                         self.intermediate_channel,
-                        3,
-                        padding=1))
+                        5,
+                        padding=2))
                 self.s_i_pyramid_align.append(
                     nn.Conv2d(
                         self.s_feat_channels,
                         self.intermediate_channel,
-                        3,
-                        padding=1))
+                        5,
+                        padding=2))
 
             for i in range(self.multi_levels):
                 channel_delta = (self.feat_channels -
@@ -557,6 +557,7 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_cls, std=0.01, bias=bias_s_cls)
         normal_init(self.fcos_s_reg, std=0.01)
         normal_init(self.fcos_s_centerness, std=0.01)
+
         if self.apply_pyramid_wise_alignment or self.pyramid_correlation:
             if self.use_intermediate_learner:
                 for align_conv in self.t_i_pyramid_align:
@@ -1090,18 +1091,17 @@ class FCOSTSFullMaskHead(nn.Module):
                         if self.use_intermediate_learner:
                             for j, pyramid_hint_quad in enumerate(
                                     pyramid_hint_quads):
-                                if self.use_intermediate_learner:
-                                    s_i_pyramid_feature = pyramid_hint_quad[2]
-                                    t_i_pyramid_feature = pyramid_hint_quad[3]
-                                    # TODO: Rename intermediate features
-                                    t_i_pyramid_feature_list.append(
-                                        t_i_pyramid_feature.permute(
-                                            0, 2, 3, 1).reshape(
-                                                -1, self.intermediate_channel))
-                                    s_i_pyramid_feature_list.append(
-                                        s_i_pyramid_feature.permute(
-                                            0, 2, 3, 1).reshape(
-                                                -1, self.intermediate_channel))
+                                s_i_pyramid_feature = pyramid_hint_quad[2]
+                                t_i_pyramid_feature = pyramid_hint_quad[3]
+                                # TODO: Rename intermediate features
+                                t_i_pyramid_feature_list.append(
+                                    t_i_pyramid_feature.permute(
+                                        0, 2, 3, 1).reshape(
+                                            -1, self.intermediate_channel))
+                                s_i_pyramid_feature_list.append(
+                                    s_i_pyramid_feature.permute(
+                                        0, 2, 3, 1).reshape(
+                                            -1, self.intermediate_channel))
 
                             t_i_pyramid_feature_list = torch.cat(
                                 t_i_pyramid_feature_list)
