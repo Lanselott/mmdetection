@@ -424,9 +424,6 @@ class FCOSTSFullMaskHead(nn.Module):
             self.t_i_pyramid_align = nn.ModuleList()
             self.s_i_pyramid_align = nn.ModuleList()
 
-        if self.learn_from_teacher_backbone:
-            self.s_t_pyramid_align = nn.ModuleList()
-
         if self.apply_pyramid_wise_alignment or self.pyramid_correlation:
             if self.use_intermediate_learner:
                 # NOTE:
@@ -468,14 +465,6 @@ class FCOSTSFullMaskHead(nn.Module):
                             conv_cfg=self.conv_cfg,
                             norm_cfg=self.s_norm_cfg,
                             bias=self.s_norm_cfg is None))
-
-                if self.learn_from_teacher_backbone:
-                    self.s_t_pyramid_align.append(
-                        nn.Conv2d(
-                            self.feat_channels - channel_delta * i,
-                            self.feat_channels - channel_delta * (i + 1),
-                            3,
-                            padding=1))
 
             if not self.naive_conv:
                 self.t_s_pyramid_align.append(
@@ -566,10 +555,6 @@ class FCOSTSFullMaskHead(nn.Module):
                 for align_conv in self.t_s_pyramid_align:
                     normal_init(align_conv, std=0.01)
 
-                if self.learn_from_teacher_backbone:
-                    for align_conv in self.s_t_pyramid_align:
-                        normal_init(align_conv, std=0.01)
-
         if self.apply_pri_pyramid_wise_alignment:
             for t_s_pri_pyramid_convs in self.t_s_pri_pyramid_align:
                 normal_init(t_s_pri_pyramid_convs, std=0.01)
@@ -639,18 +624,6 @@ class FCOSTSFullMaskHead(nn.Module):
         t_pri_feats += tuple('N')
         s_pri_feats += tuple('N')
 
-        if self.learn_from_teacher_backbone:
-            t_decreased_feats = []
-            s_t_align_layer = self.s_t_pyramid_align
-            for t_feat in t_feats:
-                # Feature trans to student should not be updated to teacher
-                t_feat = t_feat.detach()
-                for s_t_align_layer in self.s_t_pyramid_align:
-                    t_decreased_pyramid_feat = s_t_align_layer(t_feat)
-
-                t_decreased_feats.append(t_decreased_pyramid_feat)
-            t_decreased_feats = tuple(t_decreased_feats)
-
         placeholder = tuple('N') * 5
         if self.apply_block_wise_alignment:
             hint_pairs = feats[4]
@@ -664,11 +637,6 @@ class FCOSTSFullMaskHead(nn.Module):
                                t_pri_feats, s_pri_feats, self.scales,
                                self.s_scales, placeholder, placeholder,
                                t_fpn_features)
-        elif self.learn_from_teacher_backbone:
-            return multi_apply(self.forward_single, t_feats, s_feats,
-                               t_pri_feats, s_pri_feats, self.scales,
-                               self.s_scales, placeholder, placeholder,
-                               placeholder, t_decreased_feats)
         elif self.use_intermediate_learner:
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
@@ -696,19 +664,6 @@ class FCOSTSFullMaskHead(nn.Module):
         s_reg_feat = s_x
         # downsample(align) teacher pyramid features
         # NOTE: the input should be aligned and detached as input images
-        if self.learn_from_teacher_backbone:
-            t_decreased_pyramid_hint_features = t_decreased_feat  # for pyramid loss usage
-
-            t_decreased_cls_feat = t_decreased_feat
-            t_decreased_reg_feat = t_decreased_feat
-
-            # if self.pyramid_merging:
-            #     alpha = 1 / 13 + math.ceil(self.train_step / 7330) * (1 / 13)
-
-            #     s_cls_feat = t_decreased_cls_feat * alpha + s_cls_feat * (
-            #         1 - alpha)
-            #     s_reg_feat = t_decreased_reg_feat * alpha + s_reg_feat * (
-            #         1 - alpha)
 
         cls_hint_pairs = []
         reg_hint_pairs = []
@@ -771,8 +726,6 @@ class FCOSTSFullMaskHead(nn.Module):
             t_cls_feat = cls_layer(t_cls_feat)
             s_cls_feat = s_cls_layer(s_cls_feat)
 
-            if self.learn_from_teacher_backbone:
-                t_decreased_cls_feat = s_cls_layer(t_decreased_cls_feat)
             if self.apply_head_wise_alignment:
                 cls_hint_pairs.append([s_cls_feat, t_cls_feat])
             if self.copy_teacher_fpn:
@@ -784,11 +737,6 @@ class FCOSTSFullMaskHead(nn.Module):
         centerness = self.fcos_centerness(t_cls_feat)
         s_centerness = self.fcos_s_centerness(s_cls_feat)
 
-        if self.learn_from_teacher_backbone:
-            t_decreased_cls_score = self.fcos_s_cls(t_decreased_cls_feat)
-            t_decreased_centerness = self.fcos_s_centerness(
-                t_decreased_cls_feat)
-
         if self.copy_teacher_fpn:
             t_fpn_cls_score = self.fcos_s_cls(t_fpn_cls_feat)
             t_fpn_centerness = self.fcos_s_centerness(t_fpn_cls_feat)
@@ -799,8 +747,6 @@ class FCOSTSFullMaskHead(nn.Module):
             t_reg_feat = reg_layer(t_reg_feat)
             s_reg_feat = s_reg_layer(s_reg_feat)
 
-            if self.learn_from_teacher_backbone:
-                t_decreased_reg_feat = s_reg_layer(t_decreased_reg_feat)
             if self.apply_head_wise_alignment:
                 reg_hint_pairs.append([s_reg_feat, t_reg_feat])
             if self.copy_teacher_fpn:
@@ -816,9 +762,6 @@ class FCOSTSFullMaskHead(nn.Module):
         # float to avoid overflow when enabling FP16
         bbox_pred = scale(self.fcos_reg(t_reg_feat)).float().exp()
         s_bbox_pred = s_scale(self.fcos_s_reg(s_reg_feat)).float().exp()
-        if self.learn_from_teacher_backbone:
-            t_decreased_bbox_pred = s_scale(
-                self.fcos_s_reg(t_decreased_reg_feat)).float().exp()
 
         if self.copy_teacher_fpn:
             t_fpn_bbox_pred = s_scale(
@@ -829,8 +772,6 @@ class FCOSTSFullMaskHead(nn.Module):
             if self.apply_pyramid_wise_alignment or self.siamese_distill or self.pyramid_correlation and not self.apply_head_wise_alignment:
                 if self.copy_teacher_fpn:
                     return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, t_fpn_bbox_pred, t_fpn_cls_score, t_fpn_centerness, None, None, None, None, None, None, None, None
-                elif self.learn_from_teacher_backbone:
-                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, t_decreased_cls_score, t_decreased_bbox_pred, t_decreased_centerness, t_decreased_pyramid_hint_features, None, None, None, None
                 elif self.use_intermediate_learner:
                     return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, i_cls_score, i_bbox_pred, i_centerness, pyramid_hint_quads
                 else:
@@ -847,9 +788,6 @@ class FCOSTSFullMaskHead(nn.Module):
                     return i_cls_score, i_bbox_pred, i_centerness
                 else:
                     return s_cls_score, s_bbox_pred, s_centerness
-            elif self.eval_teacher_backbone:
-                assert self.learn_from_teacher_backbone == True
-                return t_decreased_cls_score, t_decreased_bbox_pred, t_decreased_centerness
             else:
                 return cls_score, bbox_pred, centerness
 
@@ -903,37 +841,6 @@ class FCOSTSFullMaskHead(nn.Module):
             cfg,
             gt_bboxes_ignore=None,
             spatial_ratio=self.spatial_ratio)
-
-        if self.learn_from_teacher_backbone:
-
-            t_decreased_loss_cls, t_decreased_loss_bbox, t_decreased_loss_centerness, _, t_decreased_flatten_cls_scores, _, t_decreased_iou_maps, _, _, t_decreased_pred_bboxes, _, _, pos_centerness_targets, t_decreased_pred_centerness, t_decreased_all_pred_bboxes, _ = self.loss_single(
-                t_decreased_cls_scores,
-                t_decreased_bbox_preds,
-                t_decreased_centernesses,
-                gt_bboxes,
-                gt_labels,
-                img_metas,
-                cfg,
-                gt_bboxes_ignore=None,
-                spatial_ratio=self.spatial_ratio)
-
-            t_decreased_pyramid_hint_feature_list = []
-            for t_decreased_pyramid_hint_feature in t_decreased_pyramid_hint_features:
-                t_decreased_pyramid_hint_feature_list.append(
-                    t_decreased_pyramid_hint_feature.permute(
-                        0, 2, 3, 1).reshape(-1, self.s_feat_channels))
-
-            t_decreased_pyramid_hint_feature_list = torch.cat(
-                t_decreased_pyramid_hint_feature_list)
-
-            loss_dict.update({
-                't_decreased_loss_cls':
-                t_decreased_loss_cls,
-                't_decreased_loss_bbox':
-                t_decreased_loss_bbox,
-                't_decreased_loss_centerness':
-                t_decreased_loss_centerness
-            })
 
         if self.copy_teacher_fpn:
             t_fpn_loss_cls, t_fpn_loss_bbox, t_fpn_loss_centerness, cls_avg_factor, t_fpn_flatten_cls_scores, _, t_fpn_iou_maps, _, _, t_fpn_pred_bboxes, t_fpn_gt_bboxes, _, _, t_fpn_pred_centerness, t_fpn_all_pred_bboxes, _ = self.loss_single(
@@ -1223,28 +1130,6 @@ class FCOSTSFullMaskHead(nn.Module):
                             loss_dict.update({
                                 'inter_pyramid_hint_loss':
                                 inter_pyramid_hint_loss
-                            })
-
-                        if self.learn_from_teacher_backbone:
-                            t_decreased_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                s_pyramid_feature_list,
-                                t_decreased_pyramid_hint_feature_list.detach())
-                            t_decreased_iou_attention_weight = bbox_overlaps(
-                                s_pred_bboxes,
-                                t_decreased_pred_bboxes,
-                                is_aligned=True).detach()
-                            t_decreased_pyramid_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                s_pyramid_feature_list[t_pos_inds],
-                                t_decreased_pyramid_hint_feature_list[
-                                    t_pos_inds].detach(),
-                                weight=t_decreased_iou_attention_weight,
-                                avg_factor=t_decreased_iou_attention_weight.
-                                sum())
-                            loss_dict.update({
-                                't_decreased_pyramid_hint_loss':
-                                t_decreased_pyramid_hint_loss,
-                                't_decreased_pyramid_attention_loss':
-                                t_decreased_pyramid_attention_loss
                             })
 
             # NOTE: pri (bottom-up pyramid) 1-3 levels
