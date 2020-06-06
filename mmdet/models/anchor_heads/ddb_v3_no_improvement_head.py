@@ -65,6 +65,7 @@ class DDBV3NPHead(nn.Module):
                  scaled_centerness=False,
                  bd_threshold=0.0,
                  stable_sort=False,
+                 set_ignores=False,
                  conv_cfg=None,
                  conv_scale=False,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
@@ -114,6 +115,7 @@ class DDBV3NPHead(nn.Module):
         self.sc_avg_ratio = 0
         self.train_counter = 0
         self.stable_sort = stable_sort
+        self.set_ignores = set_ignores
         self._init_layers()
 
     def _init_layers(self):
@@ -379,10 +381,11 @@ class DDBV3NPHead(nn.Module):
                 masks_for_all[obj_mask_inds[consistency_mask]] = 0
             # cls branch
             reduced_mask = (masks_for_all == 0).nonzero()
-            # FIXME:
-            flatten_labels[pos_inds[
-                reduced_mask]] = 0  # the pixels where IoU from sorted branch lower than 0.5 are labeled as negative (background) zero
-            # NOTE: Draw positive images
+
+            if self.set_ignores:
+                flatten_labels[pos_inds[reduced_mask]] = -1
+            else:
+                flatten_labels[pos_inds[reduced_mask]] = 0
             '''
             sc_masks = self.draw_sc_masks(flatten_labels, labels,
                                           featmap_sizes, gt_masks)
