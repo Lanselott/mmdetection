@@ -203,7 +203,7 @@ class DDBV3NPHead(nn.Module):
             bbox_pred = nn.functional.relu(bbox_pred)
         else:
             if self.conv_scale:
-                scale = self.conv_scales(reg_feat.detach() + cls_feat.detach())
+                scale = self.conv_scales(reg_feat)
                 bbox_pred = self.fcos_reg(reg_feat).float().exp() * scale
             else:
                 bbox_pred = scale(self.fcos_reg(reg_feat)).float().exp()
@@ -243,6 +243,7 @@ class DDBV3NPHead(nn.Module):
             cls_score.permute(0, 2, 3, 1).reshape(-1, self.cls_out_channels)
             for cls_score in cls_scores
         ]
+
         if self.apply_6d_box_coding:
             flatten_bbox_preds = [
                 bbox_pred.permute(0, 2, 3, 1).reshape(-1, 6)
@@ -257,12 +258,11 @@ class DDBV3NPHead(nn.Module):
             centerness.permute(0, 2, 3, 1).reshape(-1)
             for centerness in centernesses
         ]
-        flatten_centerness = torch.cat(flatten_centerness)
 
+        flatten_centerness = torch.cat(flatten_centerness)
         flatten_cls_scores = torch.cat(flatten_cls_scores)
         flatten_bbox_preds = torch.cat(flatten_bbox_preds)
         flatten_labels = torch.cat(labels)
-
         flatten_bbox_targets = torch.cat(bbox_targets)
         flatten_bbox_strided_targets = torch.cat(bbox_strided_targets)
         flatten_bbox_strides = torch.cat(bbox_strides)
@@ -356,7 +356,8 @@ class DDBV3NPHead(nn.Module):
             masks_for_all = torch.ones_like(instance_counter).float()
             '''
             # consistency reduction: keep consistency between classification and regression
-            # if pixel i  regression < mean & classification < mean, label as zero and do not regression on these pixels.
+            # if pixel i  regression < mean & classification < mean, 
+            # label as zero and do not regression on these pixels.
             '''
             pos_scores = flatten_cls_scores[pos_inds]
             pos_scores, pos_pred_inds = pos_scores.sigmoid().max(1)
@@ -416,22 +417,17 @@ class DDBV3NPHead(nn.Module):
             delta_x1, delta_y1, delta_x2, delta_y2 = gt - pred
             delta_x1 >= 0, delta_y1 >= 0, delta_x2 <= 0, delta_y2 <= 0
             '''
-
-            pos_dist_scores_sorted = torch.abs(
-                pos_decoded_target_preds -
-                pos_decoded_sort_bbox_preds).detach()
-
             pos_dist_scores = torch.abs(pos_decoded_target_preds -
-                                        pos_decoded_bbox_preds)
+                                        pos_decoded_bbox_preds).detach()
+            pos_gradient_update_mapping = torch.zeros_like(
+                pos_dist_scores, dtype=torch.int64)
+            pos_gradient_update_anti_mapping = torch.zeros_like(
+                pos_dist_scores, dtype=torch.int64)
             pos_dist_scores = pos_dist_scores.permute(
                 1, 0).contiguous()  # [pos_inds * 4] -> [4 * pos_inds]
 
-            pos_gradient_update_mapping = torch.zeros_like(
-                pos_dist_scores_sorted, dtype=torch.int64)
-
-            pos_gradient_update_anti_mapping = torch.zeros_like(
-                pos_dist_scores_sorted, dtype=torch.int64)
             inds_shift = 0
+
             for dist_conf_mask in dist_conf_mask_list:
                 obj_mask_inds = (
                     (dist_conf_mask[saved_target_mask] +
