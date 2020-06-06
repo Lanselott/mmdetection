@@ -436,14 +436,14 @@ class FCOSTSFullMaskHead(nn.Module):
                     nn.Conv2d(
                         self.feat_channels,
                         self.intermediate_channel,
-                        5,
-                        padding=2))
+                        3,
+                        padding=1))
                 self.s_i_pyramid_align.append(
                     nn.Conv2d(
                         self.s_feat_channels,
                         self.intermediate_channel,
-                        5,
-                        padding=2))
+                        3,
+                        padding=1))
 
             for i in range(self.multi_levels):
                 channel_delta = (self.feat_channels -
