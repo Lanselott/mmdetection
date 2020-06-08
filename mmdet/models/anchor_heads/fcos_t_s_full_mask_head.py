@@ -139,6 +139,7 @@ class FCOSTSFullMaskHead(nn.Module):
                      loss_weight=1.0),
                  loss_regression_distill=dict(type='IoULoss', loss_weight=1),
                  reg_distill_threshold=0.5,
+                 cls_aware_attention=False,
                  loss_iou_similiarity=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -238,6 +239,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.t_s_distance = build_loss(t_s_distance)
         self.loss_regression_distill = build_loss(loss_regression_distill)
         self.reg_distill_threshold = reg_distill_threshold
+        self.cls_aware_attention = cls_aware_attention
         self.loss_iou_similiarity = nn.BCELoss(
         )  # build_loss(loss_iou_similiarity)
         self.conv_cfg = conv_cfg
@@ -268,9 +270,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     'params': self.t_s_pyramid_align.parameters()
                 },
             ],
-                                             lr=1e-2,
-                                             momentum=0.9,
-                                             weight_decay=0.0001)
+                lr=1e-2,
+                momentum=0.9,
+                weight_decay=0.0001)
 
     def _init_siamese(self):
         self.t_s_siamese_align = nn.ModuleList()
@@ -1001,6 +1003,10 @@ class FCOSTSFullMaskHead(nn.Module):
                     else:
                         pyramid_lambda = 1  # + 1 * self.train_step // 7330
 
+                    t_pred_cls = t_flatten_cls_scores.max(1)[1]
+                    s_pred_cls = s_flatten_cls_scores.max(1)[1]
+                    cls_masks = (t_pred_cls == s_pred_cls).float()
+
                     discrim_loss_list = []
                     generator_loss_list = []
                     t_g_ious = bbox_overlaps(
@@ -1113,10 +1119,8 @@ class FCOSTSFullMaskHead(nn.Module):
                         if self.pyramid_wise_attention:
                             # FIXME: Pyramid attention should be merge to pyramid alignement loss,
                             if len(t_pos_inds) != 0:
-                                t_pred_cls = t_flatten_cls_scores.max(1)[1]
-                                s_pred_cls = s_flatten_cls_scores.max(1)[1]
-                                cls_masks = (s_pred_cls[t_pos_inds] ==
-                                             t_pred_cls[t_pos_inds]).float()
+                                attention_cls_masks = (s_pred_cls[t_pos_inds] ==
+                                                       t_pred_cls[t_pos_inds]).float()
                                 # print(cls_masks.sum() * 100 / cls_masks.shape[0])
                                 t_s_pred_ious = bbox_overlaps(
                                     s_pred_bboxes,
@@ -1124,7 +1128,11 @@ class FCOSTSFullMaskHead(nn.Module):
                                     is_aligned=True).detach()
 
                                 # NOTE: Offline mode alignment requires larger weight (w=10 or 15)
-                                iou_attention_weight = t_s_pred_ious * cls_masks
+                                if self.cls_aware_attention:
+                                    iou_attention_weight = t_s_pred_ious * attention_cls_masks
+                                else:
+                                    iou_attention_weight = t_s_pred_ious
+
                                 if self.use_intermediate_learner:
                                     inter_iou_attention_weight = bbox_overlaps(
                                         s_pred_bboxes,
@@ -1141,7 +1149,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                     s_t_pyramid_feature_list[t_pos_inds],
                                     t_pyramid_feature_list[t_pos_inds].detach(
                                     ),
-                                    weight=iou_attention_weight)  #,
+                                    weight=iou_attention_weight)  # ,
                                 # avg_factor=iou_attention_weight.sum())
 
                                 if self.use_intermediate_learner:
@@ -1149,7 +1157,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                         s_i_pyramid_feature_list[t_pos_inds],
                                         t_i_pyramid_feature_list[t_pos_inds].
                                         detach(),
-                                        weight=inter_iou_attention_weight)  #,
+                                        weight=inter_iou_attention_weight)  # ,
                                     # avg_factor=inter_iou_attention_weight.
                                     # sum())
                             else:
@@ -1197,9 +1205,15 @@ class FCOSTSFullMaskHead(nn.Module):
                             })
 
                     if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
-                        t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                            s_t_pyramid_feature_list,
-                            t_pyramid_feature_list.detach())
+                        if self.cls_aware_attention:
+                            t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                s_t_pyramid_feature_list,
+                                t_pyramid_feature_list.detach(), 
+                                weight=cls_masks)
+                        else:
+                            t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                s_t_pyramid_feature_list,
+                                t_pyramid_feature_list.detach())
                         loss_dict.update(
                             {'t_pyramid_hint_loss': t_pyramid_hint_loss})
                         if self.use_intermediate_learner:
@@ -1647,7 +1661,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                                 0).float()
+                    0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
