@@ -66,6 +66,7 @@ class DDBV3NPHead(nn.Module):
                  bd_threshold=0.0,
                  stable_sort=False,
                  set_ignores=False,
+                 cls_reg_individual=False,
                  conv_cfg=None,
                  conv_scale=False,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
@@ -116,6 +117,7 @@ class DDBV3NPHead(nn.Module):
         self.train_counter = 0
         self.stable_sort = stable_sort
         self.set_ignores = set_ignores
+        self.cls_reg_individual = cls_reg_individual
         self._init_layers()
 
     def _init_layers(self):
@@ -356,6 +358,8 @@ class DDBV3NPHead(nn.Module):
                     (instance_counter == obj_id).float())
 
             masks_for_all = torch.ones_like(instance_counter).float()
+            masks_for_cls = torch.ones_like(instance_counter).float()
+            masks_for_reg = torch.ones_like(instance_counter).float()
             '''
             # consistency reduction: keep consistency between classification and regression
             # if pixel i  regression < mean & classification < mean, 
@@ -367,7 +371,6 @@ class DDBV3NPHead(nn.Module):
             for dist_conf_mask in dist_conf_mask_list:
                 obj_mask_inds = dist_conf_mask.nonzero().reshape(-1)
                 pos_centerness_obj = pos_centerness_targets[obj_mask_inds]
-
                 pos_scores_obj = pos_scores[obj_mask_inds]
 
                 # mean IoU of an object
@@ -379,18 +382,28 @@ class DDBV3NPHead(nn.Module):
                 # consistency:
                 consistency_mask = (regression_mask + classification_mask) == 2
                 masks_for_all[obj_mask_inds[consistency_mask]] = 0
+                masks_for_reg[obj_mask_inds[regression_mask]] = 0
+                masks_for_cls[obj_mask_inds[classification_mask]] = 0
+
             # cls branch
-            reduced_mask = (masks_for_all == 0).nonzero()
+            reduced_inds = (masks_for_all == 0).nonzero()
+            classification_inds = (masks_for_cls == 0).nonzero()
+            regression_inds = (masks_for_reg == 0).nonzero()
 
             if self.set_ignores:
-                flatten_labels[pos_inds[reduced_mask]] = -1
+                flatten_labels[pos_inds[reduced_inds]] = -1
+            elif self.cls_reg_individual:
+                flatten_labels[pos_inds[classification_inds]] = 0
             else:
-                flatten_labels[pos_inds[reduced_mask]] = 0
+                flatten_labels[pos_inds[reduced_inds]] = 0
             '''
             sc_masks = self.draw_sc_masks(flatten_labels, labels,
                                           featmap_sizes, gt_masks)
             '''
-            saved_target_mask = masks_for_all.nonzero().reshape(-1)
+            if self.cls_reg_individual:
+                saved_target_mask = masks_for_reg.nonzero().reshape(-1)
+            else:
+                saved_target_mask = masks_for_all.nonzero().reshape(-1)
 
             pos_centerness = pos_centerness[saved_target_mask].reshape(-1)
             '''
