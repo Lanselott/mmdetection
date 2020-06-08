@@ -480,10 +480,7 @@ class FCOSTSFullMaskHead(nn.Module):
             if not self.naive_conv:
                 self.t_s_pyramid_align.append(
                     nn.Conv2d(
-                        self.feat_channels,
-                        self.feat_channels,
-                        3,
-                        padding=1))
+                        self.feat_channels, self.feat_channels, 3, padding=1))
 
         if self.apply_pri_pyramid_wise_alignment:
             for level in range(1, 3):
@@ -1096,12 +1093,14 @@ class FCOSTSFullMaskHead(nn.Module):
                                 # TODO: Rename intermediate features
                                 t_i_pyramid_feature_list.append(
                                     t_i_pyramid_feature.permute(
-                                        0, 2, 3, 1).reshape(
-                                            -1, self.intermediate_channel))
+                                        0, 2, 3,
+                                        1).reshape(-1,
+                                                   self.intermediate_channel))
                                 s_i_pyramid_feature_list.append(
                                     s_i_pyramid_feature.permute(
-                                        0, 2, 3, 1).reshape(
-                                            -1, self.intermediate_channel))
+                                        0, 2, 3,
+                                        1).reshape(-1,
+                                                   self.intermediate_channel))
 
                             t_i_pyramid_feature_list = torch.cat(
                                 t_i_pyramid_feature_list)
@@ -1116,23 +1115,16 @@ class FCOSTSFullMaskHead(nn.Module):
                             if len(t_pos_inds) != 0:
                                 t_pred_cls = t_flatten_cls_scores.max(1)[1]
                                 s_pred_cls = s_flatten_cls_scores.max(1)[1]
-                                ce_loss = torch.nn.BCEWithLogitsLoss(
-                                    reduce=False)
-
-                                t_s_cls_entropy = ce_loss(
-                                    s_flatten_cls_scores[t_pos_inds].detach(),
-                                    t_flatten_cls_scores[t_pos_inds].detach())
-                                t_s_cls_entropy = t_s_cls_entropy.sum(1)
-                                t_s_cls_entropy = t_s_cls_entropy - t_s_cls_entropy.min(
-                                ) + 1e-6
-                                t_s_cls_entropy /= t_s_cls_entropy.max()
+                                cls_masks = (s_pred_cls[t_pos_inds] ==
+                                             t_pred_cls[t_pos_inds]).float()
+                                # print(cls_masks.sum() * 100 / cls_masks.shape[0])
                                 t_s_pred_ious = bbox_overlaps(
                                     s_pred_bboxes,
                                     t_pred_bboxes,
                                     is_aligned=True).detach()
 
                                 # NOTE: Offline mode alignment requires larger weight (w=10 or 15)
-                                iou_attention_weight = t_s_pred_ious
+                                iou_attention_weight = t_s_pred_ious * cls_masks
                                 if self.use_intermediate_learner:
                                     inter_iou_attention_weight = bbox_overlaps(
                                         s_pred_bboxes,
@@ -1160,19 +1152,13 @@ class FCOSTSFullMaskHead(nn.Module):
                                         weight=inter_iou_attention_weight)  #,
                                     # avg_factor=inter_iou_attention_weight.
                                     # sum())
-                                '''
-                                attention_cls_pyramid_hint_loss = self.pyramid_hint_loss(
-                                    s_t_pyramid_feature_list[t_pos_inds],
-                                    t_pyramid_feature_list[t_pos_inds].detach(),
-                                    weight=t_s_cls_entropy)
-                                '''
                             else:
                                 t_attention_iou_pyramid_hint_loss = s_t_pyramid_feature_list[
                                     t_pos_inds].sum()
 
                             if self.inner_opt:
-                                self.inner_itr = min(
-                                    self.train_step // 7330, 4)
+                                self.inner_itr = min(self.train_step // 7330,
+                                                     4)
 
                                 for _ in range(self.inner_itr):
                                     # NOTE: Only train the alignment network
