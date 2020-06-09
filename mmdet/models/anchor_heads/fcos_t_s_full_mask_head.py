@@ -1002,6 +1002,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         pyramid_lambda = 10
                     else:
                         pyramid_lambda = 1  # + 1 * self.train_step // 7330
+                        cls_lambda = 4
 
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
                     s_pred_cls = s_flatten_cls_scores.max(1)[1]
@@ -1129,7 +1130,13 @@ class FCOSTSFullMaskHead(nn.Module):
 
                                 # NOTE: Offline mode alignment requires larger weight (w=10 or 15)
                                 if self.cls_aware_attention:
-                                    iou_attention_weight = t_s_pred_ious * attention_cls_masks
+                                    s_t_mse_loss = torch.nn.MSELoss(
+                                    reduction='none')
+                                    s_t_cls_distance = s_t_mse_loss(
+                                        s_flatten_cls_scores, t_flatten_cls_scores).detach().sum(1)
+                                    s_t_cls_distance /= s_t_cls_distance.max()
+                                    pos_s_t_cls_distance = s_t_cls_distance[t_pos_inds]
+                                    iou_attention_weight = t_s_pred_ious * pos_s_t_cls_distance * cls_lambda
                                 else:
                                     iou_attention_weight = t_s_pred_ious
 
@@ -1206,11 +1213,11 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
                         if self.cls_aware_attention:
-                            t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                s_t_pyramid_feature_list,
-                                t_pyramid_feature_list.detach(), 
-                                weight=cls_masks)
-                        else:
+                        #     t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                        #         s_t_pyramid_feature_list,
+                        #         t_pyramid_feature_list.detach(),
+                        #         weight=cls_masks)
+                        # else:
                             t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                 s_t_pyramid_feature_list,
                                 t_pyramid_feature_list.detach())
