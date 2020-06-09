@@ -391,7 +391,7 @@ class DDBV3NPHead(nn.Module):
 
             if self.set_ignores:
                 flatten_labels[pos_inds[reduced_inds]] = -1
-            elif self.cls_reg_individual:
+            elif self.cls_reg_individual and self.sorted_warmup == 0:
                 flatten_labels[pos_inds[classification_inds]] = 0
             else:
                 flatten_labels[pos_inds[reduced_inds]] = 0
@@ -399,7 +399,7 @@ class DDBV3NPHead(nn.Module):
             sc_masks = self.draw_sc_masks(flatten_labels, labels,
                                           featmap_sizes, gt_masks)
             '''
-            if self.cls_reg_individual:
+            if self.cls_reg_individual and self.sorted_warmup == 0:
                 saved_target_mask = masks_for_reg.nonzero().reshape(-1)
             else:
                 saved_target_mask = masks_for_all.nonzero().reshape(-1)
