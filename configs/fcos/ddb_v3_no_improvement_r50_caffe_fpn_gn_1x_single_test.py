@@ -40,6 +40,7 @@ model = dict(
         softplus_scale=False,
         conv_scale=False,
         box_sampling=False,
+        cls_reg_individual=True,
         box_num=1,
         stable_noise=False,
         stable_sort=False,

@@ -35,7 +35,7 @@ model = dict(
         box_weighted=True,
         no_scale=False,
         hook_debug=True,
-        sorted_warmup=500,
+        sorted_warmup=0,
         weighted_mask=False, # True # ablation 
         cls_reg_individual=True,
         loss_cls=dict(
@@ -131,7 +131,7 @@ lr_config = dict(
     warmup='constant',
     warmup_iters=500,
     warmup_ratio=1.0 / 3,
-    step=[4, 5])
+    step=[8, 11])
 checkpoint_config = dict(interval=1)
 # yapf:disable
 log_config = dict(

@@ -388,7 +388,6 @@ class DDBV3NPHead(nn.Module):
             # cls branch
             reduced_inds = (masks_for_all == 0).nonzero()
             classification_inds = (masks_for_cls == 0).nonzero()
-            regression_inds = (masks_for_reg == 0).nonzero()
 
             if self.set_ignores:
                 flatten_labels[pos_inds[reduced_inds]] = -1
