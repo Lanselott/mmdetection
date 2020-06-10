@@ -1002,7 +1002,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         pyramid_lambda = 10
                     else:
                         pyramid_lambda = 1  # + 1 * self.train_step // 7330
-                        cls_lambda = 4
+                        cls_lambda = 1
 
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
                     s_pred_cls = s_flatten_cls_scores.max(1)[1]
@@ -1135,6 +1135,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                     s_t_cls_distance = s_t_mse_loss(
                                         s_flatten_cls_scores, t_flatten_cls_scores).detach().sum(1)
                                     s_t_cls_distance /= s_t_cls_distance.max()
+                                    s_t_cls_distance = 1 - s_t_cls_distance
+                                
                                     pos_s_t_cls_distance = s_t_cls_distance[t_pos_inds]
                                     iou_attention_weight = t_s_pred_ious * pos_s_t_cls_distance * cls_lambda
                                 else:
