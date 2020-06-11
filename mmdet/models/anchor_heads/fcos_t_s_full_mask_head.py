@@ -1006,7 +1006,6 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
                     s_pred_cls = s_flatten_cls_scores.max(1)[1]
-                    cls_masks = (t_pred_cls == s_pred_cls).float()
 
                     discrim_loss_list = []
                     generator_loss_list = []
@@ -1122,7 +1121,6 @@ class FCOSTSFullMaskHead(nn.Module):
                             if len(t_pos_inds) != 0:
                                 attention_cls_masks = (s_pred_cls[t_pos_inds] ==
                                                        t_pred_cls[t_pos_inds]).float()
-                                # print(cls_masks.sum() * 100 / cls_masks.shape[0])
                                 t_s_pred_ious = bbox_overlaps(
                                     s_pred_bboxes,
                                     t_pred_bboxes,
@@ -1215,11 +1213,11 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
                         if self.cls_aware_attention:
-                        #     t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                        #         s_t_pyramid_feature_list,
-                        #         t_pyramid_feature_list.detach(),
-                        #         weight=cls_masks)
-                        # else:
+                            t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                s_t_pyramid_feature_list,
+                                t_pyramid_feature_list.detach(),
+                                weight=s_t_cls_distance)
+                        else:
                             t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                 s_t_pyramid_feature_list,
                                 t_pyramid_feature_list.detach())
