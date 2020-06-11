@@ -8,7 +8,7 @@ from .anchor_head import AnchorHead
 from IPython import embed
 
 @HEADS.register_module
-class RetinaHead(AnchorHead):
+class RetinaTSHead(AnchorHead):
     """
     An anchor-based head used in [1]_.
 
@@ -47,13 +47,16 @@ class RetinaHead(AnchorHead):
         octave_scales = np.array(
             [2**(i / scales_per_octave) for i in range(scales_per_octave)])
         anchor_scales = octave_scales * octave_base_scale
-        super(RetinaHead, self).__init__(
+        super(RetinaTSHead, self).__init__(
             num_classes, in_channels, anchor_scales=anchor_scales, **kwargs)
 
     def _init_layers(self):
         self.relu = nn.ReLU(inplace=True)
         self.cls_convs = nn.ModuleList()
         self.reg_convs = nn.ModuleList()
+        self.s_cls_convs = nn.ModuleList()
+        self.s_reg_convs = nn.ModuleList()
+        
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
             self.cls_convs.append(
@@ -74,6 +77,28 @@ class RetinaHead(AnchorHead):
                     padding=1,
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg))
+        
+        for i in range(self.stacked_convs):
+            # chn = self.in_channels if i == 0 else self.s_feat_channels
+            self.s_cls_convs.append(
+                ConvModule(
+                    self.s_feat_channels,
+                    self.s_feat_channels,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg))
+            self.s_reg_convs.append(
+                ConvModule(
+                    self.s_feat_channels,
+                    self.s_feat_channels,
+                    3,
+                    stride=1,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg))
+
         self.retina_cls = nn.Conv2d(
             self.feat_channels,
             self.num_anchors * self.cls_out_channels,
@@ -82,22 +107,50 @@ class RetinaHead(AnchorHead):
         self.retina_reg = nn.Conv2d(
             self.feat_channels, self.num_anchors * 4, 3, padding=1)
 
+        self.s_retina_cls = nn.Conv2d(
+            self.s_feat_channels,
+            self.num_anchors * self.cls_out_channels,
+            3,
+            padding=1)
+        self.s_retina_reg = nn.Conv2d(
+            self.s_feat_channels, self.num_anchors * 4, 3, padding=1)
+
     def init_weights(self):
         for m in self.cls_convs:
             normal_init(m.conv, std=0.01)
         for m in self.reg_convs:
             normal_init(m.conv, std=0.01)
+        for m in self.s_cls_convs:
+            normal_init(m.conv, std=0.01)
+        for m in self.s_reg_convs:
+            normal_init(m.conv, std=0.01)
+
         bias_cls = bias_init_with_prob(0.01)
         normal_init(self.retina_cls, std=0.01, bias=bias_cls)
         normal_init(self.retina_reg, std=0.01)
+        normal_init(self.s_retina_cls, std=0.01, bias=bias_cls)
+        normal_init(self.s_retina_reg, std=0.01)
 
-    def forward_single(self, x):
+    def forward_single(self, x, s_x, aligned_fpn=None):
         cls_feat = x
         reg_feat = x
+        s_cls_feat = s_x
+        s_reg_feat = s_x
+
         for cls_conv in self.cls_convs:
             cls_feat = cls_conv(cls_feat)
         for reg_conv in self.reg_convs:
             reg_feat = reg_conv(reg_feat)
+        
+        for s_cls_conv in self.s_cls_convs:
+            s_cls_feat = s_cls_conv(s_cls_feat)
+        for s_reg_conv in self.s_reg_convs:
+            s_reg_feat = s_reg_conv(s_reg_feat)
+
         cls_score = self.retina_cls(cls_feat)
         bbox_pred = self.retina_reg(reg_feat)
-        return cls_score, bbox_pred
+
+        s_cls_score = self.s_retina_cls(s_cls_feat)
+        s_bbox_pred = self.s_retina_reg(s_reg_feat)
+
+        return tuple([cls_score, s_cls_score]), tuple([bbox_pred, s_bbox_pred])

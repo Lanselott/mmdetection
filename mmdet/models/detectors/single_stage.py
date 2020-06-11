@@ -68,6 +68,7 @@ class SingleStageDetector(BaseDetector):
                       gt_masks=None,
                       gt_bboxes_ignore=None):
         x = self.extract_feat(img)
+        
         outs = self.bbox_head(x)
         if gt_masks is not None:
             loss_inputs = outs + (gt_bboxes, gt_labels,
@@ -77,6 +78,7 @@ class SingleStageDetector(BaseDetector):
                                   img_metas, self.train_cfg)
         losses = self.bbox_head.loss(
             *loss_inputs, gt_bboxes_ignore=gt_bboxes_ignore)
+            
         return losses
 
     def simple_test(self, img, img_meta, rescale=False):

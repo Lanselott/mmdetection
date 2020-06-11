@@ -34,6 +34,7 @@ class AnchorHead(nn.Module):
                  num_classes,
                  in_channels,
                  feat_channels=256,
+                 s_feat_channels=128,
                  anchor_scales=[8, 16, 32],
                  anchor_ratios=[0.5, 1.0, 2.0],
                  anchor_strides=[4, 8, 16, 32, 64],
@@ -50,6 +51,7 @@ class AnchorHead(nn.Module):
         self.in_channels = in_channels
         self.num_classes = num_classes
         self.feat_channels = feat_channels
+        self.s_feat_channels = s_feat_channels
         self.anchor_scales = anchor_scales
         self.anchor_ratios = anchor_ratios
         self.anchor_strides = anchor_strides
@@ -89,13 +91,18 @@ class AnchorHead(nn.Module):
         normal_init(self.conv_cls, std=0.01)
         normal_init(self.conv_reg, std=0.01)
 
-    def forward_single(self, x):
+    def forward_single(self, x, s_x):
         cls_score = self.conv_cls(x)
         bbox_pred = self.conv_reg(x)
         return cls_score, bbox_pred
 
     def forward(self, feats):
-        return multi_apply(self.forward_single, feats)
+        if type(feats) is tuple:
+            # branch for distillation 
+            return multi_apply(self.forward_single, feats[0], feats[1])
+        else:
+            return multi_apply(self.forward_single, feats)
+        
 
     def get_anchors(self, featmap_sizes, img_metas, device='cuda'):
         """Get anchors according to feature map sizes.
@@ -139,22 +146,52 @@ class AnchorHead(nn.Module):
 
     def loss_single(self, cls_score, bbox_pred, labels, label_weights,
                     bbox_targets, bbox_weights, num_total_samples, cfg):
+        # NOTE: if cls scores/ bbox preds are tuples, it's distillation mode
         # classification loss
         labels = labels.reshape(-1)
         label_weights = label_weights.reshape(-1)
-        cls_score = cls_score.permute(0, 2, 3,
-                                      1).reshape(-1, self.cls_out_channels)
-        loss_cls = self.loss_cls(
-            cls_score, labels, label_weights, avg_factor=num_total_samples)
+        
+        if type(cls_score) is tuple:
+            t_cls_score = cls_score[0].permute(0, 2, 3,
+                                        1).reshape(-1, self.cls_out_channels)
+            s_cls_score = cls_score[1].permute(0, 2, 3,
+                                        1).reshape(-1, self.cls_out_channels)
+        else:
+            cls_score = cls_score.permute(0, 2, 3,
+                                        1).reshape(-1, self.cls_out_channels)
+        if type(cls_score) is tuple:
+            t_loss_cls = self.loss_cls(
+                t_cls_score, labels, label_weights, avg_factor=num_total_samples)
+            s_loss_cls = self.loss_cls(
+                s_cls_score, labels, label_weights, avg_factor=num_total_samples)
+        else:
+            loss_cls = self.loss_cls(
+                cls_score, labels, label_weights, avg_factor=num_total_samples)
         # regression loss
         bbox_targets = bbox_targets.reshape(-1, 4)
         bbox_weights = bbox_weights.reshape(-1, 4)
-        bbox_pred = bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
-        loss_bbox = self.loss_bbox(
-            bbox_pred,
-            bbox_targets,
-            bbox_weights,
-            avg_factor=num_total_samples)
+        
+        if type(cls_score) is tuple:
+            t_bbox_pred = bbox_pred[0].permute(0, 2, 3, 1).reshape(-1, 4)
+            s_bbox_pred = bbox_pred[1].permute(0, 2, 3, 1).reshape(-1, 4)
+            t_loss_bbox = self.loss_bbox(
+                t_bbox_pred,
+                bbox_targets,
+                bbox_weights,
+                avg_factor=num_total_samples)
+            s_loss_bbox = self.loss_bbox(
+                s_bbox_pred,
+                bbox_targets,
+                bbox_weights,
+                avg_factor=num_total_samples)
+        else:
+            bbox_pred = bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
+            loss_bbox = self.loss_bbox(
+                bbox_pred,
+                bbox_targets,
+                bbox_weights,
+                avg_factor=num_total_samples)
+        embed()
         return loss_cls, loss_bbox
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds'))
@@ -166,10 +203,16 @@ class AnchorHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-        featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
+        
+        if type(cls_scores[0]) is tuple:
+            # TODO: add settings and anchor targets for 
+            # different feature sizes between teacher and student
+            featmap_sizes = [featmap[0].size()[-2:] for featmap in cls_scores]
+            device = cls_scores[0][0].device
+        else:
+            featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
+            device = cls_scores[0].device
         assert len(featmap_sizes) == len(self.anchor_generators)
-
-        device = cls_scores[0].device
 
         anchor_list, valid_flag_list = self.get_anchors(
             featmap_sizes, img_metas, device=device)

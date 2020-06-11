@@ -1,56 +1,71 @@
 # model settings
+BLOCK_ALIGN = False
+PYRAMID_ALIGN = True
+PRI_PYRAMID_ALIGN = False
+PYRAMID_CORRELATION = False
+HEAD_ALIGN = False
+FREEZE_TEACHER = False
+RATIO = 2
+DOWNSAMPLE_RATIO = 1
+COPY_TEACHER_FPN = False
+GOOD_INITIAL = False
+BN_TOPK_SELECTION = False
+ROUSE_STUDENT_POINT = 7330 * 13
+USE_INTERMEDIATE_LEARNER = False
+# inference parameters
+SWITCH_TO_INTER_LEARNER = False
 model = dict(
-    type='FCOS',
-    pretrained='open-mmlab://resnet50_caffe',
+    type='RetinaNet',
+    pretrained='torchvision://resnet50',
     backbone=dict(
-        type='ResNet',
+        type='ResTSNet',
         depth=50,
+        t_s_ratio=RATIO,
+        spatial_ratio=DOWNSAMPLE_RATIO,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
         frozen_stages=1,
-        norm_cfg=dict(type='BN', requires_grad=False),
-        style='caffe'),
+        style='pytorch',
+        freeze_teacher=FREEZE_TEACHER,
+        good_initial=GOOD_INITIAL,
+        bn_topk_selection=BN_TOPK_SELECTION,
+        rouse_student_point=ROUSE_STUDENT_POINT),
     neck=dict(
-        type='FPN',
+        type='FPNTS',
         in_channels=[256, 512, 1024, 2048],
         out_channels=256,
+        s_in_channels=[128, 256, 512, 1024],
+        s_out_channels=128,
         start_level=1,
+        t_s_ratio=RATIO,
         add_extra_convs=True,
         extra_convs_on_inputs=False,  # use P5
         num_outs=5,
-        relu_before_extra_convs=True),
+        relu_before_extra_convs=True,
+        apply_block_wise_alignment=BLOCK_ALIGN,
+        copy_teacher_fpn=COPY_TEACHER_FPN,
+        freeze_teacher=FREEZE_TEACHER,
+        rouse_student_point=ROUSE_STUDENT_POINT),
     bbox_head=dict(
-        type='DDBV3NPHead',
+        type='RetinaTSHead',
         num_classes=81,
         in_channels=256,
         stacked_convs=4,
         feat_channels=256,
-        strides=[8, 16, 32, 64, 128],
-        apply_conditional_consistency_on_regression=False,
-        mask_origin_bbox_loss=False,
-        origin_bbox_loss_downgrade=False,
-        iou_delta = 0.1,
-        apply_iou_cache=False,
-        consistency_weight=False,
-        box_weighted=True,
-        no_scale=False,
-        hook_debug=True,
-        sorted_warmup=500,
-        weighted_mask=False, # True # ablation 
+        s_feat_channels=128,
+        octave_base_scale=4,
+        scales_per_octave=3,
+        anchor_ratios=[0.5, 1.0, 2.0],
+        anchor_strides=[8, 16, 32, 64, 128],
+        target_means=[.0, .0, .0, .0],
+        target_stds=[1.0, 1.0, 1.0, 1.0],
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
-        loss_bbox=dict(type='IoULoss', loss_weight=1.0),
-        loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),
-        bd_threshold=0.0,
-        norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
-        loss_dist_scores=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-        loss_centerness=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
+        loss_bbox=dict(type='SmoothL1Loss', beta=0.11, loss_weight=1.0)))
 # training and testing settings
 train_cfg = dict(
     assigner=dict(
@@ -70,9 +85,9 @@ test_cfg = dict(
     max_per_img=100)
 # dataset settings
 dataset_type = 'CocoDataset'
-data_root = '/coco/data/2017/'
+data_root = 'data/2017/'
 img_norm_cfg = dict(
-    mean=[102.9801, 115.9465, 122.7717], std=[1.0, 1.0, 1.0], to_rgb=False)
+    mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
@@ -99,35 +114,30 @@ test_pipeline = [
         ])
 ]
 data = dict(
-    imgs_per_gpu=4,
-    workers_per_gpu=4,
+    imgs_per_gpu=2,
+    workers_per_gpu=2,
     train=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_train2017.json',
-        img_prefix=data_root + 'images/train2017/',
+        img_prefix=data_root + 'train2017/',
         pipeline=train_pipeline),
     val=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'images/val2017/',
+        img_prefix=data_root + 'val2017/',
         pipeline=test_pipeline),
     test=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'images/val2017/',
+        img_prefix=data_root + 'val2017/',
         pipeline=test_pipeline))
 # optimizer
-optimizer = dict(
-    type='SGD',
-    lr=0.02,
-    momentum=0.9,
-    weight_decay=0.0001,
-    paramwise_options=dict(bias_lr_mult=2., bias_decay_mult=0.))
-optimizer_config = dict(grad_clip=None)
+optimizer = dict(type='SGD', lr=0.01, momentum=0.9, weight_decay=0.0001)
+optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # learning policy
 lr_config = dict(
     policy='step',
-    warmup='constant',
+    warmup='linear',
     warmup_iters=500,
     warmup_ratio=1.0 / 3,
     step=[8, 11])
@@ -144,7 +154,7 @@ log_config = dict(
 total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
-work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
+work_dir = './work_dirs/retinanet_r50_fpn_1x'
 load_from = None
 resume_from = None
 workflow = [('train', 1)]
