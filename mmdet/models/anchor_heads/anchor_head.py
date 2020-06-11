@@ -41,6 +41,7 @@ class AnchorHead(nn.Module):
                  anchor_base_sizes=None,
                  target_means=(.0, .0, .0, .0),
                  target_stds=(1.0, 1.0, 1.0, 1.0),
+                 pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
                  loss_cls=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -71,6 +72,7 @@ class AnchorHead(nn.Module):
             raise ValueError('num_classes={} is too small'.format(num_classes))
 
         self.loss_cls = build_loss(loss_cls)
+        self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
         self.loss_bbox = build_loss(loss_bbox)
         self.fp16_enabled = False
 
@@ -147,6 +149,8 @@ class AnchorHead(nn.Module):
     def loss_single(self, cls_score, bbox_pred, labels, label_weights,
                     bbox_targets, bbox_weights, num_total_samples, cfg):
         # NOTE: if cls scores/ bbox preds are tuples, it's distillation mode
+        # cls_score tuple: [cls_score, s_cls_score, x, s_x], 
+        # bbox_pred tuple: [bbox_pred, s_bbox_pred]
         # classification loss
         labels = labels.reshape(-1)
         label_weights = label_weights.reshape(-1)
@@ -156,6 +160,10 @@ class AnchorHead(nn.Module):
                                         1).reshape(-1, self.cls_out_channels)
             s_cls_score = cls_score[1].permute(0, 2, 3,
                                         1).reshape(-1, self.cls_out_channels)
+            x_feats = cls_score[2].permute(0, 2, 3,
+                                        1).reshape(-1, self.feat_channels)
+            s_x_feats = cls_score[3].permute(0, 2, 3,
+                                        1).reshape(-1, self.feat_channels)        
         else:
             cls_score = cls_score.permute(0, 2, 3,
                                         1).reshape(-1, self.cls_out_channels)
@@ -174,6 +182,8 @@ class AnchorHead(nn.Module):
         if type(cls_score) is tuple:
             t_bbox_pred = bbox_pred[0].permute(0, 2, 3, 1).reshape(-1, 4)
             s_bbox_pred = bbox_pred[1].permute(0, 2, 3, 1).reshape(-1, 4)
+            
+            pyramid_hint_loss = self.pyramid_hint_loss(x_feats, s_x_feats.detach())
             t_loss_bbox = self.loss_bbox(
                 t_bbox_pred,
                 bbox_targets,
@@ -191,8 +201,11 @@ class AnchorHead(nn.Module):
                 bbox_targets,
                 bbox_weights,
                 avg_factor=num_total_samples)
-        embed()
-        return loss_cls, loss_bbox
+        
+        if type(cls_score) is tuple:
+            return t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss
+        else:
+            return loss_cls, loss_bbox
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds'))
     def loss(self,
@@ -235,17 +248,32 @@ class AnchorHead(nn.Module):
          num_total_pos, num_total_neg) = cls_reg_targets
         num_total_samples = (
             num_total_pos + num_total_neg if self.sampling else num_total_pos)
-        losses_cls, losses_bbox = multi_apply(
-            self.loss_single,
-            cls_scores,
-            bbox_preds,
-            labels_list,
-            label_weights_list,
-            bbox_targets_list,
-            bbox_weights_list,
-            num_total_samples=num_total_samples,
-            cfg=cfg)
-        return dict(loss_cls=losses_cls, loss_bbox=losses_bbox)
+        
+        if len(cls_scores[0]) > 2:
+            # NOTE: well. distillation mode
+            t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss = multi_apply(
+                self.loss_single,
+                cls_scores,
+                bbox_preds,
+                labels_list,
+                label_weights_list,
+                bbox_targets_list,
+                bbox_weights_list,
+                num_total_samples=num_total_samples,
+                cfg=cfg)
+            return dict(t_loss_cls=t_loss_cls, s_loss_cls=s_loss_cls, t_loss_bbox=t_loss_bbox, s_loss_bbox=s_loss_bbox, pyramid_hint_loss=pyramid_hint_loss)
+        else:
+            losses_cls, losses_bbox = multi_apply(
+                self.loss_single,
+                cls_scores,
+                bbox_preds,
+                labels_list,
+                label_weights_list,
+                bbox_targets_list,
+                bbox_weights_list,
+                num_total_samples=num_total_samples,
+                cfg=cfg)
+            return dict(loss_cls=losses_cls, loss_bbox=losses_bbox)
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds'))
     def get_bboxes(self,
