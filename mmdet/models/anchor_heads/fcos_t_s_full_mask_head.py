@@ -751,8 +751,8 @@ class FCOSTSFullMaskHead(nn.Module):
                 for i_t_pyramid_align_conv in self.i_t_pyramid_align:
                     i_t_x = i_t_pyramid_align_conv(t_i_x)
                 
-                i_cls_feat = i_t_x.detach()
-                i_reg_feat = i_t_x.detach()
+                i_cls_feat = i_t_x
+                i_reg_feat = i_t_x
 
             # intermediate head
             for i in range(len(self.cls_convs)):
