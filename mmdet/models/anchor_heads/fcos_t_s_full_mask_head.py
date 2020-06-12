@@ -424,7 +424,6 @@ class FCOSTSFullMaskHead(nn.Module):
 
         if self.use_intermediate_learner:
             self.t_i_pyramid_align = nn.ModuleList()
-            self.i_t_pyramid_align = nn.ModuleList()
             self.s_i_pyramid_align = nn.ModuleList()
 
         if self.learn_from_teacher_backbone:
@@ -442,12 +441,6 @@ class FCOSTSFullMaskHead(nn.Module):
                         3,
                         padding=1))
                 # align back to teacher
-                self.i_t_pyramid_align.append(
-                    nn.Conv2d(
-                        self.intermediate_channel,
-                        self.feat_channels,
-                        3,
-                        padding=1))
                 self.s_i_pyramid_align.append(
                     nn.Conv2d(
                         self.s_feat_channels,
@@ -568,8 +561,6 @@ class FCOSTSFullMaskHead(nn.Module):
         if self.apply_pyramid_wise_alignment or self.pyramid_correlation:
             if self.use_intermediate_learner:
                 for align_conv in self.t_i_pyramid_align:
-                    normal_init(align_conv, std=0.01)
-                for align_conv in self.i_t_pyramid_align:
                     normal_init(align_conv, std=0.01)
                 for align_conv in self.s_i_pyramid_align:
                     normal_init(align_conv, std=0.01)
@@ -732,10 +723,10 @@ class FCOSTSFullMaskHead(nn.Module):
             s_i_x = s_x
 
             for t_i_pyramid_align_conv in self.t_i_pyramid_align:
-                # t_i_x = t_i_pyramid_align_conv(
-                #     t_i_x.detach())  # no update to teacher backbone
                 t_i_x = t_i_pyramid_align_conv(
-                    t_i_x)  # update to teacher backbone
+                    t_i_x.detach())  # no update to teacher backbone
+                # t_i_x = t_i_pyramid_align_conv(
+                #     t_i_x)  # update to teacher backbone
             for s_i_pyramid_align_conv in self.s_i_pyramid_align:
                 s_i_x = s_i_pyramid_align_conv(s_i_x)
 
@@ -748,26 +739,23 @@ class FCOSTSFullMaskHead(nn.Module):
                 i_reg_feat = s_i_x
             else:
                 # learn from teacher
-                for i_t_pyramid_align_conv in self.i_t_pyramid_align:
-                    i_t_x = i_t_pyramid_align_conv(t_i_x)
-                
-                i_cls_feat = i_t_x
-                i_reg_feat = i_t_x
+                i_cls_feat = t_i_x
+                i_reg_feat = t_i_x
 
             # intermediate head
-            for i in range(len(self.cls_convs)):
+            for i in range(len(self.i_cls_convs)):
                 # NOTE: Remove the intermediate heads now, 
                 # upsample back to the teacher heads and 
                 # use teacher head for training
-                i_cls_layer = self.cls_convs[i]
-                i_reg_layer = self.reg_convs[i]
+                i_cls_layer = self.i_cls_convs[i]
+                i_reg_layer = self.i_reg_convs[i]
                 
                 i_cls_feat = i_cls_layer(i_cls_feat)
                 i_reg_feat = i_reg_layer(i_reg_feat)
 
-            i_cls_score = self.fcos_cls(i_cls_feat)
-            i_centerness = self.fcos_centerness(i_cls_feat)
-            i_bbox_pred = scale(self.fcos_reg(i_reg_feat)).float().exp()
+            i_cls_score = self.i_fcos_cls(i_cls_feat)
+            i_centerness = self.i_fcos_centerness(i_cls_feat)
+            i_bbox_pred = i_scale(self.i_fcos_reg(i_reg_feat)).float().exp()
             
         if self.copy_teacher_fpn:
             t_fpn_cls_feat = t_fpn_feat
