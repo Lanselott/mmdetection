@@ -1144,7 +1144,10 @@ class FCOSTSFullMaskHead(nn.Module):
                                     s_t_cls_distance = s_t_cls_distance * cls_lambda
                                 
                                     pos_s_t_cls_distance = s_t_cls_distance[t_pos_inds]
-                                    iou_attention_weight = t_s_pred_ious * pos_s_t_cls_distance
+                                    # v1
+                                    # iou_attention_weight = t_s_pred_ious * pos_s_t_cls_distance
+                                    # v2
+                                    iou_attention_weight = t_s_pred_ious ** pos_s_t_cls_distance
                                 else:
                                     iou_attention_weight = t_s_pred_ious
 
