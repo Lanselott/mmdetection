@@ -732,10 +732,10 @@ class FCOSTSFullMaskHead(nn.Module):
             s_i_x = s_x
 
             for t_i_pyramid_align_conv in self.t_i_pyramid_align:
-                t_i_x = t_i_pyramid_align_conv(
-                    t_i_x.detach())  # no update to teacher backbone
                 # t_i_x = t_i_pyramid_align_conv(
-                #     t_i_x)  # update to teacher backbone
+                #     t_i_x.detach())  # no update to teacher backbone
+                t_i_x = t_i_pyramid_align_conv(
+                    t_i_x)  # update to teacher backbone
             for s_i_pyramid_align_conv in self.s_i_pyramid_align:
                 s_i_x = s_i_pyramid_align_conv(s_i_x)
 
@@ -1177,7 +1177,6 @@ class FCOSTSFullMaskHead(nn.Module):
                                     ),
                                     weight=iou_attention_weight)  # ,
                                 # avg_factor=iou_attention_weight.sum())
-
                                 if self.use_intermediate_learner:
                                     inter_attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                         s_i_pyramid_feature_list[t_pos_inds],
