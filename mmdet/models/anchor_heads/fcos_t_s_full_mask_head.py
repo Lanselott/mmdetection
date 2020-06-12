@@ -732,8 +732,10 @@ class FCOSTSFullMaskHead(nn.Module):
             s_i_x = s_x
 
             for t_i_pyramid_align_conv in self.t_i_pyramid_align:
+                # t_i_x = t_i_pyramid_align_conv(
+                #     t_i_x.detach())  # no update to teacher backbone
                 t_i_x = t_i_pyramid_align_conv(
-                    t_i_x.detach())  # no update to teacher backbone
+                    t_i_x)  # update to teacher backbone
             for s_i_pyramid_align_conv in self.s_i_pyramid_align:
                 s_i_x = s_i_pyramid_align_conv(s_i_x)
 
