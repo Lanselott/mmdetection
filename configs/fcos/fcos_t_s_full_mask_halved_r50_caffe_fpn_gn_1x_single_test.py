@@ -11,7 +11,7 @@ COPY_TEACHER_FPN = False
 GOOD_INITIAL = False
 BN_TOPK_SELECTION = False
 ROUSE_STUDENT_POINT = 7330 * 13
-USE_INTERMEDIATE_LEARNER = False
+USE_INTERMEDIATE_LEARNER = True
 # inference parameters
 SWITCH_TO_INTER_LEARNER = False
 model = dict(
@@ -65,7 +65,7 @@ model = dict(
         pyramid_merging=False,
         learn_when_train=True,
         finetune_student=True,
-        cls_aware_attention=True,
+        cls_aware_attention=False,
         train_teacher=False,
         apply_iou_similarity=False,
         apply_posprocessing_similarity=False,

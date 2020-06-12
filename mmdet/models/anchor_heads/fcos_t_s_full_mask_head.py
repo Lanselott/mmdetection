@@ -441,17 +441,17 @@ class FCOSTSFullMaskHead(nn.Module):
                         self.intermediate_channel,
                         3,
                         padding=1))
-                self.s_i_pyramid_align.append(
-                    nn.Conv2d(
-                        self.s_feat_channels,
-                        self.intermediate_channel,
-                        3,
-                        padding=1))
                 # align back to teacher
                 self.i_t_pyramid_align.append(
                     nn.Conv2d(
                         self.intermediate_channel,
                         self.feat_channels,
+                        3,
+                        padding=1))
+                self.s_i_pyramid_align.append(
+                    nn.Conv2d(
+                        self.s_feat_channels,
+                        self.intermediate_channel,
                         3,
                         padding=1))
 
@@ -732,10 +732,10 @@ class FCOSTSFullMaskHead(nn.Module):
             s_i_x = s_x
 
             for t_i_pyramid_align_conv in self.t_i_pyramid_align:
-                # t_i_x = t_i_pyramid_align_conv(
-                #     t_i_x.detach())  # no update to teacher backbone
                 t_i_x = t_i_pyramid_align_conv(
-                    t_i_x)  # update to teacher backbone
+                    t_i_x.detach())  # no update to teacher backbone
+                # t_i_x = t_i_pyramid_align_conv(
+                #     t_i_x)  # update to teacher backbone
             for s_i_pyramid_align_conv in self.s_i_pyramid_align:
                 s_i_x = s_i_pyramid_align_conv(s_i_x)
 
@@ -751,8 +751,8 @@ class FCOSTSFullMaskHead(nn.Module):
                 for i_t_pyramid_align_conv in self.i_t_pyramid_align:
                     i_t_x = i_t_pyramid_align_conv(t_i_x)
                 
-                i_cls_feat = i_t_x
-                i_reg_feat = i_t_x
+                i_cls_feat = i_t_x.detach()
+                i_reg_feat = i_t_x.detach()
 
             # intermediate head
             for i in range(len(self.cls_convs)):
