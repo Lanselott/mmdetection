@@ -1009,7 +1009,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         pyramid_lambda = 10
                     else:
                         pyramid_lambda = 1  # + 1 * self.train_step // 7330
-                        cls_lambda = 1
+                        cls_lambda = 2
 
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
                     s_pred_cls = s_flatten_cls_scores.max(1)[1]
@@ -1141,9 +1141,10 @@ class FCOSTSFullMaskHead(nn.Module):
                                         s_flatten_cls_scores, t_flatten_cls_scores).detach().sum(1)
                                     s_t_cls_distance /= s_t_cls_distance.max()
                                     s_t_cls_distance = 1 - s_t_cls_distance
+                                    s_t_cls_distance = s_t_cls_distance * cls_lambda
                                 
                                     pos_s_t_cls_distance = s_t_cls_distance[t_pos_inds]
-                                    iou_attention_weight = t_s_pred_ious * pos_s_t_cls_distance * cls_lambda
+                                    iou_attention_weight = t_s_pred_ious * pos_s_t_cls_distance
                                 else:
                                     iou_attention_weight = t_s_pred_ious
 
@@ -1191,8 +1192,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                             t_pos_inds],
                                         t_pyramid_feature_list[t_pos_inds].
                                         detach(),
-                                        weight=iou_attention_weight,
-                                        avg_factor=iou_attention_weight.sum())
+                                        weight=iou_attention_weight)#,
+                                        # avg_factor=iou_attention_weight.sum())
                                     inner_pyramid_loss = pyramid_lambda * self.pyramid_hint_loss(
                                         inner_s_t_pyramid_feature_list,
                                         t_pyramid_feature_list.detach())
@@ -1250,9 +1251,9 @@ class FCOSTSFullMaskHead(nn.Module):
                                 s_pyramid_feature_list[t_pos_inds],
                                 t_decreased_pyramid_hint_feature_list[
                                     t_pos_inds].detach(),
-                                weight=t_decreased_iou_attention_weight,
-                                avg_factor=t_decreased_iou_attention_weight.
-                                sum())
+                                weight=t_decreased_iou_attention_weight)#,
+                                # avg_factor=t_decreased_iou_attention_weight.
+                                # sum())
                             loss_dict.update({
                                 't_decreased_pyramid_hint_loss':
                                 t_decreased_pyramid_hint_loss,
