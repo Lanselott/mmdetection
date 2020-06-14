@@ -1245,7 +1245,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                             s_t_pyramid_feature_list,
                             t_pyramid_feature_list.detach())
-                            
+
                         loss_dict.update(
                             {'t_pyramid_hint_loss': t_pyramid_hint_loss})
                         if self.use_intermediate_learner:
@@ -1724,6 +1724,8 @@ class FCOSTSFullMaskHead(nn.Module):
             for centerness in centernesses
         ]
 
+        pri_pyramid_infos = None
+        
         if self.apply_pri_pyramid_wise_alignment:
             # Get 0-2 pri pyramid level infos
             pri_flatten_labels = labels[0:3]
