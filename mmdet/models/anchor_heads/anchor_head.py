@@ -11,6 +11,7 @@ from ..builder import build_loss
 from ..registry import HEADS
 from IPython import embed
 
+
 @HEADS.register_module
 class AnchorHead(nn.Module):
     """Anchor-based head (RPN, RetinaNet, SSD, etc.).
@@ -100,11 +101,10 @@ class AnchorHead(nn.Module):
 
     def forward(self, feats):
         if type(feats) is tuple:
-            # branch for distillation 
+            # branch for distillation
             return multi_apply(self.forward_single, feats[0], feats[1])
         else:
             return multi_apply(self.forward_single, feats)
-        
 
     def get_anchors(self, featmap_sizes, img_metas, device='cuda'):
         """Get anchors according to feature map sizes.
@@ -149,41 +149,48 @@ class AnchorHead(nn.Module):
     def loss_single(self, cls_score, bbox_pred, labels, label_weights,
                     bbox_targets, bbox_weights, num_total_samples, cfg):
         # NOTE: if cls scores/ bbox preds are tuples, it's distillation mode
-        # cls_score tuple: [cls_score, s_cls_score, x, s_x], 
+        # cls_score tuple: [cls_score, s_cls_score, x, s_x],
         # bbox_pred tuple: [bbox_pred, s_bbox_pred]
         # classification loss
         labels = labels.reshape(-1)
         label_weights = label_weights.reshape(-1)
-        
+
         if type(cls_score) is tuple:
-            t_cls_score = cls_score[0].permute(0, 2, 3,
-                                        1).reshape(-1, self.cls_out_channels)
-            s_cls_score = cls_score[1].permute(0, 2, 3,
-                                        1).reshape(-1, self.cls_out_channels)
+            t_cls_score = cls_score[0].permute(0, 2, 3, 1).reshape(
+                -1, self.cls_out_channels)
+            s_cls_score = cls_score[1].permute(0, 2, 3, 1).reshape(
+                -1, self.cls_out_channels)
             x_feats = cls_score[2].permute(0, 2, 3,
-                                        1).reshape(-1, self.feat_channels)
-            s_x_feats = cls_score[3].permute(0, 2, 3,
-                                        1).reshape(-1, self.feat_channels)        
+                                           1).reshape(-1, self.feat_channels)
+            s_x_feats = cls_score[3].permute(0, 2, 3, 1).reshape(
+                -1, self.feat_channels)
         else:
             cls_score = cls_score.permute(0, 2, 3,
-                                        1).reshape(-1, self.cls_out_channels)
+                                          1).reshape(-1, self.cls_out_channels)
         if type(cls_score) is tuple:
             t_loss_cls = self.loss_cls(
-                t_cls_score, labels, label_weights, avg_factor=num_total_samples)
+                t_cls_score,
+                labels,
+                label_weights,
+                avg_factor=num_total_samples)
             s_loss_cls = self.loss_cls(
-                s_cls_score, labels, label_weights, avg_factor=num_total_samples)
+                s_cls_score,
+                labels,
+                label_weights,
+                avg_factor=num_total_samples)
         else:
             loss_cls = self.loss_cls(
                 cls_score, labels, label_weights, avg_factor=num_total_samples)
         # regression loss
         bbox_targets = bbox_targets.reshape(-1, 4)
         bbox_weights = bbox_weights.reshape(-1, 4)
-        
+
         if type(cls_score) is tuple:
             t_bbox_pred = bbox_pred[0].permute(0, 2, 3, 1).reshape(-1, 4)
             s_bbox_pred = bbox_pred[1].permute(0, 2, 3, 1).reshape(-1, 4)
-            
-            pyramid_hint_loss = self.pyramid_hint_loss(x_feats, s_x_feats.detach())
+
+            pyramid_hint_loss = self.pyramid_hint_loss(s_x_feats,
+                                                       x_feats.detach())
             t_loss_bbox = self.loss_bbox(
                 t_bbox_pred,
                 bbox_targets,
@@ -201,7 +208,7 @@ class AnchorHead(nn.Module):
                 bbox_targets,
                 bbox_weights,
                 avg_factor=num_total_samples)
-        
+
         if type(cls_score) is tuple:
             return t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss
         else:
@@ -216,9 +223,9 @@ class AnchorHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-        
+
         if type(cls_scores[0]) is tuple:
-            # TODO: add settings and anchor targets for 
+            # TODO: add settings and anchor targets for
             # different feature sizes between teacher and student
             featmap_sizes = [featmap[0].size()[-2:] for featmap in cls_scores]
             device = cls_scores[0][0].device
@@ -248,7 +255,7 @@ class AnchorHead(nn.Module):
          num_total_pos, num_total_neg) = cls_reg_targets
         num_total_samples = (
             num_total_pos + num_total_neg if self.sampling else num_total_pos)
-        
+
         if len(cls_scores[0]) > 2:
             # NOTE: well. distillation mode
             t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss = multi_apply(
@@ -261,7 +268,12 @@ class AnchorHead(nn.Module):
                 bbox_weights_list,
                 num_total_samples=num_total_samples,
                 cfg=cfg)
-            return dict(t_loss_cls=t_loss_cls, s_loss_cls=s_loss_cls, t_loss_bbox=t_loss_bbox, s_loss_bbox=s_loss_bbox, pyramid_hint_loss=pyramid_hint_loss)
+            return dict(
+                t_loss_cls=t_loss_cls,
+                s_loss_cls=s_loss_cls,
+                t_loss_bbox=t_loss_bbox,
+                s_loss_bbox=s_loss_bbox,
+                pyramid_hint_loss=pyramid_hint_loss)
         else:
             losses_cls, losses_bbox = multi_apply(
                 self.loss_single,
@@ -276,11 +288,7 @@ class AnchorHead(nn.Module):
             return dict(loss_cls=losses_cls, loss_bbox=losses_bbox)
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds'))
-    def get_bboxes(self,
-                   cls_scores,
-                   bbox_preds,
-                   img_metas,
-                   cfg,
+    def get_bboxes(self, cls_scores, bbox_preds, img_metas, cfg,
                    rescale=False):
         """
         Transform network output for a batch into labeled boxes.

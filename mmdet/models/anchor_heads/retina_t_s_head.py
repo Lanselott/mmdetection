@@ -7,6 +7,7 @@ from ..utils import ConvModule, bias_init_with_prob
 from .anchor_head import AnchorHead
 from IPython import embed
 
+
 @HEADS.register_module
 class RetinaTSHead(AnchorHead):
     """
@@ -36,12 +37,14 @@ class RetinaTSHead(AnchorHead):
                  stacked_convs=4,
                  octave_base_scale=4,
                  scales_per_octave=3,
+                 eval_student=False,
                  conv_cfg=None,
                  norm_cfg=None,
                  **kwargs):
         self.stacked_convs = stacked_convs
         self.octave_base_scale = octave_base_scale
         self.scales_per_octave = scales_per_octave
+        self.eval_student = eval_student
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         octave_scales = np.array(
@@ -57,7 +60,7 @@ class RetinaTSHead(AnchorHead):
         self.s_cls_convs = nn.ModuleList()
         self.s_reg_convs = nn.ModuleList()
         self.s_t_align_convs = nn.ModuleList()
-        
+
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
             self.cls_convs.append(
@@ -78,7 +81,7 @@ class RetinaTSHead(AnchorHead):
                     padding=1,
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg))
-        
+
         for i in range(self.stacked_convs):
             # chn = self.in_channels if i == 0 else self.s_feat_channels
             self.s_cls_convs.append(
@@ -115,11 +118,8 @@ class RetinaTSHead(AnchorHead):
             padding=1)
         self.s_retina_reg = nn.Conv2d(
             self.s_feat_channels, self.num_anchors * 4, 3, padding=1)
-        self.s_t_align_convs.append(nn.Conv2d(
-            self.s_feat_channels,
-            self.feat_channels,
-            3,
-            padding=1))
+        self.s_t_align_convs.append(
+            nn.Conv2d(self.s_feat_channels, self.feat_channels, 3, padding=1))
 
     def init_weights(self):
         for m in self.cls_convs:
@@ -142,15 +142,16 @@ class RetinaTSHead(AnchorHead):
         reg_feat = x
         s_cls_feat = s_x
         s_reg_feat = s_x
+        
         # align to teacher
         for s_t_align_conv in self.s_t_align_convs:
-            s_x = s_t_align_conv(s_x) 
+            s_x = s_t_align_conv(s_x)
 
         for cls_conv in self.cls_convs:
             cls_feat = cls_conv(cls_feat)
         for reg_conv in self.reg_convs:
             reg_feat = reg_conv(reg_feat)
-        
+
         for s_cls_conv in self.s_cls_convs:
             s_cls_feat = s_cls_conv(s_cls_feat)
         for s_reg_conv in self.s_reg_convs:
@@ -161,5 +162,10 @@ class RetinaTSHead(AnchorHead):
 
         s_cls_score = self.s_retina_cls(s_cls_feat)
         s_bbox_pred = self.s_retina_reg(s_reg_feat)
-
-        return tuple([cls_score, s_cls_score, x, s_x]), tuple([bbox_pred, s_bbox_pred])
+        if self.eval_student and not self.training:
+            return s_cls_score, s_bbox_pred
+        elif not self.eval_student and not self.training:
+            return cls_score, bbox_pred
+        elif self.training:
+            return tuple([cls_score, s_cls_score, x,
+                          s_x]), tuple([bbox_pred, s_bbox_pred])

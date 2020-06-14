@@ -53,6 +53,7 @@ model = dict(
         stacked_convs=4,
         feat_channels=256,
         s_feat_channels=128,
+        eval_student=False,
         octave_base_scale=4,
         scales_per_octave=3,
         anchor_ratios=[0.5, 1.0, 2.0],
