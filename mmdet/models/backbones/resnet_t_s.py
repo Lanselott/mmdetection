@@ -521,6 +521,7 @@ class ResTSNet(nn.Module):
         if self.apply_block_wise_alignment:
             for out_channel in self.align_layers_output_channel_size:
                 input_channel = out_channel // self.t_s_ratio
+                '''
                 self.align_layers.append(
                     ConvModule(
                         input_channel,
@@ -531,6 +532,10 @@ class ResTSNet(nn.Module):
                         conv_cfg=self.conv_cfg,
                         norm_cfg=self.norm_cfg,
                         bias=self.norm_cfg is None))
+                '''
+                self.align_layers.append(
+                    nn.Conv2d(
+                        input_channel, out_channel, 3, padding=1))
                 # print("self.inplanes:{}".format(self.inplanes))
     @property
     def norm1(self):
@@ -612,7 +617,7 @@ class ResTSNet(nn.Module):
                                 t_layer_conv3_data,
                                 size=s_layer.conv3.weight.shape[:2],
                                 mode='bilinear').permute(2, 3, 0, 1))
-                        
+
                         # bn bias
                         t_layer_bn1_bias = t_layer.bn1.bias.data.unsqueeze(
                             0).unsqueeze(0)
@@ -658,7 +663,7 @@ class ResTSNet(nn.Module):
                                 t_layer_bn3_data,
                                 size=s_layer.bn3.weight.shape[0],
                                 mode='linear').view(-1))
-                        
+
                         if t_layer.downsample is not None:
                             # donwsample
                             t_layer_downsample_conv_data = t_layer.downsample[
@@ -669,7 +674,7 @@ class ResTSNet(nn.Module):
                                     size=s_layer.downsample[0].weight.
                                     shape[:2],
                                     mode='bilinear').permute(2, 3, 0, 1))
-                            
+
                             t_layer_downsample_weight_data = t_layer.downsample[
                                 1].weight.data.unsqueeze(0).unsqueeze(0)
                             s_layer.downsample[1].weight.data.copy_(
@@ -677,7 +682,6 @@ class ResTSNet(nn.Module):
                                     t_layer_downsample_weight_data,
                                     size=s_layer.downsample[1].weight.shape[0],
                                     mode='linear').view(-1))
-                            
 
     def copy_backbone_topk(self):
         for m in self.modules():
@@ -711,7 +715,7 @@ class ResTSNet(nn.Module):
                             t_layer.bn2.weight.shape[0] // self.t_s_ratio)[1]
                         bn3_topk_inds = t_layer.bn3.weight.abs().topk(
                             t_layer.bn3.weight.shape[0] // self.t_s_ratio)[1]
-                        
+
                         t_layer_bn1_data = t_layer.bn1.weight.data
                         s_layer.bn1.weight.data.copy_(
                             t_layer_bn1_data[bn1_topk_inds])
@@ -731,7 +735,7 @@ class ResTSNet(nn.Module):
                         t_layer_bn3_bias = t_layer.bn3.bias.data
                         s_layer.bn3.bias.data.copy_(
                             t_layer_bn3_bias[bn3_topk_inds])
-                        
+
                         # conv
                         t_layer_conv1_data = t_layer.conv1.weight.data
                         if prev_bn_topk_inds is None:
@@ -755,13 +759,13 @@ class ResTSNet(nn.Module):
                                 1].weight.data.abs().topk(
                                     t_layer.downsample[1].weight.shape[0] //
                                     self.t_s_ratio)[1]
-                            
+
                             t_layer_downsample_bn_data = t_layer.downsample[
                                 1].weight.data
                             s_layer.downsample[1].weight.data.copy_(
                                 t_layer_downsample_bn_data[
                                     downsample_bn_topk_inds])
-                            
+
                             # donwsample
                             t_layer_downsample_conv_data = t_layer.downsample[
                                 0].weight.data
@@ -774,7 +778,7 @@ class ResTSNet(nn.Module):
                                 s_layer.downsample[0].weight.data.copy_(
                                     t_layer_downsample_conv_data[
                                         downsample_bn_topk_inds])
-                        
+
                         # NOTE: get selection from previous block
                         prev_bn_topk_inds = bn3_topk_inds
 
