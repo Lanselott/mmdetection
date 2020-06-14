@@ -1,7 +1,7 @@
 # model settings
-BLOCK_ALIGN = True
+BLOCK_ALIGN = False
 PYRAMID_ALIGN = True
-PRI_PYRAMID_ALIGN = False
+PRI_PYRAMID_ALIGN = True
 PYRAMID_CORRELATION = False
 HEAD_ALIGN = False
 FREEZE_TEACHER = False
@@ -65,7 +65,7 @@ model = dict(
         pyramid_merging=False,
         learn_when_train=True,
         finetune_student=True,
-        cls_aware_attention=True,
+        cls_aware_attention=False,
         train_teacher=False,
         apply_iou_similarity=False,
         apply_posprocessing_similarity=False,
@@ -94,7 +94,7 @@ model = dict(
         pyramid_attention_only=False,
         direct_downsample=False,
         use_intermediate_learner=USE_INTERMEDIATE_LEARNER,
-        use_student_backbone=True,
+        use_student_backbone=False,
         switch_to_inter_learner=SWITCH_TO_INTER_LEARNER,
         corr_out_channels=64,
         head_attention_factor=1,

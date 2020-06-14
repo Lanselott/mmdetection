@@ -488,7 +488,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         self.feat_channels, self.feat_channels, 3, padding=1))
 
         if self.apply_pri_pyramid_wise_alignment:
-            for level in range(1, 3):
+            for level in range(1, 4):
                 self.t_s_pri_pyramid_align.append(
                     nn.Conv2d(
                         self.s_feat_channels * 2**level,
@@ -661,7 +661,7 @@ class FCOSTSFullMaskHead(nn.Module):
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
                                self.s_scales, placeholder, hint_pairs)
-                               
+
         elif self.copy_teacher_fpn:
             t_fpn_features = feats[4]
             return multi_apply(self.forward_single, t_feats, s_feats,
@@ -902,7 +902,7 @@ class FCOSTSFullMaskHead(nn.Module):
              gt_bboxes_ignore=None):
 
         loss_dict = {}
-        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, flatten_labels, t_iou_maps, t_pos_inds, t_neg_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _, t_pred_centerness, t_all_pred_bboxes, t_pos_points = self.loss_single(
+        loss_cls, loss_bbox, loss_centerness, _, t_flatten_cls_scores, flatten_labels, t_iou_maps, t_pos_inds, t_neg_inds, t_pred_bboxes, t_gt_bboxes, block_distill_masks, _, t_pred_centerness, t_all_pred_bboxes, t_pos_points, t_pri_pyramid_infos = self.loss_single(
             cls_scores,
             bbox_preds,
             centernesses,
@@ -911,7 +911,7 @@ class FCOSTSFullMaskHead(nn.Module):
             img_metas,
             cfg,
             gt_bboxes_ignore=None)
-        s_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_flatten_cls_scores, _, s_iou_maps, _, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness, s_all_pred_bboxes, _ = self.loss_single(
+        s_loss_cls, s_loss_bbox, s_loss_centerness, cls_avg_factor, s_flatten_cls_scores, _, s_iou_maps, _, _, s_pred_bboxes, s_gt_bboxes, _, pos_centerness_targets, s_pred_centerness, s_all_pred_bboxes, _, s_pri_pyramid_infos = self.loss_single(
             s_cls_scores,
             s_bbox_preds,
             s_centernesses,
@@ -924,7 +924,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
         if self.learn_from_teacher_backbone:
 
-            t_decreased_loss_cls, t_decreased_loss_bbox, t_decreased_loss_centerness, _, t_decreased_flatten_cls_scores, _, t_decreased_iou_maps, _, _, t_decreased_pred_bboxes, _, _, pos_centerness_targets, t_decreased_pred_centerness, t_decreased_all_pred_bboxes, _ = self.loss_single(
+            t_decreased_loss_cls, t_decreased_loss_bbox, t_decreased_loss_centerness, _, t_decreased_flatten_cls_scores, _, t_decreased_iou_maps, _, _, t_decreased_pred_bboxes, _, _, pos_centerness_targets, t_decreased_pred_centerness, t_decreased_all_pred_bboxes, _, _ = self.loss_single(
                 t_decreased_cls_scores,
                 t_decreased_bbox_preds,
                 t_decreased_centernesses,
@@ -954,7 +954,7 @@ class FCOSTSFullMaskHead(nn.Module):
             })
 
         if self.copy_teacher_fpn:
-            t_fpn_loss_cls, t_fpn_loss_bbox, t_fpn_loss_centerness, cls_avg_factor, t_fpn_flatten_cls_scores, _, t_fpn_iou_maps, _, _, t_fpn_pred_bboxes, t_fpn_gt_bboxes, _, _, t_fpn_pred_centerness, t_fpn_all_pred_bboxes, _ = self.loss_single(
+            t_fpn_loss_cls, t_fpn_loss_bbox, t_fpn_loss_centerness, cls_avg_factor, t_fpn_flatten_cls_scores, _, t_fpn_iou_maps, _, _, t_fpn_pred_bboxes, t_fpn_gt_bboxes, _, _, t_fpn_pred_centerness, t_fpn_all_pred_bboxes, _, _ = self.loss_single(
                 t_fpn_cls_score,
                 t_fpn_bbox_pred,
                 t_fpn_centerness,
@@ -971,7 +971,7 @@ class FCOSTSFullMaskHead(nn.Module):
             })
 
         if self.use_intermediate_learner:
-            i_loss_cls, i_loss_bbox, i_loss_centerness, cls_avg_factor, i_flatten_cls_scores, _, i_iou_maps, _, _, i_pred_bboxes, i_gt_bboxes, _, _, i_pred_centerness, i_all_pred_bboxes, _ = self.loss_single(
+            i_loss_cls, i_loss_bbox, i_loss_centerness, cls_avg_factor, i_flatten_cls_scores, _, i_iou_maps, _, _, i_pred_bboxes, i_gt_bboxes, _, _, i_pred_centerness, i_all_pred_bboxes, _, _ = self.loss_single(
                 i_cls_scores,
                 i_bbox_preds,
                 i_centernesses,
@@ -1236,15 +1236,16 @@ class FCOSTSFullMaskHead(nn.Module):
                             })
 
                     if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
-                        if self.cls_aware_attention:
+                        # if self.cls_aware_attention:
                             #     t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                             #         s_t_pyramid_feature_list,
                             #         t_pyramid_feature_list.detach(),
                             #         weight=s_t_cls_distance)
                             # else:
-                            t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                s_t_pyramid_feature_list,
-                                t_pyramid_feature_list.detach())
+                        t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                            s_t_pyramid_feature_list,
+                            t_pyramid_feature_list.detach())
+                            
                         loss_dict.update(
                             {'t_pyramid_hint_loss': t_pyramid_hint_loss})
                         if self.use_intermediate_learner:
@@ -1278,11 +1279,19 @@ class FCOSTSFullMaskHead(nn.Module):
                                 t_decreased_pyramid_attention_loss
                             })
 
-            # NOTE: pri (bottom-up pyramid) 1-3 levels
             if self.apply_pri_pyramid_wise_alignment:
+                pri_level = 4
                 t_pri_pyramid_feature_list = []
                 s_pri_pyramid_feature_list = []
-                for level in range(1, 3):
+                t_pos_pri_pyramid_feature_list = []
+                s_pos_pri_pyramid_feature_list = []
+                pri_iou_attention_weight_list = []
+                # NOTE: Handle pri_pyramid_infos here
+                t_pri_flatten_bbox_preds, pri_flatten_bbox_targets, pri_pos_inds, pri_flatten_labels, pri_points = t_pri_pyramid_infos
+                s_pri_flatten_bbox_preds, _, _, _, _ = s_pri_pyramid_infos
+
+                # NOTE: pri (bottom-up pyramid) 1-3 levels
+                for level in range(1, pri_level):
                     pri_pyramid_hint_pair = pri_pyramid_hint_pairs[level]
                     if self.spatial_ratio > 1:
                         s_pri_pyramid_feature = self.t_s_pri_pyramid_align[
@@ -1297,22 +1306,58 @@ class FCOSTSFullMaskHead(nn.Module):
                                 pri_pyramid_hint_pair[0])
 
                     t_pri_pyramid_feature = pri_pyramid_hint_pair[1].detach()
-                    t_pri_pyramid_feature_list.append(
-                        t_pri_pyramid_feature.permute(0, 2, 3, 1).reshape(
-                            -1, self.feat_channels))
-                    s_pri_pyramid_feature_list.append(
-                        s_pri_pyramid_feature.permute(0, 2, 3, 1).reshape(
-                            -1, self.feat_channels))
-                # TODO: Dimension of bottom-up pyramid is different,[256, 512, 1024, 2048]
-                # Should be aligned in attention mode
-                t_pri_pyramid_feature_list = torch.cat(
-                    t_pri_pyramid_feature_list)
-                s_pri_pyramid_feature_list = torch.cat(
-                    s_pri_pyramid_feature_list)
-                pri_pyramid_hint_loss = self.pyramid_hint_loss(
-                    s_pri_pyramid_feature_list, t_pri_pyramid_feature_list)
-                loss_dict.update(
-                    {'pri_pyramid_hint_loss': pri_pyramid_hint_loss})
+                    t_pri_pyramid_feature = t_pri_pyramid_feature.permute(
+                        0, 2, 3, 1).reshape(-1, self.feat_channels * 2**level)
+                    s_pri_pyramid_feature = s_pri_pyramid_feature.permute(
+                        0, 2, 3, 1).reshape(-1, self.feat_channels * 2**level)
+
+                    t_pos_pri_pyramid_feature_list.append(
+                        t_pri_pyramid_feature[pri_pos_inds[level - 1]])
+                    s_pos_pri_pyramid_feature_list.append(
+                        s_pri_pyramid_feature[pri_pos_inds[level - 1]])
+                    t_pri_pyramid_feature_list.append(t_pri_pyramid_feature)
+                    s_pri_pyramid_feature_list.append(s_pri_pyramid_feature)
+
+                    _pri_pos_inds = pri_pos_inds[level - 1]
+
+                    # NOTE: There maybe no postive samples in some layers
+                    if len(_pri_pos_inds) != 0:
+                        t_pri_pos_bboxes = distance2bbox(
+                            pri_points[level - 1][_pri_pos_inds],
+                            t_pri_flatten_bbox_preds[level - 1][_pri_pos_inds])
+                        s_pri_pos_bboxes = distance2bbox(
+                            pri_points[level - 1][_pri_pos_inds],
+                            s_pri_flatten_bbox_preds[level - 1][_pri_pos_inds])
+                        pri_iou_attention_weight_list.append(
+                            bbox_overlaps(
+                                s_pri_pos_bboxes,
+                                t_pri_pos_bboxes,
+                                is_aligned=True).detach())
+
+                for i in range(len(pri_iou_attention_weight_list)):
+                    t_pri_pyramid_feature = t_pri_pyramid_feature_list[i]
+                    s_pri_pyramid_feature = s_pri_pyramid_feature_list[i]
+                    t_pos_pri_pyramid_feature = t_pos_pri_pyramid_feature_list[
+                        i]
+                    s_pos_pri_pyramid_feature = s_pos_pri_pyramid_feature_list[
+                        i]
+                    pri_iou_attention_weight = pri_iou_attention_weight_list[i]
+
+                    pri_pyramid_hint_loss = self.pyramid_hint_loss(
+                        s_pri_pyramid_feature, t_pri_pyramid_feature)
+                    loss_dict.update({
+                        'pri_pyramid_hint_loss_{}'.format(i):
+                        pri_pyramid_hint_loss
+                    })
+                    # pri_attention_pyramid_hint_loss = self.pyramid_hint_loss(
+                    #     s_pos_pri_pyramid_feature,
+                    #     t_pos_pri_pyramid_feature,
+                    #     weight=pri_iou_attention_weight,
+                    #     avg_factor=pri_iou_attention_weight.sum())
+                    # loss_dict.update({
+                    #     'pri_attention_pyramid_hint_loss_{}'.format(i):
+                    #     pri_attention_pyramid_hint_loss
+                    # })
 
             # NOTE: apply pyramid correlation
             if self.pyramid_correlation:
@@ -1678,6 +1723,25 @@ class FCOSTSFullMaskHead(nn.Module):
             centerness.permute(0, 2, 3, 1).reshape(-1)
             for centerness in centernesses
         ]
+
+        if self.apply_pri_pyramid_wise_alignment:
+            # Get 0-2 pri pyramid level infos
+            pri_flatten_labels = labels[0:3]
+            pri_flatten_bbox_preds = flatten_bbox_preds[0:3]
+            pri_flatten_bbox_targets = bbox_targets[0:3]
+            pri_pos_inds = []
+            pri_points = []
+            for i in range(3):
+                pri_pos_inds.append(
+                    pri_flatten_labels[i].nonzero().reshape(-1))
+                pri_points.append(
+                    torch.cat([all_level_points[i].repeat(num_imgs, 1)]))
+
+            pri_pyramid_infos = tuple([
+                pri_flatten_bbox_preds, pri_flatten_bbox_targets, pri_pos_inds,
+                pri_flatten_labels, pri_points
+            ])
+
         flatten_cls_scores = torch.cat(flatten_cls_scores)
         flatten_bbox_preds = torch.cat(flatten_bbox_preds)
         flatten_centerness = torch.cat(flatten_centerness)
@@ -1742,7 +1806,7 @@ class FCOSTSFullMaskHead(nn.Module):
             loss_bbox = pos_bbox_preds.sum()
             loss_centerness = pos_centerness.sum()
 
-        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, flatten_labels, pos_iou_maps, pos_inds, neg_inds, pos_decoded_bbox_preds, pos_decoded_target_preds, block_distill_masks, pos_centerness_targets, pos_centerness, decoded_bbox_preds, pos_points
+        return loss_cls, loss_bbox, loss_centerness, cls_avg_factor, flatten_cls_scores, flatten_labels, pos_iou_maps, pos_inds, neg_inds, pos_decoded_bbox_preds, pos_decoded_target_preds, block_distill_masks, pos_centerness_targets, pos_centerness, decoded_bbox_preds, pos_points, pri_pyramid_infos
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,
