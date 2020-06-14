@@ -1223,11 +1223,11 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
                         if self.cls_aware_attention:
-                            t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                                s_t_pyramid_feature_list,
-                                t_pyramid_feature_list.detach(),
-                                weight=s_t_cls_distance)
-                        else:
+                        #     t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                        #         s_t_pyramid_feature_list,
+                        #         t_pyramid_feature_list.detach(),
+                        #         weight=s_t_cls_distance)
+                        # else:
                             t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                 s_t_pyramid_feature_list,
                                 t_pyramid_feature_list.detach())
