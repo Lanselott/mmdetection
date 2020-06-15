@@ -998,6 +998,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 for j, hint_feature in enumerate(hint_pairs):
                     s_block_feature = hint_feature[0]
                     t_block_feature = hint_feature[1].detach()
+                    
                     if self.block_teacher_attention:
                         # Apply method to partially update hint losses
                         block_distill_masks = torch.nn.functional.upsample(
