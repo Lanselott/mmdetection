@@ -210,7 +210,10 @@ class AnchorHead(nn.Module):
                 avg_factor=num_total_samples)
 
         if type(cls_score) is tuple:
-            return t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss
+            if self.finetune_student:
+                return s_loss_cls, s_loss_bbox, pyramid_hint_loss
+            else:
+                return t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss
         else:
             return loss_cls, loss_bbox
 
@@ -258,22 +261,38 @@ class AnchorHead(nn.Module):
 
         if len(cls_scores[0]) > 2:
             # NOTE: well. distillation mode
-            t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss = multi_apply(
-                self.loss_single,
-                cls_scores,
-                bbox_preds,
-                labels_list,
-                label_weights_list,
-                bbox_targets_list,
-                bbox_weights_list,
-                num_total_samples=num_total_samples,
-                cfg=cfg)
-            return dict(
-                t_loss_cls=t_loss_cls,
-                s_loss_cls=s_loss_cls,
-                t_loss_bbox=t_loss_bbox,
-                s_loss_bbox=s_loss_bbox,
-                pyramid_hint_loss=pyramid_hint_loss)
+            if self.finetune_student:
+                s_loss_cls, s_loss_bbox, pyramid_hint_loss = multi_apply(
+                    self.loss_single,
+                    cls_scores,
+                    bbox_preds,
+                    labels_list,
+                    label_weights_list,
+                    bbox_targets_list,
+                    bbox_weights_list,
+                    num_total_samples=num_total_samples,
+                    cfg=cfg)
+                return dict(
+                    s_loss_cls=s_loss_cls,
+                    s_loss_bbox=s_loss_bbox,
+                    pyramid_hint_loss=pyramid_hint_loss)
+            else:
+                t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss = multi_apply(
+                    self.loss_single,
+                    cls_scores,
+                    bbox_preds,
+                    labels_list,
+                    label_weights_list,
+                    bbox_targets_list,
+                    bbox_weights_list,
+                    num_total_samples=num_total_samples,
+                    cfg=cfg)
+                return dict(
+                    t_loss_cls=t_loss_cls,
+                    s_loss_cls=s_loss_cls,
+                    t_loss_bbox=t_loss_bbox,
+                    s_loss_bbox=s_loss_bbox,
+                    pyramid_hint_loss=pyramid_hint_loss)
         else:
             losses_cls, losses_bbox = multi_apply(
                 self.loss_single,

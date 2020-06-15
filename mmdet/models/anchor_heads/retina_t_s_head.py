@@ -38,6 +38,7 @@ class RetinaTSHead(AnchorHead):
                  octave_base_scale=4,
                  scales_per_octave=3,
                  eval_student=False,
+                 finetune_student=False,
                  conv_cfg=None,
                  norm_cfg=None,
                  **kwargs):
@@ -45,6 +46,7 @@ class RetinaTSHead(AnchorHead):
         self.octave_base_scale = octave_base_scale
         self.scales_per_octave = scales_per_octave
         self.eval_student = eval_student
+        self.finetune_student = finetune_student
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         octave_scales = np.array(
