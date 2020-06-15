@@ -130,6 +130,8 @@ class RetinaTSHead(AnchorHead):
             normal_init(m.conv, std=0.01)
         for m in self.s_reg_convs:
             normal_init(m.conv, std=0.01)
+        for m in self.s_t_align_convs:
+            normal_init(m, std=0.01)
 
         bias_cls = bias_init_with_prob(0.01)
         normal_init(self.retina_cls, std=0.01, bias=bias_cls)
