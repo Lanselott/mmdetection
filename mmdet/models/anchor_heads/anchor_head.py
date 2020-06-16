@@ -188,9 +188,9 @@ class AnchorHead(nn.Module):
         if type(cls_score) is tuple:
             t_bbox_pred = bbox_pred[0].permute(0, 2, 3, 1).reshape(-1, 4)
             s_bbox_pred = bbox_pred[1].permute(0, 2, 3, 1).reshape(-1, 4)
-            
-            pyramid_hint_loss = self.pyramid_hint_loss(s_x_feats,
-                                                       x_feats.detach())
+
+            pyramid_hint_loss = 0 * self.pyramid_hint_loss(s_x_feats,
+                                                           x_feats.detach())
             t_loss_bbox = self.loss_bbox(
                 t_bbox_pred,
                 bbox_targets,
