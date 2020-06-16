@@ -998,7 +998,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 for j, hint_feature in enumerate(hint_pairs):
                     s_block_feature = hint_feature[0]
                     t_block_feature = hint_feature[1].detach()
-                    
+
                     if self.block_teacher_attention:
                         # Apply method to partially update hint losses
                         block_distill_masks = torch.nn.functional.upsample(
@@ -1172,7 +1172,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                     t_s_ious = bbox_overlaps(
                                         s_pred_bboxes, t_pred_bboxes,
                                         is_aligned=False).detach()
-                                    iou_attention_weight, t_s_max_inds = t_s_ious.max(0)
+                                    iou_attention_weight, t_s_max_inds = t_s_ious.max(
+                                        0)
                                     t_pos_pyramid_feats = t_pos_pyramid_feats[t_s_max_inds]
                                 else:
                                     iou_attention_weight = t_s_pred_ious
@@ -1355,13 +1356,14 @@ class FCOSTSFullMaskHead(nn.Module):
                         i]
                     pri_iou_attention_weight = pri_iou_attention_weight_list[i]
 
-                    pri_pyramid_hint_loss = self.pyramid_hint_loss(
+                    pri_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                         s_pri_pyramid_feature, t_pri_pyramid_feature)
+
                     loss_dict.update({
                         'pri_pyramid_hint_loss_{}'.format(i):
                         pri_pyramid_hint_loss
                     })
-                    # pri_attention_pyramid_hint_loss = self.pyramid_hint_loss(
+                    # pri_attention_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                     #     s_pos_pri_pyramid_feature,
                     #     t_pos_pri_pyramid_feature,
                     #     weight=pri_iou_attention_weight,
