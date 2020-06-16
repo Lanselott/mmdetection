@@ -154,6 +154,7 @@ class AnchorHead(nn.Module):
         # classification loss
         labels = labels.reshape(-1)
         label_weights = label_weights.reshape(-1)
+        pyramid_lambda = 10
 
         if type(cls_score) is tuple:
             t_cls_score = cls_score[0].permute(0, 2, 3, 1).reshape(
@@ -189,7 +190,7 @@ class AnchorHead(nn.Module):
             t_bbox_pred = bbox_pred[0].permute(0, 2, 3, 1).reshape(-1, 4)
             s_bbox_pred = bbox_pred[1].permute(0, 2, 3, 1).reshape(-1, 4)
 
-            pyramid_hint_loss = 0 * self.pyramid_hint_loss(s_x_feats,
+            pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(s_x_feats,
                                                            x_feats.detach())
             t_loss_bbox = self.loss_bbox(
                 t_bbox_pred,
