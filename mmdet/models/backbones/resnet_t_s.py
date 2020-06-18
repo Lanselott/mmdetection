@@ -817,8 +817,8 @@ class ResTSNet(nn.Module):
 
     def forward(self, x):
         self.train_step += 1
-        if self.rouse_student_point == self.train_step:
-            self.copy_backbone()
+        # if self.rouse_student_point == self.train_step:
+        #     self.copy_backbone()
 
         x = self.conv1(x)
         x = self.norm1(x)

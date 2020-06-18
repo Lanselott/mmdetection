@@ -146,7 +146,7 @@ class RetinaTSHead(AnchorHead):
         reg_feat = x
         s_cls_feat = s_x
         s_reg_feat = s_x
-        
+
         # align to teacher
         for s_t_align_conv in self.s_t_align_convs:
             s_x = s_t_align_conv(s_x)
