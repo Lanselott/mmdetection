@@ -36,6 +36,7 @@ class AnchorHead(nn.Module):
                  in_channels,
                  feat_channels=256,
                  s_feat_channels=128,
+                 pyramid_wise_attention=False,
                  anchor_scales=[8, 16, 32],
                  anchor_ratios=[0.5, 1.0, 2.0],
                  anchor_strides=[4, 8, 16, 32, 64],
@@ -54,6 +55,7 @@ class AnchorHead(nn.Module):
         self.num_classes = num_classes
         self.feat_channels = feat_channels
         self.s_feat_channels = s_feat_channels
+        self.pyramid_wise_attention = pyramid_wise_attention
         self.anchor_scales = anchor_scales
         self.anchor_ratios = anchor_ratios
         self.anchor_strides = anchor_strides
@@ -191,7 +193,23 @@ class AnchorHead(nn.Module):
             s_bbox_pred = bbox_pred[1].permute(0, 2, 3, 1).reshape(-1, 4)
 
             pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(s_x_feats,
-                                                           x_feats.detach())
+                                                                        x_feats.detach())
+            if self.pyramid_wise_attention:
+                pos_bbox_inds = bbox_weights.reshape(
+                    self.num_anchors, -1, 4).sum(0).sum(1).nonzero().reshape(-1)
+                t_pos_bbox_pred = t_bbox_pred[pos_bbox_inds]
+                s_pos_bbox_pred = s_bbox_pred[pos_bbox_inds]
+
+                if len(t_pos_bbox_pred) > 0:
+                    bbox_distance = torch.abs(
+                        t_pos_bbox_pred - s_pos_bbox_pred).sum(1)
+
+                    attention_weight = 1 - bbox_distance / bbox_distance.max()
+                    pos_attention_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                        s_x_feats[pos_bbox_inds], x_feats[pos_bbox_inds].detach(), weight=attention_weight)
+                else:
+                    pos_attention_pyramid_hint_loss = t_pos_bbox_pred.sum()
+
             t_loss_bbox = self.loss_bbox(
                 t_bbox_pred,
                 bbox_targets,
@@ -211,10 +229,16 @@ class AnchorHead(nn.Module):
                 avg_factor=num_total_samples)
 
         if type(cls_score) is tuple:
-            if self.finetune_student:
-                return s_loss_cls, s_loss_bbox, pyramid_hint_loss
+            if self.pyramid_wise_attention:
+                if self.finetune_student:
+                    return s_loss_cls, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss
+                else:
+                    return t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss
             else:
-                return t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss
+                if self.finetune_student:
+                    return s_loss_cls, s_loss_bbox, pyramid_hint_loss
+                else:
+                    return t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss
         else:
             return loss_cls, loss_bbox
 
@@ -240,6 +264,7 @@ class AnchorHead(nn.Module):
 
         anchor_list, valid_flag_list = self.get_anchors(
             featmap_sizes, img_metas, device=device)
+
         label_channels = self.cls_out_channels if self.use_sigmoid_cls else 1
         cls_reg_targets = anchor_target(
             anchor_list,
@@ -262,38 +287,74 @@ class AnchorHead(nn.Module):
 
         if len(cls_scores[0]) > 2:
             # NOTE: well. distillation mode
-            if self.finetune_student:
-                s_loss_cls, s_loss_bbox, pyramid_hint_loss = multi_apply(
-                    self.loss_single,
-                    cls_scores,
-                    bbox_preds,
-                    labels_list,
-                    label_weights_list,
-                    bbox_targets_list,
-                    bbox_weights_list,
-                    num_total_samples=num_total_samples,
-                    cfg=cfg)
-                return dict(
-                    s_loss_cls=s_loss_cls,
-                    s_loss_bbox=s_loss_bbox,
-                    pyramid_hint_loss=pyramid_hint_loss)
+            if self.pyramid_wise_attention:
+                if self.finetune_student:
+                    s_loss_cls, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss = multi_apply(
+                        self.loss_single,
+                        cls_scores,
+                        bbox_preds,
+                        labels_list,
+                        label_weights_list,
+                        bbox_targets_list,
+                        bbox_weights_list,
+                        num_total_samples=num_total_samples,
+                        cfg=cfg)
+                    return dict(
+                        s_loss_cls=s_loss_cls,
+                        s_loss_bbox=s_loss_bbox,
+                        pyramid_hint_loss=pyramid_hint_loss,
+                        pos_attention_pyramid_hint_loss=pos_attention_pyramid_hint_loss)
+                else:
+                    t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss = multi_apply(
+                        self.loss_single,
+                        cls_scores,
+                        bbox_preds,
+                        labels_list,
+                        label_weights_list,
+                        bbox_targets_list,
+                        bbox_weights_list,
+                        num_total_samples=num_total_samples,
+                        cfg=cfg)
+                    return dict(
+                        t_loss_cls=t_loss_cls,
+                        s_loss_cls=s_loss_cls,
+                        t_loss_bbox=t_loss_bbox,
+                        s_loss_bbox=s_loss_bbox,
+                        pyramid_hint_loss=pyramid_hint_loss,
+                        pos_attention_pyramid_hint_loss=pos_attention_pyramid_hint_loss)
             else:
-                t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss = multi_apply(
-                    self.loss_single,
-                    cls_scores,
-                    bbox_preds,
-                    labels_list,
-                    label_weights_list,
-                    bbox_targets_list,
-                    bbox_weights_list,
-                    num_total_samples=num_total_samples,
-                    cfg=cfg)
-                return dict(
-                    t_loss_cls=t_loss_cls,
-                    s_loss_cls=s_loss_cls,
-                    t_loss_bbox=t_loss_bbox,
-                    s_loss_bbox=s_loss_bbox,
-                    pyramid_hint_loss=pyramid_hint_loss)
+                if self.finetune_student:
+                    s_loss_cls, s_loss_bbox, pyramid_hint_loss = multi_apply(
+                        self.loss_single,
+                        cls_scores,
+                        bbox_preds,
+                        labels_list,
+                        label_weights_list,
+                        bbox_targets_list,
+                        bbox_weights_list,
+                        num_total_samples=num_total_samples,
+                        cfg=cfg)
+                    return dict(
+                        s_loss_cls=s_loss_cls,
+                        s_loss_bbox=s_loss_bbox,
+                        pyramid_hint_loss=pyramid_hint_loss)
+                else:
+                    t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss = multi_apply(
+                        self.loss_single,
+                        cls_scores,
+                        bbox_preds,
+                        labels_list,
+                        label_weights_list,
+                        bbox_targets_list,
+                        bbox_weights_list,
+                        num_total_samples=num_total_samples,
+                        cfg=cfg)
+                    return dict(
+                        t_loss_cls=t_loss_cls,
+                        s_loss_cls=s_loss_cls,
+                        t_loss_bbox=t_loss_bbox,
+                        s_loss_bbox=s_loss_bbox,
+                        pyramid_hint_loss=pyramid_hint_loss)
         else:
             losses_cls, losses_bbox = multi_apply(
                 self.loss_single,
