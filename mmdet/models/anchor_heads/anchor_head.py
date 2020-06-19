@@ -156,7 +156,7 @@ class AnchorHead(nn.Module):
         # classification loss
         labels = labels.reshape(-1)
         label_weights = label_weights.reshape(-1)
-        pyramid_lambda = 10
+        pyramid_lambda = 1
 
         if type(cls_score) is tuple:
             t_cls_score = cls_score[0].permute(0, 2, 3, 1).reshape(
