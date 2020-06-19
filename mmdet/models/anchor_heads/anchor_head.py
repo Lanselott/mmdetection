@@ -204,7 +204,8 @@ class AnchorHead(nn.Module):
                     bbox_distance = torch.abs(
                         t_pos_bbox_pred - s_pos_bbox_pred).sum(1)
 
-                    attention_weight = 1 - bbox_distance / bbox_distance.max()
+                    attention_weight = (1 - bbox_distance / bbox_distance.max()).detach()
+
                     pos_attention_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                         s_x_feats[pos_bbox_inds], x_feats[pos_bbox_inds].detach(), weight=attention_weight)
                 else:
