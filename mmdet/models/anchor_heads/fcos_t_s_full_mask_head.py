@@ -1062,7 +1062,10 @@ class FCOSTSFullMaskHead(nn.Module):
                     if self.freeze_teacher:
                         pyramid_lambda = 10
                     else:
-                        pyramid_lambda = 1  # + 1 * self.train_step // 7330
+                        if self.dynamic_weight:
+                            pyramid_lambda = 0.5 + 0.5 * self.train_step // 7330
+                        else:
+                            pyramid_lambda = 1  # + 1 * self.train_step // 7330
                         cls_lambda = 2
 
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
