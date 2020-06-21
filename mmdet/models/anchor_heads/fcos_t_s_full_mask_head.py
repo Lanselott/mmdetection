@@ -1063,7 +1063,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         pyramid_lambda = 10
                     else:
                         if self.dynamic_weight:
-                            pyramid_lambda = 0.5 + 0.5 * self.train_step // 7330
+                            pyramid_lambda = 1 + 2 * self.train_step // 7330
                         else:
                             pyramid_lambda = 1  # + 1 * self.train_step // 7330
                         cls_lambda = 2
