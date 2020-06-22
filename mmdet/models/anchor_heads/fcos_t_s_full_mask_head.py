@@ -1142,7 +1142,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                         inner_s_pyramid_feature = t_s_pyramid_align_conv(
                                             inner_s_pyramid_feature)
                                 
-                                if self.apply_sharing_alignment:
+                                if self.apply_sharing_alignment and self.train_step >= 500:
                                     for sharing_alignment_conv in self.sharing_alignment_convs:
                                         t_pyramid_feature = sharing_alignment_conv(
                                             t_pyramid_feature.detach())
