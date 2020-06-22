@@ -504,11 +504,21 @@ class FCOSTSFullMaskHead(nn.Module):
                     self.sharing_alignment_convs = nn.ModuleList()
 
                     self.sharing_alignment_convs.append(
-                        nn.Conv2d(
+                        # nn.Conv2d(
+                        #     self.feat_channels,
+                        #     self.feat_channels * 2,
+                        #     # 64,
+                        #     3,
+                        #     padding=1)
+                        ConvModule(
                             self.feat_channels,
                             self.feat_channels * 2,
                             3,
-                            padding=1))
+                            stride=1,
+                            padding=1,
+                            conv_cfg=self.conv_cfg,
+                            norm_cfg=self.norm_cfg,
+                            bias=self.norm_cfg is None))
 
                 if self.learn_from_teacher_backbone:
                     self.s_t_pyramid_align.append(
@@ -1142,7 +1152,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                         inner_s_pyramid_feature = t_s_pyramid_align_conv(
                                             inner_s_pyramid_feature)
                                 
-                                if self.apply_sharing_alignment and self.train_step >= 500:
+                                if self.apply_sharing_alignment:
                                     for sharing_alignment_conv in self.sharing_alignment_convs:
                                         t_pyramid_feature = sharing_alignment_conv(
                                             t_pyramid_feature.detach())
