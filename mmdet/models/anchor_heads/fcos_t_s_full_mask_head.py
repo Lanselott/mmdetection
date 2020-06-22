@@ -614,7 +614,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     normal_init(align_conv, std=0.01)
                 for align_conv in self.t_s_pyramid_align:
                     normal_init(align_conv, std=0.01)
-                
+
                 if self.apply_sharing_alignment:
                     for align_conv in self.sharing_alignment_convs:
                         normal_init(align_conv, std=0.01)
@@ -1075,7 +1075,15 @@ class FCOSTSFullMaskHead(nn.Module):
                         pyramid_lambda = 10
                     else:
                         if self.dynamic_weight:
-                            pyramid_lambda = 1 + 2 * self.train_step // 7330
+                            # pyramid_lambda = 0.5 + 0.5 * self.train_step // 7330   # v1
+                            # pyramid_lambda = 1 + 2 * self.train_step // 7330 # v2
+                            # v3, sigmoid type
+                            if self.train_step // 7330 < 6:
+                                pyramid_lambda = 1 * self.train_step // 7330
+                            elif self.train_step // 7330 < 9 and self.train_step // 7330 >= 6:
+                                pyramid_lambda = 2 * self.train_step // 7330
+                            elif self.train_step // 7330 >= 9:
+                                pyramid_lambda = 2.5 * self.train_step // 7330
                         else:
                             pyramid_lambda = 1  # + 1 * self.train_step // 7330
                         cls_lambda = 2
@@ -1147,11 +1155,10 @@ class FCOSTSFullMaskHead(nn.Module):
                                         s_pyramid_feature = t_s_pyramid_align_conv(
                                             s_pyramid_feature)
 
-
                                     if self.inner_opt:
                                         inner_s_pyramid_feature = t_s_pyramid_align_conv(
                                             inner_s_pyramid_feature)
-                                
+
                                 if self.apply_sharing_alignment:
                                     for sharing_alignment_conv in self.sharing_alignment_convs:
                                         t_pyramid_feature = sharing_alignment_conv(
