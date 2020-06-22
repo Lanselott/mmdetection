@@ -36,6 +36,7 @@ class AnchorHead(nn.Module):
                  in_channels,
                  feat_channels=256,
                  s_feat_channels=128,
+                 dynamic_weight=False,
                  pyramid_wise_attention=False,
                  anchor_scales=[8, 16, 32],
                  anchor_ratios=[0.5, 1.0, 2.0],
@@ -63,6 +64,8 @@ class AnchorHead(nn.Module):
             anchor_strides) if anchor_base_sizes is None else anchor_base_sizes
         self.target_means = target_means
         self.target_stds = target_stds
+        self.train_step = 0
+        self.dynamic_weight = dynamic_weight
 
         self.use_sigmoid_cls = loss_cls.get('use_sigmoid', False)
         self.sampling = loss_cls['type'] not in ['FocalLoss', 'GHMC']
@@ -154,9 +157,14 @@ class AnchorHead(nn.Module):
         # cls_score tuple: [cls_score, s_cls_score, x, s_x],
         # bbox_pred tuple: [bbox_pred, s_bbox_pred]
         # classification loss
+        self.train_step += 1
         labels = labels.reshape(-1)
         label_weights = label_weights.reshape(-1)
-        pyramid_lambda = 10
+
+        if self.dynamic_weight:
+            pyramid_lambda = 5 + 1 * self.train_step // 7330
+        else:
+            pyramid_lambda = 8
 
         if type(cls_score) is tuple:
             t_cls_score = cls_score[0].permute(0, 2, 3, 1).reshape(
