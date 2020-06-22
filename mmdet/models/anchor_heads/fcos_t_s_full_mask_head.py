@@ -71,6 +71,8 @@ class FCOSTSFullMaskHead(nn.Module):
                  multi_branches=False,
                  naive_conv=True,
                  apply_pri_pyramid_wise_alignment=False,
+                 apply_autoencoder=False,
+                 apply_sharing_alignment=False,
                  apply_head_wise_alignment=False,
                  simple_pyramid_alignment=False,
                  head_align_levels=[0],
@@ -178,6 +180,8 @@ class FCOSTSFullMaskHead(nn.Module):
         self.multi_branches = multi_branches
         self.naive_conv = naive_conv
         self.apply_pri_pyramid_wise_alignment = apply_pri_pyramid_wise_alignment
+        self.apply_autoencoder = apply_autoencoder
+        self.apply_sharing_alignment = apply_sharing_alignment
         self.simple_pyramid_alignment = simple_pyramid_alignment
         self.block_wise_attention = block_wise_attention
         self.pyramid_wise_attention = pyramid_wise_attention
@@ -276,9 +280,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     'params': self.t_s_pyramid_align.parameters()
                 },
             ],
-                lr=1e-2,
-                momentum=0.9,
-                weight_decay=0.0001)
+                                             lr=1e-2,
+                                             momentum=0.9,
+                                             weight_decay=0.0001)
 
     def _init_siamese(self):
         self.t_s_siamese_align = nn.ModuleList()
@@ -458,6 +462,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 channel_delta = (self.feat_channels -
                                  self.s_feat_channels) // self.multi_levels
                 if self.naive_conv:
+                    assert self.multi_levels == 1
                     '''
                     # naive conv layers 3x3
                     self.t_s_pyramid_align.append(
@@ -467,37 +472,14 @@ class FCOSTSFullMaskHead(nn.Module):
                             3,
                             padding=1))
                     '''
-                    if self.multi_branches:
-                        # 1x1
-                        self.t_s_pyramid_align.append(
-                            nn.Conv2d(
-                                self.s_feat_channels + channel_delta * i,
-                                self.s_feat_channels + channel_delta * (i + 1),
-                                1,
-                                padding=0))
-                        # 3x3
-                        self.t_s_pyramid_align.append(
-                            nn.Conv2d(
-                                self.s_feat_channels + channel_delta * i,
-                                self.s_feat_channels + channel_delta * (i + 1),
-                                3,
-                                padding=1))
-                        # 5x5
-                        self.t_s_pyramid_align.append(
-                            nn.Conv2d(
-                                self.s_feat_channels + channel_delta * i,
-                                self.s_feat_channels + channel_delta * (i + 1),
-                                5,
-                                padding=2))
-                    else:
-                        # 1x1
-                        self.t_s_pyramid_align.append(
-                            nn.Conv2d(
-                                self.s_feat_channels + channel_delta * i,
-                                self.s_feat_channels + channel_delta * (i + 1),
-                                1,
-                                padding=0))
-                    
+                    # 3x3
+                    self.t_s_pyramid_align.append(
+                        nn.Conv2d(
+                            self.s_feat_channels + channel_delta * i,
+                            self.s_feat_channels + channel_delta * (i + 1),
+                            3,
+                            padding=1))
+
                 else:
                     # conv blocks
                     self.t_s_pyramid_align.append(
@@ -510,6 +492,23 @@ class FCOSTSFullMaskHead(nn.Module):
                             conv_cfg=self.conv_cfg,
                             norm_cfg=self.s_norm_cfg,
                             bias=self.s_norm_cfg is None))
+
+                if self.apply_autoencoder:
+                    # NOTE: A single autoencoder,
+                    # Shared by both teacher and student networks
+                    # student -> alignment -> encoder -> latent code -> decoder
+                    # teacher -> encoder -> latent code -> decoder
+                    raise NotImplementedError
+
+                if self.apply_sharing_alignment:
+                    self.sharing_alignment_convs = nn.ModuleList()
+
+                    self.sharing_alignment_convs.append(
+                        nn.Conv2d(
+                            self.feat_channels,
+                            self.feat_channels * 2,
+                            3,
+                            padding=1))
 
                 if self.learn_from_teacher_backbone:
                     self.s_t_pyramid_align.append(
@@ -605,6 +604,10 @@ class FCOSTSFullMaskHead(nn.Module):
                     normal_init(align_conv, std=0.01)
                 for align_conv in self.t_s_pyramid_align:
                     normal_init(align_conv, std=0.01)
+                
+                if self.apply_sharing_alignment:
+                    for align_conv in self.sharing_alignment_convs:
+                        normal_init(align_conv, std=0.01)
 
                 if self.learn_from_teacher_backbone:
                     for align_conv in self.s_t_pyramid_align:
@@ -1055,9 +1058,8 @@ class FCOSTSFullMaskHead(nn.Module):
                 # TODO: Polishing conditions here...
                 if self.apply_pyramid_wise_alignment or self.siamese_distill or self.pyramid_correlation:
                     t_s_pred_ious = bbox_overlaps(
-                                s_pred_bboxes,
-                                t_pred_bboxes,
-                                is_aligned=True).detach()
+                        s_pred_bboxes, t_pred_bboxes,
+                        is_aligned=True).detach()
 
                     if self.freeze_teacher:
                         pyramid_lambda = 10
@@ -1107,9 +1109,6 @@ class FCOSTSFullMaskHead(nn.Module):
 
                             if self.spatial_ratio > 1:
                                 for t_s_pyramid_align_conv in self.t_s_pyramid_align:
-                                    if self.multi_branches:
-                                        # TODO: Update if it works
-                                        raise NotImplementedError
                                     if self.direct_downsample:
                                         s_pyramid_feature = F.interpolate(
                                             s_pyramid_feature.unsqueeze(0),
@@ -1123,12 +1122,11 @@ class FCOSTSFullMaskHead(nn.Module):
                                                 size=pyramid_hint_pair[1].
                                                 shape[2:],
                                                 mode='nearest'))
+                                    if self.apply_sharing_alignment:
+                                        raise NotImplementedError
 
                             else:
                                 for t_s_pyramid_align_conv in self.t_s_pyramid_align:
-                                    if self.multi_branches:
-                                        temp_s_pyramid_feature = 0
-
                                     if self.direct_downsample:
                                         s_pyramid_feature = F.interpolate(
                                             s_pyramid_feature.unsqueeze(0),
@@ -1136,28 +1134,24 @@ class FCOSTSFullMaskHead(nn.Module):
                                             shape[1:],
                                             mode='nearest').squeeze(0)
                                     else:
-                                        if self.multi_branches:
-                                            temp_s_pyramid_feature += t_s_pyramid_align_conv(
-                                                s_pyramid_feature)
-                                        else:
-                                            s_pyramid_feature = t_s_pyramid_align_conv(
-                                                s_pyramid_feature)
+                                        s_pyramid_feature = t_s_pyramid_align_conv(
+                                            s_pyramid_feature)
+
 
                                     if self.inner_opt:
-                                        if self.multi_branches:
-                                            # TODO: Update if it works
-                                            raise NotImplementedError
                                         inner_s_pyramid_feature = t_s_pyramid_align_conv(
                                             inner_s_pyramid_feature)
+                                
+                                if self.apply_sharing_alignment:
+                                    for sharing_alignment_conv in self.sharing_alignment_convs:
+                                        t_pyramid_feature = sharing_alignment_conv(
+                                            t_pyramid_feature.detach())
+                                        s_pyramid_feature = sharing_alignment_conv(
+                                            s_pyramid_feature)
 
-                            if self.multi_branches:
-                                s_t_pyramid_feature_list.append(
-                                temp_s_pyramid_feature.permute(0, 2, 3, 1).reshape(
+                            s_t_pyramid_feature_list.append(
+                                s_pyramid_feature.permute(0, 2, 3, 1).reshape(
                                     -1, self.feat_channels))
-                            else:
-                                s_t_pyramid_feature_list.append(
-                                    s_pyramid_feature.permute(0, 2, 3, 1).reshape(
-                                        -1, self.feat_channels))
                             t_pyramid_feature_list.append(
                                 t_pyramid_feature.permute(0, 2, 3, 1).reshape(
                                     -1, self.feat_channels))
@@ -1200,8 +1194,10 @@ class FCOSTSFullMaskHead(nn.Module):
                                 inner_s_t_pyramid_feature_list)
 
                         if self.pyramid_wise_attention:
-                            t_pos_pyramid_feats = t_pyramid_feature_list[t_pos_inds]
-                            s_pos_pyramid_feats = s_t_pyramid_feature_list[t_pos_inds]
+                            t_pos_pyramid_feats = t_pyramid_feature_list[
+                                t_pos_inds]
+                            s_pos_pyramid_feats = s_t_pyramid_feature_list[
+                                t_pos_inds]
 
                             # FIXME: Pyramid attention should be merge to pyramid alignement loss,
                             if len(t_pos_inds) != 0:
@@ -1228,11 +1224,13 @@ class FCOSTSFullMaskHead(nn.Module):
                                     iou_attention_weight = t_s_pred_ious**pos_s_t_cls_distance
                                 elif self.sorting_match:
                                     t_s_ious = bbox_overlaps(
-                                        s_pred_bboxes, t_pred_bboxes,
+                                        s_pred_bboxes,
+                                        t_pred_bboxes,
                                         is_aligned=False).detach()
                                     iou_attention_weight, t_s_max_inds = t_s_ious.max(
                                         0)
-                                    t_pos_pyramid_feats = t_pos_pyramid_feats[t_s_max_inds]
+                                    t_pos_pyramid_feats = t_pos_pyramid_feats[
+                                        t_s_max_inds]
                                 else:
                                     iou_attention_weight = t_s_pred_ious
 
@@ -1250,8 +1248,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                                 t_attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                     s_pos_pyramid_feats,
-                                    t_pos_pyramid_feats.detach(
-                                    ),
+                                    t_pos_pyramid_feats.detach(),
                                     weight=iou_attention_weight)  # ,
                                 # avg_factor=iou_attention_weight.sum())
                                 if self.use_intermediate_learner:
@@ -1308,11 +1305,11 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
                         # if self.cls_aware_attention:
-                            #     t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                            #         s_t_pyramid_feature_list,
-                            #         t_pyramid_feature_list.detach(),
-                            #         weight=s_t_cls_distance)
-                            # else:
+                        #     t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                        #         s_t_pyramid_feature_list,
+                        #         t_pyramid_feature_list.detach(),
+                        #         weight=s_t_cls_distance)
+                        # else:
                         t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                             s_t_pyramid_feature_list,
                             t_pyramid_feature_list.detach())
@@ -1830,7 +1827,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                    0).float()
+                                 0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
