@@ -1078,7 +1078,8 @@ class FCOSTSFullMaskHead(nn.Module):
                             # pyramid_lambda = 0.5 + 0.5 * self.train_step // 7330   # v1
                             # pyramid_lambda = 1 + 2 * self.train_step // 7330 # v2
                             # v3, sigmoid type
-                            pyramid_lambda = 1 + 1.5 * self.train_step // 7330 # v2
+                            # pyramid_lambda = 1 + 1.5 * self.train_step // 7330 
+                            pyramid_lambda = 0 + 1.5 * self.train_step // 7330 
                             
                         else:
                             pyramid_lambda = 1  # + 1 * self.train_step // 7330
