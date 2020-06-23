@@ -1308,10 +1308,12 @@ class FCOSTSFullMaskHead(nn.Module):
                                         g['lr'] = 0.001
 
                     if self.pyramid_wise_attention:
-                        loss_dict.update({
-                            't_attention_iou_pyramid_hint_loss':
-                            t_attention_iou_pyramid_hint_loss,
-                        })
+                        if t_g_ious.mean() >= 0.5 or not self.ignore_low_ious:
+                            loss_dict.update({
+                                't_attention_iou_pyramid_hint_loss':
+                                t_attention_iou_pyramid_hint_loss,
+                            })
+                            
                         if self.use_intermediate_learner:
                             loss_dict.update({
                                 'inter_attention_iou_pyramid_hint_loss':
@@ -1328,7 +1330,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                             s_t_pyramid_feature_list,
                             t_pyramid_feature_list.detach())
-
+                        
                         loss_dict.update(
                             {'t_pyramid_hint_loss': t_pyramid_hint_loss})
                         if self.use_intermediate_learner:
