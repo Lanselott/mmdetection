@@ -162,7 +162,7 @@ class AnchorHead(nn.Module):
         label_weights = label_weights.reshape(-1)
 
         if self.dynamic_weight:
-            pyramid_lambda = 5 + 1 * self.train_step // 7330
+            pyramid_lambda = 8 + 1 * self.train_step // 7330
         else:
             pyramid_lambda = 8
 
