@@ -1076,7 +1076,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     else:
                         if self.dynamic_weight:
                             # pyramid_lambda = 0.5 + 0.5 * self.train_step // 7330   # v1
-                            pyramid_lambda = 1 + 2 * self.train_step // 7330 # v2
+                            pyramid_lambda = 1 + 2 * self.train_step // 7330  # v2
                             # v3, sigmoid type
                             # pyramid_lambda = 1 + 1.5 * self.train_step // 7330
                             # pyramid_lambda = 0 + 2 * self.train_step // (
@@ -1312,7 +1312,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             't_attention_iou_pyramid_hint_loss':
                             t_attention_iou_pyramid_hint_loss,
                         })
-                            
+
                         if self.use_intermediate_learner:
                             loss_dict.update({
                                 'inter_attention_iou_pyramid_hint_loss':
@@ -1329,7 +1329,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                             s_t_pyramid_feature_list,
                             t_pyramid_feature_list.detach())
-                        
+
                         loss_dict.update(
                             {'t_pyramid_hint_loss': t_pyramid_hint_loss})
                         if self.use_intermediate_learner:
@@ -1667,18 +1667,19 @@ class FCOSTSFullMaskHead(nn.Module):
                 #             and self.inner_opt == True):
                 if True:
                     if self.apply_soft_regression_distill:
-                        t_s_pos_centerness = bbox_overlaps(
-                            s_pred_bboxes, t_pred_bboxes,
+                        t_gt_pos_centerness = bbox_overlaps(
+                            t_pred_bboxes, t_gt_bboxes,
                             is_aligned=True).detach()
-                        # print("t_s_pos_centerness shape:", t_s_pos_centerness.shape)
-                        # print("s_pred_bboxes shape:", s_pred_bboxes.shape)
+                        # t_cls_factor = t_flatten_cls_scores.sigmoid().max(1)[0]
+                        
                         s_soft_loss_bbox = self.loss_bbox(
                             s_pred_bboxes,
-                            t_gt_bboxes,
-                            weight=t_s_pos_centerness,
-                            avg_factor=t_s_pos_centerness.sum())
+                            t_pred_bboxes,
+                            weight=t_gt_pos_centerness)
+
                         loss_dict.update(
-                            s_loss_bbox=s_soft_loss_bbox,
+                            s_soft_loss_bbox=s_soft_loss_bbox,
+                            s_loss_bbox=s_loss_bbox,
                             s_loss_centerness=s_loss_centerness,
                             s_loss_cls=s_loss_cls)
                     else:
