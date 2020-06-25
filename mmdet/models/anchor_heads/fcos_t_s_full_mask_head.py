@@ -685,10 +685,10 @@ class FCOSTSFullMaskHead(nn.Module):
 
         t_feats = feats[0]
         s_feats = feats[1]
-
         # TODO: remove pri features
         t_pri_feats = feats[2]
         s_pri_feats = feats[3]
+
         t_pri_feats += tuple('N')
         s_pri_feats += tuple('N')
 
@@ -1308,11 +1308,10 @@ class FCOSTSFullMaskHead(nn.Module):
                                         g['lr'] = 0.001
 
                     if self.pyramid_wise_attention:
-                        if t_g_ious.mean() >= 0.5 or not self.ignore_low_ious:
-                            loss_dict.update({
-                                't_attention_iou_pyramid_hint_loss':
-                                t_attention_iou_pyramid_hint_loss,
-                            })
+                        loss_dict.update({
+                            't_attention_iou_pyramid_hint_loss':
+                            t_attention_iou_pyramid_hint_loss,
+                        })
                             
                         if self.use_intermediate_learner:
                             loss_dict.update({

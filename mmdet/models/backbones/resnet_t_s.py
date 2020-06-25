@@ -381,6 +381,7 @@ class ResTSNet(nn.Module):
 
     def __init__(self,
                  depth,
+                 s_depth,
                  in_channels=3,
                  t_s_ratio=1,
                  spatial_ratio=1,
@@ -411,6 +412,7 @@ class ResTSNet(nn.Module):
         if depth not in self.arch_settings:
             raise KeyError('invalid depth {} for resnet'.format(depth))
         self.depth = depth
+        self.s_depth = s_depth
         self.t_s_ratio = t_s_ratio
         self.spatial_ratio = spatial_ratio
         self.num_stages = num_stages
@@ -443,6 +445,8 @@ class ResTSNet(nn.Module):
         self.zero_init_residual = zero_init_residual
         self.block, stage_blocks = self.arch_settings[depth]
         self.stage_blocks = stage_blocks[:num_stages]
+        self.s_block, s_stage_blocks = self.arch_settings[s_depth]
+        self.s_stage_blocks = s_stage_blocks[:num_stages]
         self.inplanes = 64
         self.rouse_student_point = rouse_student_point
         self.train_step = 0
@@ -486,14 +490,14 @@ class ResTSNet(nn.Module):
         # current block1[0] layer input channel not fully pruned in same way
         self.inplanes = 64  # it should be self.inplanes // self.t_s_ratio
         student_block_output_channel = []
-        for j, num_blocks in enumerate(self.stage_blocks):
+        for j, num_blocks in enumerate(self.s_stage_blocks):
             stride = strides[j]
             dilation = dilations[j]
             dcn = self.dcn if self.stage_with_dcn[j] else None
             gcb = self.gcb if self.stage_with_gcb[j] else None
             planes = 64 * 2**j // self.t_s_ratio  # Prune the channel
             s_res_layer = make_rests_layer(
-                self.block,
+                self.s_block,
                 self.inplanes,
                 planes,
                 num_blocks,
@@ -508,11 +512,12 @@ class ResTSNet(nn.Module):
                 gen_attention=gen_attention,
                 gen_attention_blocks=stage_with_gen_attention[j])
             student_block_output_channel.append(planes)
-            self.inplanes = planes * self.block.expansion
+            self.inplanes = planes * self.s_block.expansion
             s_layer_name = 's_layer{}'.format(j + 1)
             self.add_module(s_layer_name, s_res_layer)
             self.s_res_layers.append(s_layer_name)
-        self.feat_dim = self.block.expansion * 64 * 2**(
+      
+        self.feat_dim = self.s_block.expansion * 64 * 2**(
             len(self.stage_blocks) - 1)
         # hint knowlege, align teacher and student
         self.inplanes = 64
@@ -850,6 +855,7 @@ class ResTSNet(nn.Module):
                 block_distill_pairs.append([aligned_s_feature, outs[j]])
             if j in self.out_indices:
                 s_outs.append(s_x)
+        
         if self.apply_block_wise_alignment:
             return tuple(outs), tuple(s_outs), tuple(block_distill_pairs)
         else:
