@@ -109,7 +109,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  freeze_teacher=False,
                  beta=1,
                  gamma=1,
-                 adap_distill_loss_weight=0.5,
+                 adap_distill_loss_weight=0.1,
                  inner_opt=False,
                  pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
                  reg_head_hint_loss=dict(type='MSELoss', loss_weight=1),
@@ -1688,11 +1688,13 @@ class FCOSTSFullMaskHead(nn.Module):
                             s_loss_centerness=s_loss_centerness,
                             s_loss_cls=s_loss_cls)
 
-                if self.apply_soft_cls_distill:
+                if self.apply_soft_cls_distill and self.train_step >= 500:
                     if self.spatial_ratio > 1:
                         # upsample student to match the size
                         # TODO: currently not use
                         assert True
+                    # self.temperature = (1 - t_s_pred_ious.mean()) * 10
+                    self.adap_distill_loss_weight =  t_s_pred_ious.mean()
                     s_tempered_cls_scores = s_flatten_cls_scores / self.temperature
                     s_gt_labels = (t_flatten_cls_scores.detach() /
                                    self.temperature).sigmoid()
@@ -1702,6 +1704,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     t_entropy = -(
                         s_gt_labels * s_gt_labels.log() + (1 - s_gt_labels) *
                         (1 - s_gt_labels).log())
+                    # ADW term
                     adaptive_distillation_weight = (
                         1 - (-t_s_distribution_distance -
                              self.beta * t_entropy).exp())**self.gamma

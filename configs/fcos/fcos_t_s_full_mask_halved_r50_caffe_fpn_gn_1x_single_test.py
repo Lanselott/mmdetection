@@ -123,7 +123,7 @@ model = dict(
         # student distillation params
         beta=1.5,
         gamma=2,
-        adap_distill_loss_weight=0.5,
+        adap_distill_loss_weight=0.1,
         strides=[8, 16, 32, 64, 128],
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
         # pyramid_hint_loss=dict(
