@@ -11,6 +11,7 @@ model = dict(
     backbone=dict(
         type='ResTSNet',
         depth=50,
+        s_depth=50,
         t_s_ratio=RATIO,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
