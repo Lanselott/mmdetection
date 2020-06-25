@@ -49,7 +49,6 @@ model = dict(
         learn_when_train=True,
         finetune_student=True,
         apply_iou_similarity=False,
-        apply_soft_cls_distill=False,
         apply_feature_alignment=False,  # regression
         dynamic_weight=True,
         temperature=1,
