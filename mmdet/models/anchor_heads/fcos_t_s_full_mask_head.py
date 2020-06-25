@@ -1688,7 +1688,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             s_loss_centerness=s_loss_centerness,
                             s_loss_cls=s_loss_cls)
 
-                if self.apply_soft_cls_distill and self.train_step >= 500:
+                if self.apply_soft_cls_distill and self.train_step >= 1000:
                     if self.spatial_ratio > 1:
                         # upsample student to match the size
                         # TODO: currently not use
