@@ -20,6 +20,7 @@ model = dict(
     backbone=dict(
         type='ResTSNet',
         depth=50,
+        s_depth=50,
         t_s_ratio=RATIO,
         spatial_ratio=DOWNSAMPLE_RATIO,
         num_stages=4,
