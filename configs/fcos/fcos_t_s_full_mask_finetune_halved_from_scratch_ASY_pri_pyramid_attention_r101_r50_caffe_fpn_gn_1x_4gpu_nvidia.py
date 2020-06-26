@@ -54,6 +54,7 @@ model = dict(
         apply_iou_similarity=False,
         apply_soft_cls_distill=False,
         apply_feature_alignment=False,  # regression
+        apply_sharing_alignment=True,
         dynamic_weight=True,
         temperature=1,
         align_level=0,
