@@ -1384,6 +1384,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 # NOTE: pri (bottom-up pyramid) 1-3 levels
                 for level in range(1, pri_level):
                     pri_pyramid_hint_pair = pri_pyramid_hint_pairs[level]
+
                     if self.spatial_ratio > 1:
                         s_pri_pyramid_feature = self.t_s_pri_pyramid_align[
                             level - 1](
@@ -1434,22 +1435,28 @@ class FCOSTSFullMaskHead(nn.Module):
                         i]
                     pri_iou_attention_weight = pri_iou_attention_weight_list[i]
 
-                    pri_pyramid_hint_loss = self.pyramid_hint_loss(
+                    pri_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                         s_pri_pyramid_feature, t_pri_pyramid_feature)
 
                     loss_dict.update({
                         'pri_pyramid_hint_loss_{}'.format(i):
                         pri_pyramid_hint_loss
                     })
-                    # pri_attention_pyramid_hint_loss = attention_lambda * self.pyramid_hint_loss(
-                    #     s_pos_pri_pyramid_feature,
-                    #     t_pos_pri_pyramid_feature,
-                    #     weight=pri_iou_attention_weight,
-                    #     avg_factor=pri_iou_attention_weight.sum())
-                    # loss_dict.update({
-                    #     'pri_attention_pyramid_hint_loss_{}'.format(i):
-                    #     pri_attention_pyramid_hint_loss
-                    # })
+                    '''
+                    pri_attention_pyramid_hint_loss = attention_lambda * self.pyramid_hint_loss(
+                        s_pos_pri_pyramid_feature,
+                        t_pos_pri_pyramid_feature)#,
+                        # weight=pri_iou_attention_weight)#,
+                        # avg_factor=pri_iou_attention_weight.sum())
+                    print("pri_attention_pyramid_hint_loss:{}".format(
+                        pri_attention_pyramid_hint_loss))
+                    print("pri_iou_attention_weight.shape:",
+                        pri_iou_attention_weight.shape)
+                    loss_dict.update({
+                        'pri_attention_pyramid_hint_loss_{}'.format(i):
+                        pri_attention_pyramid_hint_loss
+                    })
+                    '''
 
             # NOTE: apply pyramid correlation
             if self.pyramid_correlation:
