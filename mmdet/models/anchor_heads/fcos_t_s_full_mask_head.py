@@ -280,9 +280,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     'params': self.t_s_pyramid_align.parameters()
                 },
             ],
-                                             lr=1e-2,
-                                             momentum=0.9,
-                                             weight_decay=0.0001)
+                lr=1e-2,
+                momentum=0.9,
+                weight_decay=0.0001)
 
     def _init_siamese(self):
         self.t_s_siamese_align = nn.ModuleList()
@@ -1071,19 +1071,26 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_pred_bboxes, t_pred_bboxes,
                         is_aligned=True).detach()
 
+                    # NOTE: attention_lambda is applied to attention areas, which is the positive areas or positive samples,
+                    # pyramid_lambda is applied to all areas.
+                    # dynamic mode: increase the importance of attention areas;
+                    #               downgrade the importance of all areas
                     if self.freeze_teacher:
-                        pyramid_lambda = 10
+                        attention_lambda = 10
+                        pyramid_lambda = 1
                     else:
                         if self.dynamic_weight:
-                            # pyramid_lambda = 0.5 + 0.5 * self.train_step // 7330   # v1
-                            pyramid_lambda = 1 + 2 * self.train_step // 7330  # v2
+                            # attention_lambda = 0.5 + 0.5 * self.train_step // 7330   # v1
+                            attention_lambda = 1 + 2 * self.train_step // 7330  # v2
                             # v3, sigmoid type
-                            # pyramid_lambda = 1 + 1.5 * self.train_step // 7330
-                            # pyramid_lambda = 0 + 2 * self.train_step // (
+                            # attention_lambda = 1 + 1.5 * self.train_step // 7330
+                            # attention_lambda = 0 + 2 * self.train_step // (
                             #     7330 * 2)
+                            pyramid_lambda = 1 / \
+                                (1 + 0.33 * self.train_step // 7330)
 
                         else:
-                            pyramid_lambda = 1  # + 1 * self.train_step // 7330
+                            attention_lambda = 1  # + 1 * self.train_step // 7330
                         cls_lambda = 2
 
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
@@ -1261,13 +1268,13 @@ class FCOSTSFullMaskHead(nn.Module):
                                         iou_attention_weight <=
                                         inter_iou_attention_weight] = 0
 
-                                t_attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                t_attention_iou_pyramid_hint_loss = attention_lambda * self.pyramid_hint_loss(
                                     s_pos_pyramid_feats,
                                     t_pos_pyramid_feats.detach(),
                                     weight=iou_attention_weight)  # ,
                                 # avg_factor=iou_attention_weight.sum())
                                 if self.use_intermediate_learner:
-                                    inter_attention_iou_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                    inter_attention_iou_pyramid_hint_loss = attention_lambda * self.pyramid_hint_loss(
                                         s_i_pyramid_feature_list[t_pos_inds],
                                         t_i_pyramid_feature_list[t_pos_inds].
                                         detach(),
@@ -1287,14 +1294,14 @@ class FCOSTSFullMaskHead(nn.Module):
                                     self.inner_optimizer.zero_grad()
                                     self.t_s_pyramid_align.zero_grad()
 
-                                    inner_pyramid_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                    inner_pyramid_attention_loss = attention_lambda * self.pyramid_hint_loss(
                                         inner_s_t_pyramid_feature_list[
                                             t_pos_inds],
                                         t_pyramid_feature_list[t_pos_inds].
                                         detach(),
                                         weight=iou_attention_weight)  # ,
                                     # avg_factor=iou_attention_weight.sum())
-                                    inner_pyramid_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                    inner_pyramid_loss = self.pyramid_hint_loss(
                                         inner_s_t_pyramid_feature_list,
                                         t_pyramid_feature_list.detach())
                                     inner_pyramid_attention_loss.backward(
@@ -1321,7 +1328,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     if not self.pyramid_attention_only and self.apply_pyramid_wise_alignment:
                         # if self.cls_aware_attention:
-                        #     t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                        #     t_pyramid_hint_loss = attention_lambda * self.pyramid_hint_loss(
                         #         s_t_pyramid_feature_list,
                         #         t_pyramid_feature_list.detach(),
                         #         weight=s_t_cls_distance)
@@ -1333,7 +1340,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         loss_dict.update(
                             {'t_pyramid_hint_loss': t_pyramid_hint_loss})
                         if self.use_intermediate_learner:
-                            inter_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                            inter_pyramid_hint_loss = self.pyramid_hint_loss(
                                 s_i_pyramid_feature_list,
                                 t_i_pyramid_feature_list.detach())
                             loss_dict.update({
@@ -1342,14 +1349,14 @@ class FCOSTSFullMaskHead(nn.Module):
                             })
 
                         if self.learn_from_teacher_backbone:
-                            t_decreased_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                            t_decreased_pyramid_hint_loss = self.pyramid_hint_loss(
                                 s_pyramid_feature_list,
                                 t_decreased_pyramid_hint_feature_list.detach())
                             t_decreased_iou_attention_weight = bbox_overlaps(
                                 s_pred_bboxes,
                                 t_decreased_pred_bboxes,
                                 is_aligned=True).detach()
-                            t_decreased_pyramid_attention_loss = pyramid_lambda * self.pyramid_hint_loss(
+                            t_decreased_pyramid_attention_loss = attention_lambda * self.pyramid_hint_loss(
                                 s_pyramid_feature_list[t_pos_inds],
                                 t_decreased_pyramid_hint_feature_list[
                                     t_pos_inds].detach(),
@@ -1427,14 +1434,14 @@ class FCOSTSFullMaskHead(nn.Module):
                         i]
                     pri_iou_attention_weight = pri_iou_attention_weight_list[i]
 
-                    pri_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                    pri_pyramid_hint_loss = self.pyramid_hint_loss(
                         s_pri_pyramid_feature, t_pri_pyramid_feature)
 
                     loss_dict.update({
                         'pri_pyramid_hint_loss_{}'.format(i):
                         pri_pyramid_hint_loss
                     })
-                    # pri_attention_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                    # pri_attention_pyramid_hint_loss = attention_lambda * self.pyramid_hint_loss(
                     #     s_pos_pri_pyramid_feature,
                     #     t_pos_pri_pyramid_feature,
                     #     weight=pri_iou_attention_weight,
@@ -1671,7 +1678,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             t_pred_bboxes, t_gt_bboxes,
                             is_aligned=True).detach()
                         # t_cls_factor = t_flatten_cls_scores.sigmoid().max(1)[0]
-                        
+
                         s_soft_loss_bbox = self.loss_bbox(
                             s_pred_bboxes,
                             t_pred_bboxes,
@@ -1694,7 +1701,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         # TODO: currently not use
                         assert True
                     # self.temperature = (1 - t_s_pred_ious.mean()) * 10
-                    self.adap_distill_loss_weight =  0.5 * t_s_pred_ious.mean()
+                    self.adap_distill_loss_weight = 0.5 * t_s_pred_ious.mean()
                     s_tempered_cls_scores = s_flatten_cls_scores / self.temperature
                     s_gt_labels = (t_flatten_cls_scores.detach() /
                                    self.temperature).sigmoid()
@@ -1847,7 +1854,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                                 0).float()
+                    0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))

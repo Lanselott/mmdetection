@@ -1,7 +1,7 @@
 # model settings
 BLOCK_ALIGN = False
 PYRAMID_ALIGN = True
-PRI_PYRAMID_ALIGN = False
+PRI_PYRAMID_ALIGN = True
 PYRAMID_CORRELATION = False
 HEAD_ALIGN = False
 FREEZE_TEACHER = False
@@ -71,7 +71,7 @@ model = dict(
         learn_when_train=True,
         finetune_student=True,
         apply_autoencoder=False,
-        apply_sharing_alignment=True,
+        apply_sharing_alignment=False,
         cls_aware_attention=False,
         train_teacher=False,
         apply_iou_similarity=False,
