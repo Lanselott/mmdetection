@@ -97,6 +97,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  head_attention_factor=1,
                  pyramid_decoupling=False,
                  dynamic_weight=False,
+                 downgrade_bg=False,
                  head_wise_attention=False,
                  align_to_teacher_logits=False,
                  block_teacher_attention=False,
@@ -198,6 +199,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.pyramid_factor = pyramid_factor
         self.head_attention_factor = head_attention_factor
         self.dynamic_weight = dynamic_weight
+        self.downgrade_bg = downgrade_bg
         self.head_wise_attention = head_wise_attention
         self.apply_head_wise_alignment = apply_head_wise_alignment
         self.head_align_levels = head_align_levels
@@ -1090,7 +1092,10 @@ class FCOSTSFullMaskHead(nn.Module):
                             # v1 of pyramid lambda
                             # pyramid_lambda = 1 / \
                             #     (1 + 0.33 * self.train_step // 7330)
-                            pyramid_lambda = 1
+                            if self.downgrade_bg:
+                                pyramid_lambda = 1
+                            else:
+                                pyramid_lambda = attention_lambda
 
                         else:
                             attention_lambda = 1  # + 1 * self.train_step // 7330
