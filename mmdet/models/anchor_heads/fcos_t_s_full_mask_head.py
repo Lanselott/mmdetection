@@ -1717,7 +1717,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         # TODO: currently not use
                         assert True
                     # self.temperature = (1 - t_s_pred_ious.mean()) * 10
-                    self.adap_distill_loss_weight = 0.5 * t_s_pred_ious.mean()
+                    self.adap_distill_loss_weight = (1.0 / 12.0) * (self.train_step // 7330)
                     s_tempered_cls_scores = s_flatten_cls_scores / self.temperature
                     s_gt_labels = (t_flatten_cls_scores.detach() /
                                    self.temperature).sigmoid()

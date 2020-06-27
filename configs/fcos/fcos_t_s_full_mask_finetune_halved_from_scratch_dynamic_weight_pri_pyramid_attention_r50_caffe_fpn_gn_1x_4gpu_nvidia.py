@@ -58,6 +58,7 @@ model = dict(
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         apply_pri_pyramid_wise_alignment=PRI_PYRAMID_ALIGN,
         pyramid_wise_attention=True,
+        downgrade_bg=False,
         pyramid_factor=1,
         apply_head_wise_alignment=HEAD_ALIGN,
         freeze_teacher=FREEZE_TEACHER,

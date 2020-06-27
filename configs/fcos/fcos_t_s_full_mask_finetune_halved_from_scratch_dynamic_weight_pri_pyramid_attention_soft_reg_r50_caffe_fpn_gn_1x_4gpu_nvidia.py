@@ -52,6 +52,7 @@ model = dict(
         apply_soft_cls_distill=False,
         apply_feature_alignment=False,  # regression
         dynamic_weight=True,
+        downgrade_bg=False,
         temperature=1,
         align_level=0,
         apply_block_wise_alignment=BLOCK_ALIGN,
