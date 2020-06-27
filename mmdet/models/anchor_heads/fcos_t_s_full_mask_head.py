@@ -1681,14 +1681,15 @@ class FCOSTSFullMaskHead(nn.Module):
                 #             and self.inner_opt == True):
                 if True:
                     if self.apply_soft_regression_distill:
+
                         t_gt_pos_centerness = bbox_overlaps(
                             t_pred_bboxes, t_gt_bboxes,
                             is_aligned=True).detach()
                         # t_cls_factor = t_flatten_cls_scores.sigmoid().max(1)[0]
-
+                        
                         s_soft_loss_bbox = self.loss_bbox(
                             s_pred_bboxes,
-                            t_pred_bboxes,
+                            t_pred_bboxes.detach(),
                             weight=t_gt_pos_centerness)
 
                         loss_dict.update(
