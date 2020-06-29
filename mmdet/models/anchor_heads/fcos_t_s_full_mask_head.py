@@ -1161,15 +1161,15 @@ class FCOSTSFullMaskHead(nn.Module):
                     else:
                         if self.dynamic_weight:
                             # attention_lambda = 0.5 + 0.5 * self.train_step // 7330   # v1
-                            attention_lambda = 1 + 2 * self.train_step // 7330  # v2
+                            if self.apply_sharing_auxiliary_fpn:
+                                attention_lambda = 1 + 0.5 * self.train_step // 7330  # v2
+                            else:
+                                attention_lambda = 1 + 2 * self.train_step // 7330  # v2
                             # v3, sigmoid type
                             # attention_lambda = 1 + 1.5 * self.train_step // 7330
                             # attention_lambda = 0 + 2 * self.train_step // (
                             #     7330 * 2)
 
-                            # v1 of pyramid lambda
-                            # pyramid_lambda = 1 / \
-                            #     (1 + 0.33 * self.train_step // 7330)
                             if self.downgrade_bg:
                                 pyramid_lambda = 1
                             else:
@@ -1178,7 +1178,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         else:
                             attention_lambda = 1  # + 1 * self.train_step // 7330
                             pyramid_lambda = 1
-                            
+
                         cls_lambda = 2
 
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
