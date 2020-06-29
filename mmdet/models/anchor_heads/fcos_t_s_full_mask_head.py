@@ -84,6 +84,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_discriminator=False,
                  siamese_distill=False,
                  use_intermediate_learner=False,
+                 apply_sharing_auxiliary_fpn=False,
                  switch_to_inter_learner=False,
                  pyramid_full_attention=False,
                  corr_out_channels=32,
@@ -233,6 +234,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.learn_from_missing_annotation = learn_from_missing_annotation
         self.learn_from_teacher_backbone = learn_from_teacher_backbone
         self.use_intermediate_learner = use_intermediate_learner
+        self.apply_sharing_auxiliary_fpn = apply_sharing_auxiliary_fpn
         self.switch_to_inter_learner = switch_to_inter_learner
         self.fix_student_train_teacher = fix_student_train_teacher
         self.train_student_only = train_student_only
@@ -268,7 +270,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self._init_teacher_layers()
         self._init_student_layers()
 
-        if self.use_intermediate_learner:
+        if self.use_intermediate_learner or self.apply_sharing_auxiliary_fpn:
             self._init_intermediate_layers()
 
         if self.siamese_distill:
@@ -442,7 +444,7 @@ class FCOSTSFullMaskHead(nn.Module):
             self.s_t_pyramid_align = nn.ModuleList()
 
         if self.apply_pyramid_wise_alignment or self.pyramid_correlation:
-            if self.use_intermediate_learner:
+            if self.use_intermediate_learner or self.apply_sharing_auxiliary_fpn:
                 # NOTE:
                 #       t <------ s
                 #       t -> i <- s
@@ -452,11 +454,23 @@ class FCOSTSFullMaskHead(nn.Module):
                         self.intermediate_channel,
                         3,
                         padding=1))
+
                 # align back to teacher
                 self.s_i_pyramid_align.append(
                     nn.Conv2d(
                         self.s_feat_channels,
                         self.intermediate_channel,
+                        3,
+                        padding=1))
+
+                if self.apply_sharing_auxiliary_fpn:
+                    # NOTE: sharing the auxiliary fpn and student fpn,
+                    # we need to align the output of auxiliary fpn to the student fpn
+                    # e.g. 192 channels -> 128 channels
+                    self.auxiliary_align_conv = nn.ModuleList()
+                    self.auxiliary_align_conv.append(nn.Conv2d(
+                        self.intermediate_channel,
+                        self.s_feat_channels,
                         3,
                         padding=1))
 
@@ -529,11 +543,12 @@ class FCOSTSFullMaskHead(nn.Module):
                             self.feat_channels - channel_delta * (i + 1),
                             3,
                             padding=1))
-
+            '''
             if not self.naive_conv:
                 self.t_s_pyramid_align.append(
                     nn.Conv2d(
                         self.feat_channels, self.feat_channels, 3, padding=1))
+            '''
 
         if self.apply_pri_pyramid_wise_alignment:
             for level in range(1, 4):
@@ -588,7 +603,7 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_reg, std=0.01)
         normal_init(self.fcos_centerness, std=0.01)
 
-        if self.use_intermediate_learner:
+        if self.use_intermediate_learner and not self.apply_sharing_auxiliary_fpn:
             for m in self.i_cls_convs:
                 normal_init(m.conv, std=0.01)
             for m in self.i_reg_convs:
@@ -609,13 +624,20 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_centerness, std=0.01)
 
         if self.apply_pyramid_wise_alignment or self.pyramid_correlation:
+            
+            for m in self.t_s_pyramid_align:
+                normal_init(m.conv, std=0.01)
+            
             if self.use_intermediate_learner:
                 for align_conv in self.t_i_pyramid_align:
                     normal_init(align_conv, std=0.01)
+                
                 for align_conv in self.s_i_pyramid_align:
                     normal_init(align_conv, std=0.01)
-                for align_conv in self.t_s_pyramid_align:
-                    normal_init(align_conv, std=0.01)
+
+                if self.apply_sharing_auxiliary_fpn:
+                    for align_conv in self.auxiliary_align_conv:
+                        normal_init(align_conv, std=0.01)
 
                 if self.apply_sharing_alignment:
                     for align_conv in self.sharing_alignment_convs:
@@ -726,9 +748,14 @@ class FCOSTSFullMaskHead(nn.Module):
                                self.s_scales, placeholder, placeholder,
                                placeholder, t_decreased_feats)
         elif self.use_intermediate_learner:
-            return multi_apply(self.forward_single, t_feats, s_feats,
-                               t_pri_feats, s_pri_feats, self.scales,
-                               self.s_scales, self.i_scales)
+            if self.apply_sharing_auxiliary_fpn:
+                return multi_apply(self.forward_single, t_feats, s_feats,
+                                t_pri_feats, s_pri_feats, self.scales,
+                                self.s_scales, self.s_scales)
+            else:
+                return multi_apply(self.forward_single, t_feats, s_feats,
+                                t_pri_feats, s_pri_feats, self.scales,
+                                self.s_scales, self.i_scales)
         else:
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
@@ -789,9 +816,19 @@ class FCOSTSFullMaskHead(nn.Module):
                 #     t_i_x)  # update to teacher backbone
             for s_i_pyramid_align_conv in self.s_i_pyramid_align:
                 s_i_x = s_i_pyramid_align_conv(s_i_x)
-
+            
+            if self.apply_sharing_auxiliary_fpn:
+                # TODO: from teacher or student? or BOTH?
+                i_uax_x = t_i_x 
+                for aux_align_conv in self.auxiliary_align_conv:
+                    i_uax_x = aux_align_conv(i_uax_x)
+                
+                aux_cls_feat = i_uax_x
+                aux_reg_feat = i_uax_x
+                    
             pyramid_hint_quads.append(s_i_x)
             pyramid_hint_quads.append(t_i_x)
+            pyramid_hint_quads.append(i_uax_x) # NOTE: have not used yet
 
             if self.eval_student and self.switch_to_inter_learner:
                 # eval from student backbone
@@ -802,20 +839,34 @@ class FCOSTSFullMaskHead(nn.Module):
                 i_cls_feat = t_i_x
                 i_reg_feat = t_i_x
 
-            # intermediate head
-            for i in range(len(self.i_cls_convs)):
-                # NOTE: Remove the intermediate heads now,
-                # upsample back to the teacher heads and
-                # use teacher head for training
-                i_cls_layer = self.i_cls_convs[i]
-                i_reg_layer = self.i_reg_convs[i]
+            if self.apply_sharing_auxiliary_fpn:
+                # learn from student head
+                for i in range(len(self.s_cls_convs)):
+                    aux_cls_layer = self.s_cls_convs[i]
+                    aux_reg_layer = self.s_reg_convs[i]
 
-                i_cls_feat = i_cls_layer(i_cls_feat)
-                i_reg_feat = i_reg_layer(i_reg_feat)
+                    aux_cls_feat = aux_cls_layer(aux_cls_feat)
+                    aux_reg_feat = aux_reg_layer(aux_reg_feat)
 
-            i_cls_score = self.i_fcos_cls(i_cls_feat)
-            i_centerness = self.i_fcos_centerness(i_cls_feat)
-            i_bbox_pred = i_scale(self.i_fcos_reg(i_reg_feat)).float().exp()
+                aux_cls_score = self.fcos_s_cls(aux_cls_feat)
+                aux_centerness = self.fcos_s_centerness(aux_cls_feat)
+                aux_bbox_pred = s_scale(self.fcos_s_reg(aux_reg_feat)).float().exp()
+
+            else:
+                # intermediate head
+                for i in range(len(self.i_cls_convs)):
+                    # NOTE: Remove the intermediate heads now,
+                    # upsample back to the teacher heads and
+                    # use teacher head for training
+                    i_cls_layer = self.i_cls_convs[i]
+                    i_reg_layer = self.i_reg_convs[i]
+
+                    i_cls_feat = i_cls_layer(i_cls_feat)
+                    i_reg_feat = i_reg_layer(i_reg_feat)
+
+                i_cls_score = self.i_fcos_cls(i_cls_feat)
+                i_centerness = self.i_fcos_centerness(i_cls_feat)
+                i_bbox_pred = i_scale(self.i_fcos_reg(i_reg_feat)).float().exp()
 
         if self.copy_teacher_fpn:
             t_fpn_cls_feat = t_fpn_feat
@@ -899,7 +950,10 @@ class FCOSTSFullMaskHead(nn.Module):
                 elif self.learn_from_teacher_backbone:
                     return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, t_decreased_cls_score, t_decreased_bbox_pred, t_decreased_centerness, t_decreased_pyramid_hint_features, None, None, None, None
                 elif self.use_intermediate_learner:
-                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, i_cls_score, i_bbox_pred, i_centerness, pyramid_hint_quads
+                    if self.apply_sharing_auxiliary_fpn:
+                        return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, aux_cls_score, aux_bbox_pred, aux_centerness, pyramid_hint_quads
+                    else:
+                        return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, i_cls_score, i_bbox_pred, i_centerness, pyramid_hint_quads
                 else:
                     return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, None, None, None, None
             elif self.apply_head_wise_alignment or self.siamese_distill and not self.apply_pyramid_wise_alignment:
@@ -1022,7 +1076,8 @@ class FCOSTSFullMaskHead(nn.Module):
                 't_fpn_loss_centerness': t_fpn_loss_centerness
             })
 
-        if self.use_intermediate_learner:
+        if self.use_intermediate_learner or self.apply_sharing_auxiliary_fpn:
+            # TODO: we might need to rename intermediate and auxiliary parameter name
             i_loss_cls, i_loss_bbox, i_loss_centerness, cls_avg_factor, i_flatten_cls_scores, _, i_iou_maps, _, _, i_pred_bboxes, i_gt_bboxes, _, _, i_pred_centerness, i_all_pred_bboxes, _, _ = self.loss_single(
                 i_cls_scores,
                 i_bbox_preds,
@@ -1033,12 +1088,19 @@ class FCOSTSFullMaskHead(nn.Module):
                 cfg,
                 gt_bboxes_ignore=None,
                 spatial_ratio=self.spatial_ratio)
-
-            loss_dict.update({
-                'i_loss_cls': i_loss_cls,
-                'i_loss_bbox': i_loss_bbox,
-                'i_loss_centerness': i_loss_centerness
-            })
+            
+            if self.apply_sharing_auxiliary_fpn:
+                loss_dict.update({
+                    'aux_loss_cls': i_loss_cls,
+                    'aux_loss_bbox': i_loss_bbox,
+                    'aux_loss_centerness': i_loss_centerness
+                })
+            else:
+                loss_dict.update({
+                    'i_loss_cls': i_loss_cls,
+                    'i_loss_bbox': i_loss_bbox,
+                    'i_loss_centerness': i_loss_centerness
+                })
 
         assert self.fix_student_train_teacher != self.learn_when_train
 
@@ -1203,6 +1265,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                     pyramid_hint_quads):
                                 s_i_pyramid_feature = pyramid_hint_quad[2]
                                 t_i_pyramid_feature = pyramid_hint_quad[3]
+
                                 # TODO: Rename intermediate features
                                 t_i_pyramid_feature_list.append(
                                     t_i_pyramid_feature.permute(
@@ -1348,7 +1411,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         loss_dict.update(
                             {'t_pyramid_hint_loss': t_pyramid_hint_loss})
                         if self.use_intermediate_learner:
-                            inter_pyramid_hint_loss = self.pyramid_hint_loss(
+                            inter_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                 s_i_pyramid_feature_list,
                                 t_i_pyramid_feature_list.detach())
                             loss_dict.update({
@@ -1694,7 +1757,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             t_pred_bboxes, t_gt_bboxes,
                             is_aligned=True).detach()
                         # t_cls_factor = t_flatten_cls_scores.sigmoid().max(1)[0]
-                        
+
                         s_soft_loss_bbox = self.loss_bbox(
                             s_pred_bboxes,
                             t_pred_bboxes.detach(),
@@ -1717,7 +1780,8 @@ class FCOSTSFullMaskHead(nn.Module):
                         # TODO: currently not use
                         assert True
                     # self.temperature = (1 - t_s_pred_ious.mean()) * 10
-                    self.adap_distill_loss_weight = (1.0 / 12.0) * (self.train_step // 7330)
+                    self.adap_distill_loss_weight = (
+                        1.0 / 12.0) * (self.train_step // 7330)
                     s_tempered_cls_scores = s_flatten_cls_scores / self.temperature
                     s_gt_labels = (t_flatten_cls_scores.detach() /
                                    self.temperature).sigmoid()
