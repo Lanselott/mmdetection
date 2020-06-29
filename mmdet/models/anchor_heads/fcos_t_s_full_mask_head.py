@@ -1177,6 +1177,8 @@ class FCOSTSFullMaskHead(nn.Module):
 
                         else:
                             attention_lambda = 1  # + 1 * self.train_step // 7330
+                            pyramid_lambda = 1
+                            
                         cls_lambda = 2
 
                     t_pred_cls = t_flatten_cls_scores.max(1)[1]
