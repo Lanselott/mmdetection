@@ -57,6 +57,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_iou_similarity=False,
                  apply_posprocessing_similarity=False,
                  apply_soft_regression_distill=False,
+                 apply_selective_regression_distill=False,
                  apply_soft_cls_distill=False,
                  apply_soft_centerness_distill=False,
                  temperature=1,
@@ -227,6 +228,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.sorting_match = sorting_match
         self.apply_posprocessing_similarity = apply_posprocessing_similarity
         self.apply_soft_regression_distill = apply_soft_regression_distill
+        self.apply_selective_regression_distill =apply_selective_regression_distill
         self.apply_soft_cls_distill = apply_soft_cls_distill
         self.apply_soft_centerness_distill = apply_soft_centerness_distill
         self.temperature = temperature
@@ -1772,16 +1774,30 @@ class FCOSTSFullMaskHead(nn.Module):
                 if True:
                     if self.apply_soft_regression_distill:
                         soft_bbox_weight = 2
-
+                        
                         t_gt_pos_centerness = bbox_overlaps(
                             t_pred_bboxes, t_gt_bboxes,
                             is_aligned=True).detach()
-                        # t_cls_factor = t_flatten_cls_scores.sigmoid().max(1)[0]
+                        s_gt_pos_centerness = bbox_overlaps(
+                            s_pred_bboxes, t_gt_bboxes,
+                            is_aligned=True).detach()
 
-                        s_soft_loss_bbox = soft_bbox_weight * self.loss_bbox(
-                            s_pred_bboxes,
-                            t_pred_bboxes.detach(),
-                            weight=t_gt_pos_centerness)
+                        if self.apply_selective_regression_distill:
+                            s_soft_loss_bbox = soft_bbox_weight * self.loss_bbox(
+                                s_pred_bboxes,
+                                t_pred_bboxes.detach(),
+                                weight=t_gt_pos_centerness)
+                            
+                            s_loss_bbox = self.loss_bbox(
+                                s_pred_bboxes,
+                                t_gt_bboxes,
+                                weight=s_gt_pos_centerness)
+                        else:
+                            # t_cls_factor = t_flatten_cls_scores.sigmoid().max(1)[0]
+                            s_soft_loss_bbox = soft_bbox_weight * self.loss_bbox(
+                                s_pred_bboxes,
+                                t_pred_bboxes.detach(),
+                                weight=t_gt_pos_centerness)
 
                         loss_dict.update(
                             s_soft_loss_bbox=s_soft_loss_bbox,
