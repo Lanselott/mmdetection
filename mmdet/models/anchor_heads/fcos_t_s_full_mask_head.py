@@ -508,6 +508,13 @@ class FCOSTSFullMaskHead(nn.Module):
                             conv_cfg=self.conv_cfg,
                             norm_cfg=self.s_norm_cfg,
                             bias=self.s_norm_cfg is None))
+                    # non relu block
+                    self.t_s_pyramid_align.append(
+                        nn.Conv2d(
+                            self.feat_channels,
+                            self.feat_channels,
+                            3,
+                            padding=1))
 
                 if self.apply_autoencoder:
                     # NOTE: A single autoencoder,
@@ -624,18 +631,21 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_centerness, std=0.01)
 
         if self.apply_pyramid_wise_alignment or self.pyramid_correlation:
-            
+
             if self.naive_conv:
                 for m in self.t_s_pyramid_align:
                     normal_init(m, std=0.01)
             else:
                 for m in self.t_s_pyramid_align:
-                    normal_init(m.conv, std=0.01)
-            
+                    if hasattr(m, 'conv'):
+                        normal_init(m.conv, std=0.01)
+                    else:
+                        normal_init(m, std=0.01)
+
             if self.use_intermediate_learner:
                 for align_conv in self.t_i_pyramid_align:
                     normal_init(align_conv, std=0.01)
-                
+
                 for align_conv in self.s_i_pyramid_align:
                     normal_init(align_conv, std=0.01)
 
@@ -754,12 +764,12 @@ class FCOSTSFullMaskHead(nn.Module):
         elif self.use_intermediate_learner:
             if self.apply_sharing_auxiliary_fpn:
                 return multi_apply(self.forward_single, t_feats, s_feats,
-                                t_pri_feats, s_pri_feats, self.scales,
-                                self.s_scales, self.s_scales)
+                                   t_pri_feats, s_pri_feats, self.scales,
+                                   self.s_scales, self.s_scales)
             else:
                 return multi_apply(self.forward_single, t_feats, s_feats,
-                                t_pri_feats, s_pri_feats, self.scales,
-                                self.s_scales, self.i_scales)
+                                   t_pri_feats, s_pri_feats, self.scales,
+                                   self.s_scales, self.i_scales)
         else:
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
@@ -820,19 +830,19 @@ class FCOSTSFullMaskHead(nn.Module):
                 #     t_i_x)  # update to teacher backbone
             for s_i_pyramid_align_conv in self.s_i_pyramid_align:
                 s_i_x = s_i_pyramid_align_conv(s_i_x)
-            
+
             if self.apply_sharing_auxiliary_fpn:
                 # TODO: from teacher or student? or BOTH?
-                i_uax_x = t_i_x #+ s_i_x
+                i_uax_x = t_i_x  # + s_i_x
                 for aux_align_conv in self.auxiliary_align_conv:
                     i_uax_x = aux_align_conv(i_uax_x)
-                
+
                 aux_cls_feat = i_uax_x
                 aux_reg_feat = i_uax_x
-                    
+
             pyramid_hint_quads.append(s_i_x)
             pyramid_hint_quads.append(t_i_x)
-            pyramid_hint_quads.append(i_uax_x) # NOTE: have not used yet
+            pyramid_hint_quads.append(i_uax_x)  # NOTE: have not used yet
 
             if self.eval_student and self.switch_to_inter_learner:
                 # eval from student backbone
@@ -854,7 +864,8 @@ class FCOSTSFullMaskHead(nn.Module):
 
                 aux_cls_score = self.fcos_s_cls(aux_cls_feat)
                 aux_centerness = self.fcos_s_centerness(aux_cls_feat)
-                aux_bbox_pred = s_scale(self.fcos_s_reg(aux_reg_feat)).float().exp()
+                aux_bbox_pred = s_scale(
+                    self.fcos_s_reg(aux_reg_feat)).float().exp()
 
             else:
                 # intermediate head
@@ -870,7 +881,8 @@ class FCOSTSFullMaskHead(nn.Module):
 
                 i_cls_score = self.i_fcos_cls(i_cls_feat)
                 i_centerness = self.i_fcos_centerness(i_cls_feat)
-                i_bbox_pred = i_scale(self.i_fcos_reg(i_reg_feat)).float().exp()
+                i_bbox_pred = i_scale(
+                    self.i_fcos_reg(i_reg_feat)).float().exp()
 
         if self.copy_teacher_fpn:
             t_fpn_cls_feat = t_fpn_feat
@@ -1092,7 +1104,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 cfg,
                 gt_bboxes_ignore=None,
                 spatial_ratio=self.spatial_ratio)
-            
+
             if self.apply_sharing_auxiliary_fpn:
                 loss_dict.update({
                     'aux_loss_cls': i_loss_cls,
