@@ -284,9 +284,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     'params': self.t_s_pyramid_align.parameters()
                 },
             ],
-                lr=1e-2,
-                momentum=0.9,
-                weight_decay=0.0001)
+                                             lr=1e-2,
+                                             momentum=0.9,
+                                             weight_decay=0.0001)
 
     def _init_siamese(self):
         self.t_s_siamese_align = nn.ModuleList()
@@ -468,11 +468,12 @@ class FCOSTSFullMaskHead(nn.Module):
                     # NOTE: sharing the auxiliary fpn and student fpn,
                     # we need to align the output of auxiliary fpn to the student fpn
                     # e.g. 192 channels -> 128 channels
-                    self.auxiliary_align_conv.append(nn.Conv2d(
-                        self.intermediate_channel,
-                        self.s_feat_channels,
-                        3,
-                        padding=1))
+                    self.auxiliary_align_conv.append(
+                        nn.Conv2d(
+                            self.intermediate_channel,
+                            self.s_feat_channels,
+                            3,
+                            padding=1))
 
             for i in range(self.multi_levels):
                 channel_delta = (self.feat_channels -
@@ -1770,13 +1771,14 @@ class FCOSTSFullMaskHead(nn.Module):
                 #             and self.inner_opt == True):
                 if True:
                     if self.apply_soft_regression_distill:
+                        soft_bbox_weight = 2
 
                         t_gt_pos_centerness = bbox_overlaps(
                             t_pred_bboxes, t_gt_bboxes,
                             is_aligned=True).detach()
                         # t_cls_factor = t_flatten_cls_scores.sigmoid().max(1)[0]
 
-                        s_soft_loss_bbox = self.loss_bbox(
+                        s_soft_loss_bbox = soft_bbox_weight * self.loss_bbox(
                             s_pred_bboxes,
                             t_pred_bboxes.detach(),
                             weight=t_gt_pos_centerness)
@@ -1798,8 +1800,8 @@ class FCOSTSFullMaskHead(nn.Module):
                         # TODO: currently not use
                         assert True
                     # self.temperature = (1 - t_s_pred_ious.mean()) * 10
-                    self.adap_distill_loss_weight = (
-                        1.0 / 12.0) * (self.train_step // 7330)
+                    self.adap_distill_loss_weight = (1.0 / 12.0) * (
+                        self.train_step // 7330)
                     s_tempered_cls_scores = s_flatten_cls_scores / self.temperature
                     s_gt_labels = (t_flatten_cls_scores.detach() /
                                    self.temperature).sigmoid()
@@ -1952,7 +1954,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                    0).float()
+                                 0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
