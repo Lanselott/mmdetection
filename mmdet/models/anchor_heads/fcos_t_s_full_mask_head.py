@@ -464,10 +464,10 @@ class FCOSTSFullMaskHead(nn.Module):
                         padding=1))
 
                 if self.apply_sharing_auxiliary_fpn:
+                    self.auxiliary_align_conv = nn.ModuleList()
                     # NOTE: sharing the auxiliary fpn and student fpn,
                     # we need to align the output of auxiliary fpn to the student fpn
                     # e.g. 192 channels -> 128 channels
-                    self.auxiliary_align_conv = nn.ModuleList()
                     self.auxiliary_align_conv.append(nn.Conv2d(
                         self.intermediate_channel,
                         self.s_feat_channels,
@@ -823,7 +823,7 @@ class FCOSTSFullMaskHead(nn.Module):
             
             if self.apply_sharing_auxiliary_fpn:
                 # TODO: from teacher or student? or BOTH?
-                i_uax_x = t_i_x 
+                i_uax_x = t_i_x #+ s_i_x
                 for aux_align_conv in self.auxiliary_align_conv:
                     i_uax_x = aux_align_conv(i_uax_x)
                 
