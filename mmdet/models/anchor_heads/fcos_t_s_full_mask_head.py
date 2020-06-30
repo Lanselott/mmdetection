@@ -847,7 +847,9 @@ class FCOSTSFullMaskHead(nn.Module):
 
             pyramid_hint_quads.append(s_i_x)
             pyramid_hint_quads.append(t_i_x)
-            pyramid_hint_quads.append(i_uax_x)  # NOTE: have not used yet
+            
+            if self.apply_sharing_auxiliary_fpn:
+                pyramid_hint_quads.append(i_uax_x)  # NOTE: have not used yet
 
             if self.eval_student and self.switch_to_inter_learner:
                 # eval from student backbone
