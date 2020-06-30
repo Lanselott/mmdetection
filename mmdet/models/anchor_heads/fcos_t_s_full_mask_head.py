@@ -1779,7 +1779,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 #             and self.inner_opt == True):
                 if True:
                     if self.apply_soft_regression_distill:
-                        soft_bbox_weight = 2
+                        soft_bbox_weight = 3
 
                         t_gt_pos_centerness = bbox_overlaps(
                             t_pred_bboxes, t_gt_bboxes,
