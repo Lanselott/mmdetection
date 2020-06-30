@@ -56,6 +56,7 @@ model = dict(
         apply_feature_alignment=False,  # regression
         apply_sharing_alignment=False,
         dynamic_weight=True,
+        hetero=True,
         temperature=1,
         align_level=0,
         apply_block_wise_alignment=BLOCK_ALIGN,
