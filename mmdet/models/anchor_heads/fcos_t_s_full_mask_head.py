@@ -229,7 +229,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.sorting_match = sorting_match
         self.apply_posprocessing_similarity = apply_posprocessing_similarity
         self.apply_soft_regression_distill = apply_soft_regression_distill
-        self.apply_selective_regression_distill =apply_selective_regression_distill
+        self.apply_selective_regression_distill = apply_selective_regression_distill
         self.apply_soft_cls_distill = apply_soft_cls_distill
         self.apply_soft_centerness_distill = apply_soft_centerness_distill
         self.temperature = temperature
@@ -288,9 +288,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     'params': self.t_s_pyramid_align.parameters()
                 },
             ],
-                                             lr=1e-2,
-                                             momentum=0.9,
-                                             weight_decay=0.0001)
+                lr=1e-2,
+                momentum=0.9,
+                weight_decay=0.0001)
 
     def _init_siamese(self):
         self.t_s_siamese_align = nn.ModuleList()
@@ -1172,7 +1172,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                 attention_lambda = 1 + self.train_step // 7330  # v2
                             else:
                                 attention_lambda = 1 + 2 * self.train_step // 7330  # v2
-                            
+
                             # v3, sigmoid type
                             # attention_lambda = 1 + 1.5 * self.train_step // 7330
                             # attention_lambda = 0 + 2 * self.train_step // (
@@ -1779,7 +1779,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 if True:
                     if self.apply_soft_regression_distill:
                         soft_bbox_weight = 2
-                        
+
                         t_gt_pos_centerness = bbox_overlaps(
                             t_pred_bboxes, t_gt_bboxes,
                             is_aligned=True).detach()
@@ -1788,15 +1788,27 @@ class FCOSTSFullMaskHead(nn.Module):
                             is_aligned=True).detach()
 
                         if self.apply_selective_regression_distill:
-                            s_soft_loss_bbox = self.loss_bbox(
-                                s_pred_bboxes,
-                                t_pred_bboxes.detach(),
-                                weight=t_gt_pos_centerness)
+                            t_gt_pos_centerness = torch.where(
+                                t_gt_pos_centerness > s_gt_pos_centerness, t_gt_pos_centerness, torch.zeros_like(t_gt_pos_centerness))
+                            s_gt_pos_centerness = torch.where(
+                                s_gt_pos_centerness > t_gt_pos_centerness, s_gt_pos_centerness, torch.zeros_like(s_gt_pos_centerness))
                             
-                            s_loss_bbox = self.loss_bbox(
-                                s_pred_bboxes,
-                                t_gt_bboxes,
-                                weight=s_gt_pos_centerness)
+                            if t_gt_pos_centerness.sum() > 0:
+                                s_soft_loss_bbox = self.loss_bbox(
+                                    s_pred_bboxes,
+                                    t_pred_bboxes.detach(),
+                                    weight=t_gt_pos_centerness)
+                            else:
+                                s_soft_loss_bbox = t_gt_pos_centerness.sum()
+
+                            if s_gt_pos_centerness.sum() > 0:
+                                s_loss_bbox = self.loss_bbox(
+                                    s_pred_bboxes,
+                                    t_gt_bboxes,
+                                    weight=s_gt_pos_centerness)
+                            else:
+                                s_soft_loss_bbox = s_gt_pos_centerness.sum()
+
                         else:
                             # t_cls_factor = t_flatten_cls_scores.sigmoid().max(1)[0]
                             s_soft_loss_bbox = soft_bbox_weight * self.loss_bbox(
@@ -1975,7 +1987,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                                 0).float()
+                    0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
