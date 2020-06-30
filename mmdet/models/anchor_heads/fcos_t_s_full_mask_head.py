@@ -1167,11 +1167,11 @@ class FCOSTSFullMaskHead(nn.Module):
                         if self.dynamic_weight:
                             # attention_lambda = 0.5 + 0.5 * self.train_step // 7330   # v1
                             if self.apply_sharing_auxiliary_fpn:
-                                attention_lambda = 1 + 0.5 * self.train_step // 7330  # v2
+                                attention_lambda = 1 + 0.5 * (self.train_step // 7330)  # v2
                             elif self.hetero:
-                                attention_lambda = 1 + self.train_step // 7330  # v2
+                                attention_lambda = 1 + (self.train_step // 7330)  # v2
                             else:
-                                attention_lambda = 1 + 2 * self.train_step // 7330  # v2
+                                attention_lambda = 1 + 2 * (self.train_step // 7330)  # v2
 
                             # v3, sigmoid type
                             # attention_lambda = 1 + 1.5 * self.train_step // 7330
