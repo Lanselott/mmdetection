@@ -1168,7 +1168,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             # attention_lambda = 0.5 + 0.5 * self.train_step // 7330   # v1
                             if self.apply_sharing_auxiliary_fpn:
                                 # intermediate learner
-                                attention_lambda = 1 + 0.5 * (self.train_step // 7330)  # v2
+                                attention_lambda = 1 + 1 * (self.train_step // 7330)  # v2
                             elif self.hetero:
                                 attention_lambda = 1 + (self.train_step // 7330)  # v2
                             else:
