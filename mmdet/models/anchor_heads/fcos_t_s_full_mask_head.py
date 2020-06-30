@@ -1167,6 +1167,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         if self.dynamic_weight:
                             # attention_lambda = 0.5 + 0.5 * self.train_step // 7330   # v1
                             if self.apply_sharing_auxiliary_fpn:
+                                # intermediate learner
                                 attention_lambda = 1 + 0.5 * (self.train_step // 7330)  # v2
                             elif self.hetero:
                                 attention_lambda = 1 + (self.train_step // 7330)  # v2
@@ -1797,7 +1798,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                 s_soft_loss_bbox = self.loss_bbox(
                                     s_pred_bboxes,
                                     t_pred_bboxes.detach(),
-                                    weight=t_gt_pos_centerness)
+                                    weight=t_gt_pos_centerness,
+                                    avg_factor=t_gt_pos_centerness.sum())
                             else:
                                 s_soft_loss_bbox = t_gt_pos_centerness.sum()
 
@@ -1805,7 +1807,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                 s_loss_bbox = self.loss_bbox(
                                     s_pred_bboxes,
                                     t_gt_bboxes,
-                                    weight=s_gt_pos_centerness)
+                                    weight=s_gt_pos_centerness,
+                                    avg_factor=s_gt_pos_centerness.sum())
                             else:
                                 s_soft_loss_bbox = s_gt_pos_centerness.sum()
 
