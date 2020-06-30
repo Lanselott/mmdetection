@@ -1783,7 +1783,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             is_aligned=True).detach()
 
                         if self.apply_selective_regression_distill:
-                            s_soft_loss_bbox = soft_bbox_weight * self.loss_bbox(
+                            s_soft_loss_bbox = self.loss_bbox(
                                 s_pred_bboxes,
                                 t_pred_bboxes.detach(),
                                 weight=t_gt_pos_centerness)
