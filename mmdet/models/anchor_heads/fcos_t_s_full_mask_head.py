@@ -512,6 +512,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             padding=1,
                             conv_cfg=self.conv_cfg,
                             norm_cfg=self.s_norm_cfg,
+                            activation='leaky_relu',
                             bias=self.s_norm_cfg is None))
                     # non relu block
                     self.t_s_pyramid_align.append(
@@ -1172,7 +1173,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                 # intermediate learner
                                 attention_lambda = 1 + 1 * (self.train_step // 7330)  # v2
                             elif self.hetero:
-                                attention_lambda = 1 + 1 * (self.train_step // 7330)  # v2
+                                attention_lambda = 1 + 2 * (self.train_step // 7330)  # v2
                             elif self.use_intermediate_learner:
                                 attention_lambda = 1 + 1 * (self.train_step // 7330) 
                             else:
