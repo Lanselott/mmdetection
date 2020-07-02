@@ -847,7 +847,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
             pyramid_hint_quads.append(s_i_x)
             pyramid_hint_quads.append(t_i_x)
-            
+
             if self.apply_sharing_auxiliary_fpn:
                 pyramid_hint_quads.append(i_uax_x)  # NOTE: have not used yet
 
@@ -1781,7 +1781,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 #             and self.inner_opt == True):
                 if True:
                     if self.apply_soft_regression_distill:
-                        soft_bbox_weight = 3
+                        soft_bbox_weight = 2
 
                         t_gt_pos_centerness = bbox_overlaps(
                             t_pred_bboxes, t_gt_bboxes,
