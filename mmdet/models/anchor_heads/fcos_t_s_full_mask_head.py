@@ -1172,7 +1172,9 @@ class FCOSTSFullMaskHead(nn.Module):
                                 # intermediate learner
                                 attention_lambda = 1 + 1 * (self.train_step // 7330)  # v2
                             elif self.hetero:
-                                attention_lambda = 1 + (self.train_step // 7330)  # v2
+                                attention_lambda = 1 + 1 * (self.train_step // 7330)  # v2
+                            elif self.use_intermediate_learner:
+                                attention_lambda = 1 + 1 * (self.train_step // 7330) 
                             else:
                                 attention_lambda = 1 + 2 * (self.train_step // 7330)  # v2
 
