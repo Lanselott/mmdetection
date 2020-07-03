@@ -521,7 +521,7 @@ class DDBV3Head(nn.Module):
                 sort_gradient_mask[pos_gradient_update_mapping[..., 3], 3].
                 reshape(-1, 1)
             ], 1)
-
+            embed()
             pos_decoded_sort_bbox_preds.register_hook(
                 lambda grad: grad * sort_mask)
             pos_decoded_bbox_preds.register_hook(
