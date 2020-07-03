@@ -189,7 +189,7 @@ class DDBV3NPHead(nn.Module):
         for reg_layer in self.reg_convs:
             reg_feat = reg_layer(reg_feat)
 
-        centerness = self.fcos_centerness(cls_feat)
+        centerness = self.fcos_centerness(reg_feat)
 
         if self.box_sampling:
             bbox_pred_bits = self.fcos_reg(reg_feat)
@@ -396,6 +396,7 @@ class DDBV3NPHead(nn.Module):
             else:
                 flatten_labels[pos_inds[reduced_inds]] = 0
             '''
+            # NOTE: for some visualizations
             sc_masks = self.draw_sc_masks(flatten_labels, labels,
                                           featmap_sizes, gt_masks)
             '''
@@ -449,7 +450,7 @@ class DDBV3NPHead(nn.Module):
                      masks_for_all[saved_target_mask]) == 2).nonzero()
                 # global merging
                 _, sorted_inds = torch.sort(
-                    pos_dist_scores[:, obj_mask_inds], dim=1, descending=True)
+                    pos_dist_scores[:, obj_mask_inds], dim=1, descending=False)
 
                 pos_decoded_sort_bbox_preds[
                     obj_mask_inds, 0] = pos_decoded_sort_bbox_preds[
