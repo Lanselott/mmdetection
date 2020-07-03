@@ -385,7 +385,6 @@ class DDBV3NPHead(nn.Module):
                 consistency_mask = (regression_mask + classification_mask) == 2
                 
                 if self.consistency_warmup <= 0:
-                    embed()
                     masks_for_all[obj_mask_inds[consistency_mask]] = 0
                     masks_for_reg[obj_mask_inds[regression_mask]] = 0
                     masks_for_cls[obj_mask_inds[classification_mask]] = 0
