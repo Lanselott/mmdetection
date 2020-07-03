@@ -50,6 +50,7 @@ class DDBV3NPHead(nn.Module):
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
                  loss_sorted_bbox=dict(type='IoULoss', loss_weight=1.0),
                  sorted_warmup=0,
+                 consistency_warmup=0,
                  box_sampling=False,
                  apply_new_box_coding=False,
                  apply_6d_box_coding=False,
@@ -109,6 +110,7 @@ class DDBV3NPHead(nn.Module):
         self.norm_cfg = norm_cfg
         self.hook_debug = hook_debug
         self.sorted_warmup = sorted_warmup
+        self.consistency_warmup = consistency_warmup
         self.giou_centerness = giou_centerness
         self.scaled_centerness = scaled_centerness
         self.conv_scale = conv_scale
@@ -381,9 +383,14 @@ class DDBV3NPHead(nn.Module):
                 classification_mask = pos_scores_obj < classification_reduced_threshold
                 # consistency:
                 consistency_mask = (regression_mask + classification_mask) == 2
-                masks_for_all[obj_mask_inds[consistency_mask]] = 0
-                masks_for_reg[obj_mask_inds[regression_mask]] = 0
-                masks_for_cls[obj_mask_inds[classification_mask]] = 0
+                
+                if self.consistency_warmup <= 0:
+                    embed()
+                    masks_for_all[obj_mask_inds[consistency_mask]] = 0
+                    masks_for_reg[obj_mask_inds[regression_mask]] = 0
+                    masks_for_cls[obj_mask_inds[classification_mask]] = 0
+
+            self.consistency_warmup -= 1
 
             # cls branch
             reduced_inds = (masks_for_all == 0).nonzero()
@@ -422,7 +429,6 @@ class DDBV3NPHead(nn.Module):
             pos_inds = flatten_labels.nonzero().reshape(-1)
             pruned_num_pos = len(pos_inds)
 
-            # NOTE: clone, avoid inplace operations
             pos_decoded_sort_bbox_preds = pos_decoded_bbox_preds.clone()
             '''
             # NOTE: update sorting rules:
