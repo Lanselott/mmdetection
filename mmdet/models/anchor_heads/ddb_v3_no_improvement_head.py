@@ -35,6 +35,7 @@ class DDBV3NPHead(nn.Module):
                  weighted_mask=False,
                  consistency_weight=False,
                  box_weighted=False,
+                 cls_weighted=False,
                  no_scale=False,
                  relu_scale=False,
                  softplus_scale=False,
@@ -90,6 +91,7 @@ class DDBV3NPHead(nn.Module):
         self.weighted_mask = weighted_mask
         self.consistency_weight = consistency_weight
         self.box_weighted = box_weighted
+        self.cls_weighted = cls_weighted
         self.no_scale = no_scale
         self.relu_scale = relu_scale
         self.softplus_scale = softplus_scale
@@ -425,8 +427,7 @@ class DDBV3NPHead(nn.Module):
             #     -1, 4)
             pos_centerness_targets = pos_centerness_targets[
                 saved_target_mask].reshape(-1)
-            pos_inds = flatten_labels.nonzero().reshape(-1)
-            pruned_num_pos = len(pos_inds)
+            pruned_num_pos = len(flatten_labels.nonzero().reshape(-1))
 
             pos_decoded_sort_bbox_preds = pos_decoded_bbox_preds.clone()
             '''
@@ -564,12 +565,18 @@ class DDBV3NPHead(nn.Module):
                     weight=ious_weights,
                     avg_factor=ious_weights.sum())
 
+            
+            cls_weight = torch.ones_like(flatten_labels, dtype=flatten_cls_scores.dtype)
+                
+            if self.cls_weighted:
+                cls_weight[pos_inds[reduced_inds]] = 0
+
             loss_cls = self.loss_cls(
                 flatten_cls_scores,
                 flatten_labels,
+                weight=cls_weight,
                 avg_factor=pruned_num_pos +
                 num_imgs)  # avoid pruned_num_pos is 0
-
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
 
