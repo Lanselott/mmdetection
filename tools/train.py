@@ -10,7 +10,7 @@ from mmdet.apis import (get_root_logger, init_dist, set_random_seed,
                         train_detector)
 from mmdet.datasets import build_dataset
 from mmdet.models import build_detector
-
+from IPython import embed
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
@@ -48,7 +48,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-
+    
     cfg = Config.fromfile(args.config)
     # set cudnn_benchmark
     if cfg.get('cudnn_benchmark', False):
@@ -97,6 +97,7 @@ def main():
             CLASSES=datasets[0].CLASSES)
     # add an attribute for visualization convenience
     model.CLASSES = datasets[0].CLASSES
+
     train_detector(
         model,
         datasets,

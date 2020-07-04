@@ -7,6 +7,7 @@ import pycocotools.mask as maskUtils
 
 from ..registry import PIPELINES
 
+from IPython import embed
 
 @PIPELINES.register_module
 class LoadImageFromFile(object):
@@ -66,6 +67,7 @@ class LoadAnnotations(object):
             return None
 
         gt_bboxes_ignore = ann_info.get('bboxes_ignore', None)
+
         if gt_bboxes_ignore is not None:
             results['gt_bboxes_ignore'] = gt_bboxes_ignore
             results['bbox_fields'].append('gt_bboxes_ignore')

@@ -233,7 +233,7 @@ class DDBV3NPHead(nn.Module):
 
         assert len(cls_scores) == len(bbox_preds) == len(centernesses)
         dist_conf_mask_list = []
-
+        
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         all_level_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                            bbox_preds[0].device)

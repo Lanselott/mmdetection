@@ -82,7 +82,9 @@ def inference_detector(model, img):
     test_pipeline = Compose(test_pipeline)
     # prepare data
     data = dict(img=img)
+    # embed()
     data = test_pipeline(data)
+    
     data = scatter(collate([data], samples_per_gpu=1), [device])[0]
     # forward the model
     with torch.no_grad():

@@ -285,7 +285,6 @@ class DDBV3Head(nn.Module):
                 instance_counter[id] = start_id
         instance_counter = instance_counter.int()
         '''
-
         if num_pos > 0:
             pos_points = flatten_points[pos_inds]
             '''
@@ -521,7 +520,6 @@ class DDBV3Head(nn.Module):
                 sort_gradient_mask[pos_gradient_update_mapping[..., 3], 3].
                 reshape(-1, 1)
             ], 1)
-            embed()
             pos_decoded_sort_bbox_preds.register_hook(
                 lambda grad: grad * sort_mask)
             pos_decoded_bbox_preds.register_hook(
@@ -611,6 +609,7 @@ class DDBV3Head(nn.Module):
         mlvl_bboxes = []
         mlvl_scores = []
         mlvl_centerness = []
+
         for cls_score, bbox_pred, points, centerness, stride in zip(
                 cls_scores, bbox_preds, mlvl_points, centernesses,
                 self.strides):
