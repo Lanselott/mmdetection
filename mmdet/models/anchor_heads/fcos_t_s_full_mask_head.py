@@ -1179,7 +1179,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             else:
                                 # attention_lambda = 1 + 2 * (self.train_step // 7330)  # v2
                                 # attention_lambda = 1.0 / (1.0 - 1.0 / 13.0 * (self.train_step // 7330)) 
-                                attention_lambda = 6.0 / (1.0 + math.exp(-2 * (self.train_step // 7330 - 1))) 
+                                attention_lambda = 8.0 / (1.0 + math.exp(-2 * (self.train_step // 7330 - 1))) 
                                 # v2
 
                             # v3, sigmoid type
