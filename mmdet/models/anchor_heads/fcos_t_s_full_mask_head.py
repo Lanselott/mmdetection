@@ -1175,7 +1175,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             elif self.hetero:
                                 attention_lambda = 1 + 2 * (self.train_step // 7330)  # v2
                             elif self.use_intermediate_learner:
-                                attention_lambda = 1 + 1 * (self.train_step // 7330) 
+                                attention_lambda = 1 # + 1 * (self.train_step // 7330) 
                             else:
                                 # attention_lambda = 1 + 2 * (self.train_step // 7330)  # v2
                                 # attention_lambda = 1.0 / (1.0 - 1.0 / 13.0 * (self.train_step // 7330)) 
@@ -1380,7 +1380,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                     weight=iou_attention_weight)  # ,
                                 # avg_factor=iou_attention_weight.sum())
                                 if self.use_intermediate_learner:
-                                    inter_attention_iou_pyramid_hint_loss = self.pyramid_hint_loss(
+                                    inter_attention_iou_pyramid_hint_loss = attention_lambda * self.pyramid_hint_loss(
                                         s_i_pyramid_feature_list[t_pos_inds],
                                         t_i_pyramid_feature_list[t_pos_inds].
                                         detach(),
@@ -1446,7 +1446,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         loss_dict.update(
                             {'t_pyramid_hint_loss': t_pyramid_hint_loss})
                         if self.use_intermediate_learner:
-                            inter_pyramid_hint_loss = self.pyramid_hint_loss(
+                            inter_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                 s_i_pyramid_feature_list,
                                 t_i_pyramid_feature_list.detach())
                             loss_dict.update({
