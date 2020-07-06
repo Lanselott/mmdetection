@@ -74,7 +74,7 @@ def _get_detector_cfg(fname):
 
 def draw_heatmap():
     config_file = 'fcos/ddb_v3_r50_caffe_fpn_gn_1x_single_test.py'
-    checkpoint_file = './work/dirs/ddb_v3_single/epoch_1.pth'
+    checkpoint_file = './work/dirs/ddb_v3_single/epoch_12.pth'
     model, train_cfg, test_cfg = _get_detector_cfg(config_file)
 
     # build the model from a config file and a checkpoint file
@@ -113,7 +113,7 @@ def draw_heatmap():
             ])
     ]
     data_root = 'data/2017/'
-    ann_file = 'annotations/instances_train2017.json'
+    ann_file = 'annotations/instances_val2017.json'
     img_prefix = 'train2017/'
     img_scale = (1333, 800)
 
@@ -130,10 +130,20 @@ def draw_heatmap():
 
     for j in range(1):
         rand = np.random.randint(10000)
-        # img_infos = coco_dataset.img_infos[rand]
-        # img_id = img_infos['id']
-        # img_file_name = img_infos['file_name']
-        img_file_name = '000000009898.jpg'
+        # 2017 train
+        # img_file_name = '000000009898.jpg'
+        # img_file_name = '000000003209.jpg'
+        # img_file_name = '000000001238.jpg'
+        # img_file_name = '000000003249.jpg'
+        # img_file_name = '000000000382.jpg'
+        # img_file_name = '000000000706.jpg'
+        # img_file_name = '000000003217.jpg'
+        # img_file_name = '000000002445.jpg'
+        # img_file_name = '000000012443.jpg'
+        # 2017 val
+        # img_file_name = '000000085665.jpg' 
+        # img_file_name = '000000084477.jpg' 
+        img_file_name = '000000451090.jpg' 
         # imgs = './data/2017/train2017/' + img_file_name
         imgs = './temp_img/' + img_file_name
         img_id = [i for i, x in enumerate(img_name_list) if x == img_file_name]
@@ -154,16 +164,25 @@ def draw_heatmap():
         input_tensor = data['img'][0]
         gt_bboxes = []
         gt_labels = []
-        
+
         gt_bboxes.append(torch.cuda.FloatTensor(img_annotation_boxes))
         gt_labels.append(torch.cuda.LongTensor(img_annotation_labels))
-
+        '''
+        mmcv.imshow_det_bboxes(
+            mmcv.imread(imgs),
+            img_annotation_boxes,
+            img_annotation_labels,
+            class_names=detector.CLASSES,
+            score_thr=0,
+            show=False,
+            out_file='input_with_gt.png')
+        '''
         losses = detector.forward(
-        input_tensor,
-        img_metas,
-        gt_bboxes=gt_bboxes,
-        gt_labels=gt_labels,
-        return_loss=True)
+            input_tensor,
+            img_metas,
+            gt_bboxes=gt_bboxes,
+            gt_labels=gt_labels,
+            return_loss=True)
 
 
 if __name__ == '__main__':

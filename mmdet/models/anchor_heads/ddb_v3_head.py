@@ -369,7 +369,6 @@ class DDBV3Head(nn.Module):
                 # consistency:
                 consistency_mask = (regression_mask + classification_mask) == 2
                 masks_for_all[obj_mask_inds[consistency_mask]] = 0
-
             # cls branch
             reduced_mask = (masks_for_all == 0).nonzero()
             if self.apply_consistency_on_cls:
@@ -397,6 +396,7 @@ class DDBV3Head(nn.Module):
 
             pos_centerness_targets = pos_centerness_targets[
                 saved_target_mask].reshape(-1)
+
             if self.normalize_centerness:
                 pos_centerness_targets = torch.pow(pos_centerness_targets, 2)
                 pos_centerness_targets = pos_centerness_targets / pos_centerness_targets.max(
@@ -404,6 +404,9 @@ class DDBV3Head(nn.Module):
 
             pos_inds = flatten_labels.nonzero().reshape(-1)
             num_pos = len(pos_inds)
+
+            draw_sc_masks(flatten_cls_scores, pos_decoded_bbox_preds,
+                          pos_decoded_target_preds, pos_inds, featmap_sizes)
 
             # NOTE: clone, avoid inplace operations
             pos_decoded_sort_bbox_preds = pos_decoded_bbox_preds.clone()
@@ -796,3 +799,60 @@ class DDBV3Head(nn.Module):
         bbox_targets = bbox_targets[range(num_points), min_area_inds]
 
         return labels, bbox_targets
+
+
+def draw_sc_masks(flatten_cls_scores, pos_decoded_bbox_preds,
+                  pos_decoded_target_preds, pos_inds, featmap_sizes):
+
+    stand_size = featmap_sizes[0]
+    heatmap = torch.zeros(
+        stand_size,
+        dtype=pos_decoded_bbox_preds.dtype,
+        device=pos_decoded_bbox_preds.device)
+    reg_iou_heatmap = torch.zeros(
+        flatten_cls_scores.shape[0],
+        dtype=pos_decoded_bbox_preds.dtype,
+        device=pos_decoded_bbox_preds.device)
+    pos_ious_scores = bbox_overlaps(
+        pos_decoded_bbox_preds.detach(),
+        pos_decoded_target_preds,
+        is_aligned=True)
+
+    cls_scores_heatmap = flatten_cls_scores.sigmoid().max(1)[0]
+    reg_iou_heatmap[pos_inds] = pos_ious_scores
+
+    hook = 0
+    for i, featmap_size in enumerate(featmap_sizes):
+        w, h = featmap_size
+
+        sub_heatmap = reg_iou_heatmap[hook:hook + w * h]
+        sub_heatmap = sub_heatmap.reshape(w, h)
+        # heatmap += nn.functional.interpolate(
+        #     sub_heatmap, size=stand_size,
+        #     mode='nearest').view(stand_size[0], stand_size[1])
+
+        # heatmap = sub_heatmap.view(w, h)
+      
+        if len(sub_heatmap.nonzero()) > 0:
+            inds = sub_heatmap.nonzero()
+            # upsample with stride
+            stride = int(stand_size[0] / w)
+            print(stride)
+            for i, ind in enumerate(inds):
+                w_ind = ind[0]
+                h_ind = ind[1]
+                heatmap[w_ind * stride, h_ind * stride] = sub_heatmap[w_ind, h_ind]
+                
+        hook += w * h
+
+
+    heatmap = heatmap.detach().cpu().numpy()
+    from matplotlib import pyplot as plt
+    plt.imshow(heatmap)
+    # Saving image
+    plt.savefig('temp_vis/heatmap-451090.png')
+    # embed()
+
+    # import seaborn as sns
+    # ax = sns.heatmap(heatmap)
+    # misc.imsave("sc_heatmaps_3249.png", heatmap.detach().cpu().numpy())
