@@ -85,6 +85,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  apply_discriminator=False,
                  siamese_distill=False,
                  use_intermediate_learner=False,
+                 norm_pyramid=False,
                  apply_sharing_auxiliary_fpn=False,
                  hetero=False,
                  switch_to_inter_learner=False,
@@ -237,6 +238,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.learn_from_missing_annotation = learn_from_missing_annotation
         self.learn_from_teacher_backbone = learn_from_teacher_backbone
         self.use_intermediate_learner = use_intermediate_learner
+        self.norm_pyramid = norm_pyramid
         self.apply_sharing_auxiliary_fpn = apply_sharing_auxiliary_fpn
         self.hetero = hetero
         self.switch_to_inter_learner = switch_to_inter_learner
@@ -288,9 +290,9 @@ class FCOSTSFullMaskHead(nn.Module):
                     'params': self.t_s_pyramid_align.parameters()
                 },
             ],
-                lr=1e-2,
-                momentum=0.9,
-                weight_decay=0.0001)
+                                             lr=1e-2,
+                                             momentum=0.9,
+                                             weight_decay=0.0001)
 
     def _init_siamese(self):
         self.t_s_siamese_align = nn.ModuleList()
@@ -1171,15 +1173,18 @@ class FCOSTSFullMaskHead(nn.Module):
                             # attention_lambda = 0.5 + 0.5 * self.train_step // 7330   # v1
                             if self.apply_sharing_auxiliary_fpn:
                                 # intermediate learner
-                                attention_lambda = 1 + 1 * (self.train_step // 7330)  # v2
+                                attention_lambda = 1 + 1 * (
+                                    self.train_step // 7330)  # v2
                             elif self.hetero:
-                                attention_lambda = 1 + 2 * (self.train_step // 7330)  # v2
+                                attention_lambda = 1 + 2 * (
+                                    self.train_step // 7330)  # v2
                             elif self.use_intermediate_learner:
-                                attention_lambda = 1 # + 1 * (self.train_step // 7330) 
+                                attention_lambda = 1  # + 1 * (self.train_step // 7330)
                             else:
                                 # attention_lambda = 1 + 2 * (self.train_step // 7330)  # v2
-                                # attention_lambda = 1.0 / (1.0 - 1.0 / 13.0 * (self.train_step // 7330)) 
-                                attention_lambda = 10.0 / (1.0 + math.exp(-2 * (self.train_step // 7330 - 1))) 
+                                # attention_lambda = 1.0 / (1.0 - 1.0 / 13.0 * (self.train_step // 7330))
+                                attention_lambda = 8.0 / (1.0 + math.exp(
+                                    -2 * (self.train_step // 7330 - 1)))
                                 # TODO: loss aware weights, IoU aware weights ....
                                 # v2
 
@@ -1288,13 +1293,20 @@ class FCOSTSFullMaskHead(nn.Module):
                                     inner_s_pyramid_feature.permute(
                                         0, 2, 3,
                                         1).reshape(-1, self.feat_channels))
-
+                        # Use: learn from teacher backbone
                         s_pyramid_feature_list = torch.cat(
                             s_pyramid_feature_list)
+                        # Use: pyramid/attention pyramid align
                         t_pyramid_feature_list = torch.cat(
                             t_pyramid_feature_list)
                         s_t_pyramid_feature_list = torch.cat(
                             s_t_pyramid_feature_list)
+
+                        if self.norm_pyramid:
+                            s_t_pyramid_feature_list = F.normalize(
+                                s_t_pyramid_feature_list, p=2, dim=1)
+                            t_pyramid_feature_list = F.normalize(
+                                t_pyramid_feature_list, p=2, dim=1)
 
                         if self.use_intermediate_learner:
                             for j, pyramid_hint_quad in enumerate(
@@ -1799,10 +1811,14 @@ class FCOSTSFullMaskHead(nn.Module):
 
                         if self.apply_selective_regression_distill:
                             t_gt_pos_centerness = torch.where(
-                                t_gt_pos_centerness > s_gt_pos_centerness, t_gt_pos_centerness, torch.zeros_like(t_gt_pos_centerness))
+                                t_gt_pos_centerness > s_gt_pos_centerness,
+                                t_gt_pos_centerness,
+                                torch.zeros_like(t_gt_pos_centerness))
                             s_gt_pos_centerness = torch.where(
-                                s_gt_pos_centerness > t_gt_pos_centerness, s_gt_pos_centerness, torch.zeros_like(s_gt_pos_centerness))
-                            
+                                s_gt_pos_centerness > t_gt_pos_centerness,
+                                s_gt_pos_centerness,
+                                torch.zeros_like(s_gt_pos_centerness))
+
                             if t_gt_pos_centerness.sum() > 0:
                                 s_soft_loss_bbox = self.loss_bbox(
                                     s_pred_bboxes,
@@ -1999,7 +2015,7 @@ class FCOSTSFullMaskHead(nn.Module):
             for i, label in enumerate(labels):
                 distill_masks = (label.reshape(
                     num_imgs, 1, featmap_sizes[i][0], featmap_sizes[i][1]) >
-                    0).float()
+                                 0).float()
                 block_distill_masks.append(
                     torch.nn.functional.upsample(
                         distill_masks, size=featmap_sizes[0]))
