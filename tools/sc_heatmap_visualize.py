@@ -71,7 +71,6 @@ def _get_detector_cfg(fname):
     test_cfg = mmcv.Config(copy.deepcopy(config.test_cfg))
     return model, train_cfg, test_cfg
 
-
 def draw_heatmap():
     config_file = 'fcos/ddb_v3_r50_caffe_fpn_gn_1x_single_test.py'
     checkpoint_file = './work/dirs/ddb_v3_single/epoch_12.pth'

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from mmcv.cnn import normal_init
+import torch.nn.functional as F
 
 from mmdet.core import multi_apply, multiclass_nms, multiclass_nms_sorting, distance2bbox, bbox2delta, bbox_overlaps
 from ..builder import build_loss
@@ -89,6 +90,8 @@ class DDBV3Head(nn.Module):
         self.bd_threshold = bd_threshold
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
+        self.sc_image_counter = 0
+        self.sc_avg_ratio = 0
 
         self._init_layers()
 
@@ -221,6 +224,7 @@ class DDBV3Head(nn.Module):
              centernesses,
              gt_bboxes,
              gt_labels,
+             gt_masks,
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
@@ -371,6 +375,10 @@ class DDBV3Head(nn.Module):
                 masks_for_all[obj_mask_inds[consistency_mask]] = 0
             # cls branch
             reduced_mask = (masks_for_all == 0).nonzero()
+
+            # NOTE: for sc statistic
+            test = self.sc_statistic(flatten_labels, labels, featmap_sizes, gt_masks)
+            
             if self.apply_consistency_on_cls:
                 if self.apply_cls_ignore_area:
                     flatten_labels[pos_inds[reduced_mask]] = -1
@@ -404,9 +412,10 @@ class DDBV3Head(nn.Module):
 
             pos_inds = flatten_labels.nonzero().reshape(-1)
             num_pos = len(pos_inds)
-
-            draw_sc_masks(flatten_cls_scores, pos_decoded_bbox_preds,
+            '''
+            self.draw_sc_masks(flatten_cls_scores, pos_decoded_bbox_preds,
                           pos_decoded_target_preds, pos_inds, featmap_sizes)
+            '''
 
             # NOTE: clone, avoid inplace operations
             pos_decoded_sort_bbox_preds = pos_decoded_bbox_preds.clone()
@@ -801,58 +810,100 @@ class DDBV3Head(nn.Module):
         return labels, bbox_targets
 
 
-def draw_sc_masks(flatten_cls_scores, pos_decoded_bbox_preds,
-                  pos_decoded_target_preds, pos_inds, featmap_sizes):
+    def draw_sc_masks(self, flatten_cls_scores, pos_decoded_bbox_preds,
+                    pos_decoded_target_preds, pos_inds, featmap_sizes):
 
-    stand_size = featmap_sizes[0]
-    heatmap = torch.zeros(
-        stand_size,
-        dtype=pos_decoded_bbox_preds.dtype,
-        device=pos_decoded_bbox_preds.device)
-    reg_iou_heatmap = torch.zeros(
-        flatten_cls_scores.shape[0],
-        dtype=pos_decoded_bbox_preds.dtype,
-        device=pos_decoded_bbox_preds.device)
-    pos_ious_scores = bbox_overlaps(
-        pos_decoded_bbox_preds.detach(),
-        pos_decoded_target_preds,
-        is_aligned=True)
+        stand_size = featmap_sizes[0]
+        heatmap = torch.zeros(
+            stand_size,
+            dtype=pos_decoded_bbox_preds.dtype,
+            device=pos_decoded_bbox_preds.device)
+        reg_iou_heatmap = torch.zeros(
+            flatten_cls_scores.shape[0],
+            dtype=pos_decoded_bbox_preds.dtype,
+            device=pos_decoded_bbox_preds.device)
+        pos_ious_scores = bbox_overlaps(
+            pos_decoded_bbox_preds.detach(),
+            pos_decoded_target_preds,
+            is_aligned=True)
 
-    cls_scores_heatmap = flatten_cls_scores.sigmoid().max(1)[0]
-    reg_iou_heatmap[pos_inds] = pos_ious_scores
+        cls_scores_heatmap = flatten_cls_scores.sigmoid().max(1)[0]
+        reg_iou_heatmap[pos_inds] = pos_ious_scores
 
-    hook = 0
-    for i, featmap_size in enumerate(featmap_sizes):
-        w, h = featmap_size
+        hook = 0
+        for i, featmap_size in enumerate(featmap_sizes):
+            w, h = featmap_size
 
-        sub_heatmap = reg_iou_heatmap[hook:hook + w * h]
-        sub_heatmap = sub_heatmap.reshape(w, h)
-        # heatmap += nn.functional.interpolate(
-        #     sub_heatmap, size=stand_size,
-        #     mode='nearest').view(stand_size[0], stand_size[1])
+            sub_heatmap = reg_iou_heatmap[hook:hook + w * h]
+            sub_heatmap = sub_heatmap.reshape(w, h)
+            # heatmap += nn.functional.interpolate(
+            #     sub_heatmap, size=stand_size,
+            #     mode='nearest').view(stand_size[0], stand_size[1])
 
-        # heatmap = sub_heatmap.view(w, h)
-      
-        if len(sub_heatmap.nonzero()) > 0:
-            inds = sub_heatmap.nonzero()
-            # upsample with stride
-            stride = int(stand_size[0] / w)
-            print(stride)
-            for i, ind in enumerate(inds):
-                w_ind = ind[0]
-                h_ind = ind[1]
-                heatmap[w_ind * stride, h_ind * stride] = sub_heatmap[w_ind, h_ind]
-                
-        hook += w * h
+            # heatmap = sub_heatmap.view(w, h)
+
+            if len(sub_heatmap.nonzero()) > 0:
+                inds = sub_heatmap.nonzero()
+                # upsample with stride
+                stride = int(stand_size[0] / w)
+                print(stride)
+                for i, ind in enumerate(inds):
+                    w_ind = ind[0]
+                    h_ind = ind[1]
+                    heatmap[w_ind * stride, h_ind *
+                            stride] = sub_heatmap[w_ind, h_ind]
+
+            hook += w * h
+
+        heatmap = heatmap.detach().cpu().numpy()
+        from matplotlib import pyplot as plt
+        plt.imshow(heatmap)
+        # Saving image
+        plt.savefig('temp_vis/heatmap-451090.png')
+        # embed()
+
+        # import seaborn as sns
+        # ax = sns.heatmap(heatmap)
+        # misc.imsave("sc_heatmaps_3249.png", heatmap.detach().cpu().numpy())
 
 
-    heatmap = heatmap.detach().cpu().numpy()
-    from matplotlib import pyplot as plt
-    plt.imshow(heatmap)
-    # Saving image
-    plt.savefig('temp_vis/heatmap-451090.png')
-    # embed()
+    def sc_statistic(self, flatten_labels, labels, featmap_sizes, gt_masks):
+        crop_point = 0
+        area = labels[0].shape[0]
+        _w, _h = featmap_sizes[0]
+        n = area // (_w * _h)
+        sum_masks = torch.zeros([n, _w, _h], device=labels[0].device).float()
+        for featmap_size, label in zip(featmap_sizes, labels):
+            w, h = featmap_size
+            mask = flatten_labels[crop_point:crop_point + n * w * h].reshape(
+                n, w, h).float()
+            sum_masks += F.interpolate(
+                mask.unsqueeze(0), size=featmap_sizes[0],
+                mode='nearest').reshape(n, _w, _h)
+            crop_point += n * w * h
+        from scipy.misc import imsave
+        for sum_mask, gt_mask in zip(sum_masks, gt_masks):
+            self.sc_image_counter += 1
+            gt_mask = torch.tensor(gt_mask, device=sum_masks.device).float().sum(0)
+            gt_mask = F.interpolate(
+                gt_mask.unsqueeze(0).unsqueeze(0),
+                size=featmap_sizes[0],
+                mode='nearest').reshape(_w, _h)
 
-    # import seaborn as sns
-    # ax = sns.heatmap(heatmap)
-    # misc.imsave("sc_heatmaps_3249.png", heatmap.detach().cpu().numpy())
+            gt_mask = gt_mask.reshape(-1)
+            sum_mask = sum_mask.reshape(-1)
+            gt_mask[gt_mask != 0] = 1
+            sum_mask[sum_mask != 0] = 1
+
+            gt_area = gt_mask.sum()
+            sc_area = ((sum_mask + gt_mask) == 2).sum()
+            inside_ratio = sc_area / gt_area
+            effective_ratio = sc_area / sum_mask.sum()
+            # print("effective_ratio:", effective_ratio)
+            # print("sc_ratio:", sc_ratio)
+            self.sc_avg_ratio += effective_ratio
+            # imsave("./visualize/sum_masks_{}.png".format(self.sc_image_counter), sum_mask.cpu().numpy())
+            if self.sc_image_counter == 1000:
+                print("avg_sc_ratio:", self.sc_avg_ratio / self.sc_image_counter)
+                embed()
+        return None

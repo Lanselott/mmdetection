@@ -405,7 +405,7 @@ class DDBV3NPHead(nn.Module):
                 flatten_labels[pos_inds[reduced_inds]] = 0
             '''
             # NOTE: for some visualizations
-            sc_masks = self.draw_sc_masks(flatten_labels, labels,
+            sc_masks = self.sc_statistic(flatten_labels, labels,
                                           featmap_sizes, gt_masks)
             '''
             if self.cls_reg_individual and self.sorted_warmup == 0:
@@ -862,7 +862,7 @@ class DDBV3NPHead(nn.Module):
 
         return labels, bbox_targets
 
-    def draw_sc_masks(self, flatten_labels, labels, featmap_sizes, gt_masks):
+    def sc_statistic(self, flatten_labels, labels, featmap_sizes, gt_masks):
         crop_point = 0
         area = labels[0].shape[0]
         _w, _h = featmap_sizes[0]
