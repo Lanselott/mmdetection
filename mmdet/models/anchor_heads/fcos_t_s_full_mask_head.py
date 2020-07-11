@@ -102,6 +102,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  head_attention_factor=1,
                  pyramid_decoupling=False,
                  dynamic_weight=False,
+                 se_attention=False,
                  downgrade_bg=False,
                  head_wise_attention=False,
                  align_to_teacher_logits=False,
@@ -205,6 +206,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.pyramid_factor = pyramid_factor
         self.head_attention_factor = head_attention_factor
         self.dynamic_weight = dynamic_weight
+        self.se_attention = se_attention
         self.downgrade_bg = downgrade_bg
         self.head_wise_attention = head_wise_attention
         self.apply_head_wise_alignment = apply_head_wise_alignment
@@ -452,6 +454,20 @@ class FCOSTSFullMaskHead(nn.Module):
             self.s_t_pyramid_align = nn.ModuleList()
 
         if self.apply_pyramid_wise_alignment or self.pyramid_correlation or self.interactive_learning:
+
+            if self.se_attention:
+                # Squeeze-and-Excitation Networks
+                # refer to: https://arxiv.org/pdf/1709.01507.pdf
+                self.se_fc1 = nn.Linear(
+                    in_features=self.feat_channels,
+                    out_features=self.s_feat_channels,
+                    bias=True)
+                self.se_relu = nn.ReLU(inplace=True)
+                self.se_fc2 = nn.Linear(
+                    in_features=self.s_feat_channels,
+                    out_features=self.feat_channels,
+                    bias=True)
+
             if self.use_intermediate_learner or self.apply_sharing_auxiliary_fpn or self.interactive_learning:
                 # NOTE: use_intermediate_learner:    intermediate heads are required for supervision from logits
                 #       apply_sharing_auxiliary_fpn: a intermediate fpn align to student heads for supervision
@@ -1274,7 +1290,6 @@ class FCOSTSFullMaskHead(nn.Module):
                                                 mode='nearest'))
                                     if self.apply_sharing_alignment:
                                         raise NotImplementedError
-
                             else:
                                 for t_s_pyramid_align_conv in self.t_s_pyramid_align:
                                     if self.direct_downsample:
@@ -1297,6 +1312,19 @@ class FCOSTSFullMaskHead(nn.Module):
                                             t_pyramid_feature.detach())
                                         s_pyramid_feature = sharing_alignment_conv(
                                             s_pyramid_feature)
+
+                            if self.se_attention:
+                                batch = s_pyramid_feature.shape[0]
+                                se_fc1_feat = self.se_fc1(
+                                    s_pyramid_feature.permute(
+                                        0, 2, 3, 1).contiguous().view(
+                                            batch, -1,
+                                            self.feat_channels).mean(1))
+                                se_fc2_weight = self.se_fc2(
+                                    self.se_relu(se_fc1_feat)).sigmoid().view(
+                                        batch, self.feat_channels, 1, 1)
+                                s_pyramid_feature = s_pyramid_feature * se_fc2_weight
+                                t_pyramid_feature = t_pyramid_feature * se_fc2_weight
 
                             s_t_pyramid_feature_list.append(
                                 s_pyramid_feature.permute(0, 2, 3, 1).reshape(
