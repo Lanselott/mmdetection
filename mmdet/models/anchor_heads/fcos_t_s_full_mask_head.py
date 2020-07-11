@@ -94,6 +94,7 @@ class FCOSTSFullMaskHead(nn.Module):
                  pyramid_correlation=False,
                  pyramid_learn_high_quality=False,
                  pyramid_attention_only=False,
+                 interactive_learning=False,
                  ignore_low_ious=False,
                  pyramid_cls_reg_consistent=False,
                  pyramid_nms_aware=False,
@@ -196,6 +197,7 @@ class FCOSTSFullMaskHead(nn.Module):
         self.pyramid_correlation = pyramid_correlation
         self.pyramid_learn_high_quality = pyramid_learn_high_quality
         self.pyramid_attention_only = pyramid_attention_only
+        self.interactive_learning = interactive_learning
         self.ignore_low_ious = ignore_low_ious
         self.corr_out_channels = corr_out_channels
         self.pyramid_cls_reg_consistent = pyramid_cls_reg_consistent
@@ -442,18 +444,20 @@ class FCOSTSFullMaskHead(nn.Module):
         self.t_s_correlation_conv = nn.ModuleList()
         self.t_s_pyramid_align = nn.ModuleList()
 
-        if self.use_intermediate_learner:
+        if self.use_intermediate_learner or self.interactive_learning:
             self.t_i_pyramid_align = nn.ModuleList()
             self.s_i_pyramid_align = nn.ModuleList()
 
         if self.learn_from_teacher_backbone:
             self.s_t_pyramid_align = nn.ModuleList()
 
-        if self.apply_pyramid_wise_alignment or self.pyramid_correlation:
-            if self.use_intermediate_learner or self.apply_sharing_auxiliary_fpn:
-                # NOTE:
+        if self.apply_pyramid_wise_alignment or self.pyramid_correlation or self.interactive_learning:
+            if self.use_intermediate_learner or self.apply_sharing_auxiliary_fpn or self.interactive_learning:
+                # NOTE: use_intermediate_learner:    intermediate heads are required for supervision from logits
+                #       apply_sharing_auxiliary_fpn: a intermediate fpn align to student heads for supervision
                 #       t <------ s
                 #       t -> i <- s
+
                 self.t_i_pyramid_align.append(
                     nn.Conv2d(
                         self.feat_channels,
@@ -650,7 +654,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     else:
                         normal_init(m, std=0.01)
 
-            if self.use_intermediate_learner:
+            if self.use_intermediate_learner or self.interactive_learning:
                 for align_conv in self.t_i_pyramid_align:
                     normal_init(align_conv, std=0.01)
 
@@ -823,7 +827,7 @@ class FCOSTSFullMaskHead(nn.Module):
         cls_hint_pairs = []
         reg_hint_pairs = []
 
-        if self.use_intermediate_learner:
+        if self.use_intermediate_learner or self.interactive_learning:
             pyramid_hint_quads = []
             pyramid_hint_quads.append(s_x)
             pyramid_hint_quads.append(t_x)
@@ -877,7 +881,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 aux_bbox_pred = s_scale(
                     self.fcos_s_reg(aux_reg_feat)).float().exp()
 
-            else:
+            elif self.use_intermediate_learner:
                 # intermediate head
                 for i in range(len(self.i_cls_convs)):
                     # NOTE: Remove the intermediate heads now,
@@ -975,9 +979,11 @@ class FCOSTSFullMaskHead(nn.Module):
                     return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, t_fpn_bbox_pred, t_fpn_cls_score, t_fpn_centerness, None, None, None, None, None, None, None, None
                 elif self.learn_from_teacher_backbone:
                     return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, t_decreased_cls_score, t_decreased_bbox_pred, t_decreased_centerness, t_decreased_pyramid_hint_features, None, None, None, None
-                elif self.use_intermediate_learner:
+                elif self.use_intermediate_learner or self.interactive_learning:
                     if self.apply_sharing_auxiliary_fpn:
                         return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, aux_cls_score, aux_bbox_pred, aux_centerness, pyramid_hint_quads
+                    elif self.interactive_learning:
+                        return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, None, None, None, pyramid_hint_quads
                     else:
                         return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, i_cls_score, i_bbox_pred, i_centerness, pyramid_hint_quads
                 else:
@@ -1181,9 +1187,12 @@ class FCOSTSFullMaskHead(nn.Module):
                             elif self.use_intermediate_learner:
                                 attention_lambda = 1  # + 1 * (self.train_step // 7330)
                             elif self.norm_pyramid:
-                                attention_lambda = 1000   + 1000 * (self.train_step // 7330) 
+                                attention_lambda = 1000 + 1000 * (
+                                    self.train_step // 7330)
                                 # attention_lambda = 1000.0 / (1.0 + math.exp(
                                 #     -2 * (self.train_step // 7330 - 1)))
+                            elif self.interactive_learning:
+                                attention_lambda = 1
                             else:
                                 # attention_lambda = 1 + 2 * (self.train_step // 7330)  # v2
                                 # attention_lambda = 1.0 / (1.0 - 1.0 / 13.0 * (self.train_step // 7330))
@@ -1231,7 +1240,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_cls_pyramid_feature_list = []
                         s_reg_pyramid_feature_list = []
 
-                        if self.use_intermediate_learner:
+                        if self.use_intermediate_learner or self.interactive_learning:
                             pyramid_hint_pairs = pyramid_hint_quads
 
                         for j, pyramid_hint_pair in enumerate(
@@ -1312,7 +1321,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             t_pyramid_feature_list = F.normalize(
                                 t_pyramid_feature_list, p=2, dim=1)
 
-                        if self.use_intermediate_learner:
+                        if self.use_intermediate_learner or self.interactive_learning:
                             for j, pyramid_hint_quad in enumerate(
                                     pyramid_hint_quads):
                                 s_i_pyramid_feature = pyramid_hint_quad[2]
@@ -1334,6 +1343,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                 t_i_pyramid_feature_list)
                             s_i_pyramid_feature_list = torch.cat(
                                 s_i_pyramid_feature_list)
+
                         if self.inner_opt:
                             inner_s_t_pyramid_feature_list = torch.cat(
                                 inner_s_t_pyramid_feature_list)
@@ -1367,6 +1377,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                     # iou_attention_weight = t_s_pred_ious * pos_s_t_cls_distance
                                     # v2
                                     iou_attention_weight = t_s_pred_ious**pos_s_t_cls_distance
+                                    '''
                                 elif self.sorting_match:
                                     t_s_ious = bbox_overlaps(
                                         s_pred_bboxes,
@@ -1376,6 +1387,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                         0)
                                     t_pos_pyramid_feats = t_pos_pyramid_feats[
                                         t_s_max_inds]
+                                    '''
                                 else:
                                     iou_attention_weight = t_s_pred_ious
 
@@ -1404,6 +1416,34 @@ class FCOSTSFullMaskHead(nn.Module):
                                         weight=inter_iou_attention_weight)  # ,
                                     # avg_factor=inter_iou_attention_weight.
                                     # sum())
+                                elif self.interactive_learning:
+                                    inter_s2t_attention_iou_pyramid_hint_loss = attention_lambda * self.pyramid_hint_loss(
+                                        s_i_pyramid_feature_list[t_pos_inds],
+                                        t_i_pyramid_feature_list[t_pos_inds].
+                                        detach(),
+                                        weight=iou_attention_weight)
+                                    inter_s2t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                        s_i_pyramid_feature_list,
+                                        t_i_pyramid_feature_list.detach())
+
+                                    inter_t2s_attention_iou_pyramid_hint_loss = attention_lambda * self.pyramid_hint_loss(
+                                        t_i_pyramid_feature_list[t_pos_inds],
+                                        s_i_pyramid_feature_list[t_pos_inds].
+                                        detach(),
+                                        weight=iou_attention_weight)
+                                    inter_t2s_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                        t_i_pyramid_feature_list,
+                                        s_i_pyramid_feature_list.detach())
+                                    loss_dict.update({
+                                        'inter_s2t_attention_iou_pyramid_hint_loss':
+                                        inter_s2t_attention_iou_pyramid_hint_loss,
+                                        'inter_s2t_pyramid_hint_loss':
+                                        inter_s2t_pyramid_hint_loss,
+                                        'inter_t2s_attention_iou_pyramid_hint_loss':
+                                        inter_t2s_attention_iou_pyramid_hint_loss,
+                                        'inter_t2s_pyramid_hint_loss':
+                                        inter_t2s_pyramid_hint_loss,
+                                    })
                             else:
                                 t_attention_iou_pyramid_hint_loss = s_t_pyramid_feature_list[
                                     t_pos_inds].sum()
@@ -1437,7 +1477,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                     for g in self.inner_optimizer.param_groups:
                                         g['lr'] = 0.001
 
-                    if self.pyramid_wise_attention:
+                    if self.pyramid_wise_attention and not self.interactive_learning:
                         loss_dict.update({
                             't_attention_iou_pyramid_hint_loss':
                             t_attention_iou_pyramid_hint_loss,
@@ -1456,12 +1496,13 @@ class FCOSTSFullMaskHead(nn.Module):
                         #         t_pyramid_feature_list.detach(),
                         #         weight=s_t_cls_distance)
                         # else:
-                        t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                            s_t_pyramid_feature_list,
-                            t_pyramid_feature_list.detach())
+                        if not self.interactive_learning:
+                            t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                                s_t_pyramid_feature_list,
+                                t_pyramid_feature_list.detach())
+                            loss_dict.update(
+                                {'t_pyramid_hint_loss': t_pyramid_hint_loss})
 
-                        loss_dict.update(
-                            {'t_pyramid_hint_loss': t_pyramid_hint_loss})
                         if self.use_intermediate_learner:
                             inter_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                 s_i_pyramid_feature_list,
