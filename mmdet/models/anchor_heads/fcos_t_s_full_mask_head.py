@@ -1193,7 +1193,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                 #     -2 * (self.train_step // 7330 - 1)))
                             elif self.interactive_learning:
                                 if self.train_step >= 500:
-                                    attention_lambda = 1
+                                    attention_lambda = 100
                                 else:
                                     attention_lambda = 0
                             else:
