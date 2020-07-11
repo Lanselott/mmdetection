@@ -1313,7 +1313,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                         s_pyramid_feature = sharing_alignment_conv(
                                             s_pyramid_feature)
 
-                            if self.se_attention:
+                            if self.se_attention and self.train_step >= 500:
                                 batch = s_pyramid_feature.shape[0]
                                 se_fc1_feat = self.se_fc1(
                                     s_pyramid_feature.permute(
