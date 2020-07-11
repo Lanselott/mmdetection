@@ -132,7 +132,7 @@ lr_config = dict(
     policy='step',
     warmup='constant',
     warmup_iters=500,
-    warmup_ratio=1.0 / 3,
+    warmup_ratio=1.0, #1.0 / 3,
     step=[8, 11])
 checkpoint_config = dict(interval=1)
 # yapf:disable
@@ -148,6 +148,6 @@ total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = './work_dirs/fcos_r50_caffe_fpn_gn_1x_4gpu'
-load_from = None
+load_from = './work/dirs/ddb_v3_single/epoch_12.pth' # None
 resume_from = None
 workflow = [('train', 1)]
