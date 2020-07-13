@@ -458,16 +458,17 @@ class FCOSTSFullMaskHead(nn.Module):
             if self.se_attention:
                 # Squeeze-and-Excitation Networks
                 # refer to: https://arxiv.org/pdf/1709.01507.pdf
+                self.se_reduction = 4 # default as self.s_feat_channels
                 self.se_fc1 = nn.Linear(
                     in_features=self.feat_channels,
-                    out_features=self.s_feat_channels,
+                    out_features=self.feat_channels // self.se_reduction,
                     bias=True)
                 self.se_relu = nn.ReLU(inplace=True)
                 self.se_fc2 = nn.Linear(
-                    in_features=self.s_feat_channels,
+                    in_features=self.feat_channels // self.se_reduction,
                     out_features=self.feat_channels,
                     bias=True)
-
+                
             if self.use_intermediate_learner or self.apply_sharing_auxiliary_fpn or self.interactive_learning:
                 # NOTE: use_intermediate_learner:    intermediate heads are required for supervision from logits
                 #       apply_sharing_auxiliary_fpn: a intermediate fpn align to student heads for supervision
