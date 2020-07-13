@@ -1321,8 +1321,9 @@ class FCOSTSFullMaskHead(nn.Module):
                                             batch, -1,
                                             self.feat_channels).mean(1))
                                 se_fc2_weight = self.se_fc2(
-                                    self.se_relu(se_fc1_feat)).sigmoid().view(
-                                        batch, self.feat_channels, 1, 1)
+                                    self.se_relu(se_fc1_feat)).view(
+                                        batch, self.feat_channels, 1,
+                                        1).sigmoid()
                                 s_pyramid_feature = s_pyramid_feature * se_fc2_weight
                                 t_pyramid_feature = t_pyramid_feature * se_fc2_weight
 
