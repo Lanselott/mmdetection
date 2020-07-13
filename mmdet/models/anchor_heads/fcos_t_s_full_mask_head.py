@@ -86,6 +86,8 @@ class FCOSTSFullMaskHead(nn.Module):
                  siamese_distill=False,
                  use_intermediate_learner=False,
                  norm_pyramid=False,
+                 logistic_train_first=False,
+                 pyramid_train_first=False,
                  apply_sharing_auxiliary_fpn=False,
                  hetero=False,
                  switch_to_inter_learner=False,
@@ -243,6 +245,8 @@ class FCOSTSFullMaskHead(nn.Module):
         self.learn_from_teacher_backbone = learn_from_teacher_backbone
         self.use_intermediate_learner = use_intermediate_learner
         self.norm_pyramid = norm_pyramid
+        self.logistic_train_first = logistic_train_first
+        self.pyramid_train_first = pyramid_train_first
         self.apply_sharing_auxiliary_fpn = apply_sharing_auxiliary_fpn
         self.hetero = hetero
         self.switch_to_inter_learner = switch_to_inter_learner
@@ -458,7 +462,7 @@ class FCOSTSFullMaskHead(nn.Module):
             if self.se_attention:
                 # Squeeze-and-Excitation Networks
                 # refer to: https://arxiv.org/pdf/1709.01507.pdf
-                self.se_reduction = 4 # default as self.s_feat_channels
+                self.se_reduction = 4  # default as self.s_feat_channels
                 self.se_fc1 = nn.Linear(
                     in_features=self.feat_channels,
                     out_features=self.feat_channels // self.se_reduction,
@@ -468,7 +472,7 @@ class FCOSTSFullMaskHead(nn.Module):
                     in_features=self.feat_channels // self.se_reduction,
                     out_features=self.feat_channels,
                     bias=True)
-                
+
             if self.use_intermediate_learner or self.apply_sharing_auxiliary_fpn or self.interactive_learning:
                 # NOTE: use_intermediate_learner:    intermediate heads are required for supervision from logits
                 #       apply_sharing_auxiliary_fpn: a intermediate fpn align to student heads for supervision
@@ -1511,10 +1515,19 @@ class FCOSTSFullMaskHead(nn.Module):
                                         g['lr'] = 0.001
 
                     if self.pyramid_wise_attention and not self.interactive_learning:
-                        loss_dict.update({
-                            't_attention_iou_pyramid_hint_loss':
-                            t_attention_iou_pyramid_hint_loss,
-                        })
+
+                        if self.pyramid_train_first:
+                            assert self.logistic_train_first == False
+                            if self.train_step >= 7330:
+                                loss_dict.update({
+                                    't_attention_iou_pyramid_hint_loss':
+                                    t_attention_iou_pyramid_hint_loss,
+                                })
+                        else:
+                            loss_dict.update({
+                                't_attention_iou_pyramid_hint_loss':
+                                t_attention_iou_pyramid_hint_loss,
+                            })
 
                         if self.use_intermediate_learner:
                             loss_dict.update({
@@ -1533,8 +1546,19 @@ class FCOSTSFullMaskHead(nn.Module):
                             t_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                                 s_t_pyramid_feature_list,
                                 t_pyramid_feature_list.detach())
-                            loss_dict.update(
-                                {'t_pyramid_hint_loss': t_pyramid_hint_loss})
+
+                            if self.pyramid_train_first:
+                                assert self.logistic_train_first == False
+                                if self.train_step >= 7330:
+                                    loss_dict.update({
+                                        't_pyramid_hint_loss':
+                                        t_pyramid_hint_loss
+                                    })
+                            else:
+                                loss_dict.update({
+                                    't_pyramid_hint_loss':
+                                    t_pyramid_hint_loss
+                                })
 
                         if self.use_intermediate_learner:
                             inter_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
@@ -1876,57 +1900,62 @@ class FCOSTSFullMaskHead(nn.Module):
                 #         and self.inner_opt == False) or (
                 #             self.train_step >= self.rouse_student_point
                 #             and self.inner_opt == True):
-                if True:
-                    if self.apply_soft_regression_distill:
-                        soft_bbox_weight = 2
+                if self.apply_soft_regression_distill:
+                    soft_bbox_weight = 2
 
-                        t_gt_pos_centerness = bbox_overlaps(
-                            t_pred_bboxes, t_gt_bboxes,
-                            is_aligned=True).detach()
-                        s_gt_pos_centerness = bbox_overlaps(
-                            s_pred_bboxes, t_gt_bboxes,
-                            is_aligned=True).detach()
+                    t_gt_pos_centerness = bbox_overlaps(
+                        t_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
+                    s_gt_pos_centerness = bbox_overlaps(
+                        s_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
 
-                        if self.apply_selective_regression_distill:
-                            t_gt_pos_centerness = torch.where(
-                                t_gt_pos_centerness > s_gt_pos_centerness,
-                                t_gt_pos_centerness,
-                                torch.zeros_like(t_gt_pos_centerness))
-                            s_gt_pos_centerness = torch.where(
-                                s_gt_pos_centerness > t_gt_pos_centerness,
-                                s_gt_pos_centerness,
-                                torch.zeros_like(s_gt_pos_centerness))
+                    if self.apply_selective_regression_distill:
+                        t_gt_pos_centerness = torch.where(
+                            t_gt_pos_centerness > s_gt_pos_centerness,
+                            t_gt_pos_centerness,
+                            torch.zeros_like(t_gt_pos_centerness))
+                        s_gt_pos_centerness = torch.where(
+                            s_gt_pos_centerness > t_gt_pos_centerness,
+                            s_gt_pos_centerness,
+                            torch.zeros_like(s_gt_pos_centerness))
 
-                            if t_gt_pos_centerness.sum() > 0:
-                                s_soft_loss_bbox = self.loss_bbox(
-                                    s_pred_bboxes,
-                                    t_pred_bboxes.detach(),
-                                    weight=t_gt_pos_centerness,
-                                    avg_factor=t_gt_pos_centerness.sum())
-                            else:
-                                s_soft_loss_bbox = t_gt_pos_centerness.sum()
-
-                            if s_gt_pos_centerness.sum() > 0:
-                                s_loss_bbox = self.loss_bbox(
-                                    s_pred_bboxes,
-                                    t_gt_bboxes,
-                                    weight=s_gt_pos_centerness,
-                                    avg_factor=s_gt_pos_centerness.sum())
-                            else:
-                                s_soft_loss_bbox = s_gt_pos_centerness.sum()
-
-                        else:
-                            # t_cls_factor = t_flatten_cls_scores.sigmoid().max(1)[0]
-                            s_soft_loss_bbox = soft_bbox_weight * self.loss_bbox(
+                        if t_gt_pos_centerness.sum() > 0:
+                            s_soft_loss_bbox = self.loss_bbox(
                                 s_pred_bboxes,
                                 t_pred_bboxes.detach(),
-                                weight=t_gt_pos_centerness)
+                                weight=t_gt_pos_centerness,
+                                avg_factor=t_gt_pos_centerness.sum())
+                        else:
+                            s_soft_loss_bbox = t_gt_pos_centerness.sum()
 
-                        loss_dict.update(
-                            s_soft_loss_bbox=s_soft_loss_bbox,
-                            s_loss_bbox=s_loss_bbox,
-                            s_loss_centerness=s_loss_centerness,
-                            s_loss_cls=s_loss_cls)
+                        if s_gt_pos_centerness.sum() > 0:
+                            s_loss_bbox = self.loss_bbox(
+                                s_pred_bboxes,
+                                t_gt_bboxes,
+                                weight=s_gt_pos_centerness,
+                                avg_factor=s_gt_pos_centerness.sum())
+                        else:
+                            s_soft_loss_bbox = s_gt_pos_centerness.sum()
+
+                    else:
+                        # t_cls_factor = t_flatten_cls_scores.sigmoid().max(1)[0]
+                        s_soft_loss_bbox = soft_bbox_weight * self.loss_bbox(
+                            s_pred_bboxes,
+                            t_pred_bboxes.detach(),
+                            weight=t_gt_pos_centerness)
+
+                    loss_dict.update(
+                        s_soft_loss_bbox=s_soft_loss_bbox,
+                        s_loss_bbox=s_loss_bbox,
+                        s_loss_centerness=s_loss_centerness,
+                        s_loss_cls=s_loss_cls)
+                else:
+                    if self.logistic_train_first:
+                        assert self.pyramid_train_first == False
+                        if self.train_step >= 7330:
+                            loss_dict.update(
+                                s_loss_bbox=s_loss_bbox,
+                                s_loss_centerness=s_loss_centerness,
+                                s_loss_cls=s_loss_cls)
                     else:
                         loss_dict.update(
                             s_loss_bbox=s_loss_bbox,
