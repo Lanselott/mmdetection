@@ -1516,9 +1516,9 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     if self.pyramid_wise_attention and not self.interactive_learning:
 
-                        if self.pyramid_train_first:
-                            assert self.logistic_train_first == False
-                            if self.train_step >= 7330 * 6:
+                        if self.logistic_train_first:
+                            assert self.pyramid_train_first == False
+                            if self.train_step >= 7330:
                                 loss_dict.update({
                                     't_attention_iou_pyramid_hint_loss':
                                     t_attention_iou_pyramid_hint_loss,
@@ -1547,9 +1547,9 @@ class FCOSTSFullMaskHead(nn.Module):
                                 s_t_pyramid_feature_list,
                                 t_pyramid_feature_list.detach())
 
-                            if self.pyramid_train_first:
-                                assert self.logistic_train_first == False
-                                if self.train_step >= 7330 * 6:
+                            if self.logistic_train_first:
+                                assert self.pyramid_train_first == False
+                                if self.train_step >= 7330:
                                     loss_dict.update({
                                         't_pyramid_hint_loss':
                                         t_pyramid_hint_loss
@@ -1949,9 +1949,9 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_loss_centerness=s_loss_centerness,
                         s_loss_cls=s_loss_cls)
                 else:
-                    if self.logistic_train_first:
-                        assert self.pyramid_train_first == False
-                        if self.train_step >= 7330:
+                    if self.pyramid_train_first:
+                        assert self.logistic_train_first == False
+                        if self.train_step >= 7330 * 3:
                             loss_dict.update(
                                 s_loss_bbox=s_loss_bbox,
                                 s_loss_centerness=s_loss_centerness,
