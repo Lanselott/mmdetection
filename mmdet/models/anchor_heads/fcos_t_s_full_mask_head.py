@@ -1518,7 +1518,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                         if self.pyramid_train_first:
                             assert self.logistic_train_first == False
-                            if self.train_step >= 7330:
+                            if self.train_step >= 7330 * 2:
                                 loss_dict.update({
                                     't_attention_iou_pyramid_hint_loss':
                                     t_attention_iou_pyramid_hint_loss,
@@ -1549,7 +1549,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                             if self.pyramid_train_first:
                                 assert self.logistic_train_first == False
-                                if self.train_step >= 7330:
+                                if self.train_step >= 7330 * 2:
                                     loss_dict.update({
                                         't_pyramid_hint_loss':
                                         t_pyramid_hint_loss
