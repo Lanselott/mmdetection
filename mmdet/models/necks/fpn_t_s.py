@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from mmcv.cnn import xavier_init
 
 from mmdet.core import auto_fp16
+from ..builder import build_loss
 from ..registry import NECKS
 from ..utils import ConvModule
 from IPython import embed
@@ -11,26 +12,30 @@ from IPython import embed
 @NECKS.register_module
 class FPNTS(nn.Module):
 
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 s_in_channels,
-                 s_out_channels,
-                 num_outs,
-                 start_level=0,
-                 t_s_ratio=4,
-                 end_level=-1,
-                 add_extra_convs=False,
-                 extra_convs_on_inputs=True,
-                 relu_before_extra_convs=False,
-                 apply_block_wise_alignment=False,
-                 copy_teacher_fpn=False,
-                 no_norm_on_lateral=False,
-                 freeze_teacher=False,
-                 conv_cfg=None,
-                 norm_cfg=None,
-                 activation=None,
-                 rouse_student_point=0):
+    def __init__(
+            self,
+            in_channels,
+            out_channels,
+            s_in_channels,
+            s_out_channels,
+            num_outs,
+            start_level=0,
+            t_s_ratio=4,
+            end_level=-1,
+            add_extra_convs=False,
+            extra_convs_on_inputs=True,
+            relu_before_extra_convs=False,
+            apply_block_wise_alignment=False,
+            kernel_meta_learner=False,
+            copy_teacher_fpn=False,
+            no_norm_on_lateral=False,
+            freeze_teacher=False,
+            conv_cfg=None,
+            norm_cfg=None,
+            activation=None,
+            rouse_student_point=0,
+            pyramid_kernel_loss=dict(type='MSELoss', loss_weight=1),
+    ):
         super(FPNTS, self).__init__()
         assert isinstance(in_channels, list)
         self.in_channels = in_channels
@@ -43,11 +48,13 @@ class FPNTS(nn.Module):
         self.activation = activation
         self.relu_before_extra_convs = relu_before_extra_convs
         self.apply_block_wise_alignment = apply_block_wise_alignment
+        self.kernel_meta_learner = kernel_meta_learner
         self.copy_teacher_fpn = copy_teacher_fpn
         self.no_norm_on_lateral = no_norm_on_lateral
         self.freeze_teacher = freeze_teacher
         self.fp16_enabled = False
         self.rouse_student_point = rouse_student_point
+        self.pyramid_kernel_loss = build_loss(pyramid_kernel_loss)
         self.train_step = 0
 
         if end_level == -1:
@@ -225,6 +232,16 @@ class FPNTS(nn.Module):
                     self.s_in_channels[-1], self.in_channels[-1], 3,
                     padding=1))
 
+        if self.kernel_meta_learner:
+            # NOTE: Try to learn the kernel (do conv on teacher student pyramid convs)
+            # 128 * 128 --> 256 * 256
+            # TODO: Refactor later
+            self.kernel_convs = nn.ModuleList()
+            self.kernel_convs.append(nn.Conv2d(128, 256, 3,
+                                               padding=1))  # channel
+            self.kernel_convs.append(nn.Conv2d(128, 256, 3,
+                                               padding=1))  # kernel nums
+
     # default init_weights for conv(msra) and norm in ConvModule
 
     def init_weights(self):
@@ -235,6 +252,9 @@ class FPNTS(nn.Module):
             self._freeze_teacher_layers()
         if self.copy_teacher_fpn:
             self._copy_freeze_fpn()
+        if self.kernel_meta_learner:
+            for m in self.kernel_convs:
+                xavier_init(m, distribution='uniform')
 
     def _freeze_teacher_layers(self):
         for fpn_conv in self.fpn_convs:
@@ -272,7 +292,8 @@ class FPNTS(nn.Module):
                     size=s_fpn_conv.conv.weight.shape[:2],
                     mode='bilinear').permute(2, 3, 0, 1))
 
-        for s_lateral_conv, t_lateral_conv in zip(self.s_lateral_convs, self.lateral_convs):
+        for s_lateral_conv, t_lateral_conv in zip(self.s_lateral_convs,
+                                                  self.lateral_convs):
             t_lateral_layer_conv_data = t_lateral_conv.conv.weight.data.permute(
                 2, 3, 0, 1).detach()
             s_lateral_conv.conv.weight.data.copy_(
@@ -284,18 +305,33 @@ class FPNTS(nn.Module):
     @auto_fp16()
     def forward(self, inputs):
         self.train_step += 1
-
         '''
         if self.rouse_student_point == self.train_step:
             self.copy_pyramid()
         '''
-        
+
         # Teacher Net
         t_outs = self.single_forward(inputs[0], self.fpn_convs,
                                      self.lateral_convs)
         # Student Net
         s_outs = self.single_forward(inputs[1], self.s_fpn_convs,
                                      self.s_lateral_convs)
+
+        if self.kernel_meta_learner:
+            kernel_loss_tuple = tuple()
+            for s_fpn_conv, fpn_conv in zip(self.s_fpn_convs, self.fpn_convs):
+                s_conv_kernel_weights = s_fpn_conv.conv.weight
+                t_conv_kernel_weights = fpn_conv.conv.weight
+
+                s_conv_kernel_weights = self.kernel_convs[0](
+                    s_conv_kernel_weights)
+                s_conv_kernel_weights = self.kernel_convs[1](
+                    s_conv_kernel_weights.permute(1, 0, 2,
+                                                  3)).permute(1, 0, 2, 3)
+                pyramid_kernel_loss = self.pyramid_kernel_loss(
+                    s_conv_kernel_weights, t_conv_kernel_weights.detach())
+                kernel_loss_tuple += tuple([pyramid_kernel_loss])
+
         if self.copy_teacher_fpn:
             aligned_inputs = tuple()
             aligned_outputs = tuple()
@@ -319,8 +355,12 @@ class FPNTS(nn.Module):
             return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
                 inputs[1]), tuple(aligned_outputs)
         else:
-            return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
-                inputs[1])
+            if self.kernel_meta_learner:
+                return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
+                    inputs[1]), tuple(kernel_loss_tuple)
+            else:
+                return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
+                    inputs[1])
 
     @auto_fp16()
     def single_forward(self, single_input, fpn_convs, lateral_convs):
