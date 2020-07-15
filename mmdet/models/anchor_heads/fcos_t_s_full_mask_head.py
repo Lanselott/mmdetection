@@ -1973,7 +1973,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 else:
                     if self.pyramid_train_first:
                         assert self.logistic_train_first == False
-                        if self.train_step >= 7330 * 9:
+                        if self.train_step >= 7330 * 11:
                             loss_dict.update(
                                 s_loss_bbox=s_loss_bbox,
                                 s_loss_centerness=s_loss_centerness,
