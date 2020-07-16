@@ -6,6 +6,8 @@ from mmdet.core import auto_fp16
 from ..builder import build_loss
 from ..registry import NECKS
 from ..utils import ConvModule
+from mmcv.cnn import normal_init
+
 from IPython import embed
 
 
@@ -237,9 +239,9 @@ class FPNTS(nn.Module):
             # 128 * 128 --> 256 * 256
             # TODO: Refactor later
             self.kernel_convs = nn.ModuleList()
-            self.kernel_convs.append(nn.Conv2d(128, 256, 3,
+            self.kernel_convs.append(nn.Conv2d(256, 128, 3,
                                                padding=1))  # channel
-            self.kernel_convs.append(nn.Conv2d(128, 256, 3,
+            self.kernel_convs.append(nn.Conv2d(256, 128, 3,
                                                padding=1))  # kernel nums
 
     # default init_weights for conv(msra) and norm in ConvModule
@@ -254,7 +256,8 @@ class FPNTS(nn.Module):
             self._copy_freeze_fpn()
         if self.kernel_meta_learner:
             for m in self.kernel_convs:
-                xavier_init(m, distribution='uniform')
+                # xavier_init(m, distribution='uniform')
+                normal_init(m, std=0.01)
 
     def _freeze_teacher_layers(self):
         for fpn_conv in self.fpn_convs:
@@ -320,18 +323,20 @@ class FPNTS(nn.Module):
         if self.kernel_meta_learner:
             kernel_loss_tuple = tuple()
             for s_fpn_conv, fpn_conv in zip(self.s_fpn_convs, self.fpn_convs):
-                s_conv_kernel_weights = s_fpn_conv.conv.weight
-                t_conv_kernel_weights = fpn_conv.conv.weight
+                # s_conv_kernel_weights = s_fpn_conv.conv.weight
+                t_conv_kernel_weights = fpn_conv.conv.weight.detach()
 
                 s_conv_kernel_weights = self.kernel_convs[0](
-                    s_conv_kernel_weights)
+                    t_conv_kernel_weights)
                 s_conv_kernel_weights = self.kernel_convs[1](
                     s_conv_kernel_weights.permute(1, 0, 2,
                                                   3)).permute(1, 0, 2, 3)
+                s_fpn_conv.conv.weight.data.copy_(s_conv_kernel_weights)
+                '''
                 pyramid_kernel_loss = self.pyramid_kernel_loss(
                     s_conv_kernel_weights, t_conv_kernel_weights.detach())
                 kernel_loss_tuple += tuple([pyramid_kernel_loss])
-
+                '''
         if self.copy_teacher_fpn:
             aligned_inputs = tuple()
             aligned_outputs = tuple()
@@ -355,12 +360,8 @@ class FPNTS(nn.Module):
             return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
                 inputs[1]), tuple(aligned_outputs)
         else:
-            if self.kernel_meta_learner:
-                return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
-                    inputs[1]), tuple(kernel_loss_tuple)
-            else:
-                return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
-                    inputs[1])
+            return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
+                inputs[1])
 
     @auto_fp16()
     def single_forward(self, single_input, fpn_convs, lateral_convs):
