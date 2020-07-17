@@ -257,7 +257,7 @@ class FPNTS(nn.Module):
         if self.kernel_meta_learner:
             for m in self.kernel_convs:
                 # xavier_init(m, distribution='uniform')
-                normal_init(m, std=0.01)
+                normal_init(m, std=0.005)
 
     def _freeze_teacher_layers(self):
         for fpn_conv in self.fpn_convs:
@@ -331,7 +331,7 @@ class FPNTS(nn.Module):
                 s_conv_kernel_weights = self.kernel_convs[1](
                     s_conv_kernel_weights.permute(1, 0, 2,
                                                   3)).permute(1, 0, 2, 3)
-                s_fpn_conv.conv.weight.data.copy_(s_conv_kernel_weights)
+                s_fpn_conv.conv.weight.data = s_conv_kernel_weights.clone()
                 '''
                 pyramid_kernel_loss = self.pyramid_kernel_loss(
                     s_conv_kernel_weights, t_conv_kernel_weights.detach())

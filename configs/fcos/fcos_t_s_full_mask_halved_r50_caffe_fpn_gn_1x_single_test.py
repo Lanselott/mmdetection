@@ -84,7 +84,6 @@ model = dict(
         pyramid_decoupling=False,
         temperature=1,
         align_level=0,
-        kernel_meta_learner=True,
         apply_block_wise_alignment=BLOCK_ALIGN,
         apply_pyramid_wise_alignment=PYRAMID_ALIGN,
         apply_discriminator=False,
