@@ -257,7 +257,7 @@ class FPNTS(nn.Module):
         if self.kernel_meta_learner:
             for m in self.kernel_convs:
                 # xavier_init(m, distribution='uniform')
-                normal_init(m, std=0.005)
+                normal_init(m, std=0.01)
 
     def _freeze_teacher_layers(self):
         for fpn_conv in self.fpn_convs:
@@ -312,14 +312,6 @@ class FPNTS(nn.Module):
         if self.rouse_student_point == self.train_step:
             self.copy_pyramid()
         '''
-
-        # Teacher Net
-        t_outs = self.single_forward(inputs[0], self.fpn_convs,
-                                     self.lateral_convs)
-        # Student Net
-        s_outs = self.single_forward(inputs[1], self.s_fpn_convs,
-                                     self.s_lateral_convs)
-
         if self.kernel_meta_learner:
             kernel_loss_tuple = tuple()
             for s_fpn_conv, fpn_conv in zip(self.s_fpn_convs, self.fpn_convs):
@@ -337,6 +329,14 @@ class FPNTS(nn.Module):
                     s_conv_kernel_weights, t_conv_kernel_weights.detach())
                 kernel_loss_tuple += tuple([pyramid_kernel_loss])
                 '''
+
+        # Teacher Net
+        t_outs = self.single_forward(inputs[0], self.fpn_convs,
+                                     self.lateral_convs)
+        # Student Net
+        s_outs = self.single_forward(inputs[1], self.s_fpn_convs,
+                                     self.s_lateral_convs)
+
         if self.copy_teacher_fpn:
             aligned_inputs = tuple()
             aligned_outputs = tuple()
