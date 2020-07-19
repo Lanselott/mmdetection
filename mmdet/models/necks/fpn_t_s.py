@@ -239,10 +239,14 @@ class FPNTS(nn.Module):
             # 128 * 128 --> 256 * 256
             # TODO: Refactor later
             self.kernel_convs = nn.ModuleList()
-            self.kernel_convs.append(nn.Conv2d(256, 128, 3,
-                                               padding=1))  # channel
-            self.kernel_convs.append(nn.Conv2d(256, 128, 3,
-                                               padding=1))  # kernel nums
+            for _ in range(5):
+                pyramid_kernel_conv = nn.ModuleList()
+                pyramid_kernel_conv.append(nn.Conv2d(256, 128, 3,
+                                                     padding=1))  # channel
+                pyramid_kernel_conv.append(nn.Conv2d(256, 128, 3,
+                                                     padding=1))  # kernel nums
+                pyramid_kernel_conv.append(nn.Linear(256, 128, bias=False))
+                self.kernel_convs.append(pyramid_kernel_conv)  # channel
 
     # default init_weights for conv(msra) and norm in ConvModule
 
@@ -255,9 +259,10 @@ class FPNTS(nn.Module):
         if self.copy_teacher_fpn:
             self._copy_freeze_fpn()
         if self.kernel_meta_learner:
-            for m in self.kernel_convs:
-                # xavier_init(m, distribution='uniform')
-                normal_init(m, std=0.01)
+            for kernel_conv in self.kernel_convs:
+                for m in kernel_conv:
+                    # xavier_init(m, distribution='uniform')
+                    normal_init(m, std=0.01)
 
     def _freeze_teacher_layers(self):
         for fpn_conv in self.fpn_convs:
@@ -314,16 +319,17 @@ class FPNTS(nn.Module):
         '''
         if self.kernel_meta_learner:
             kernel_loss_tuple = tuple()
-            for s_fpn_conv, fpn_conv in zip(self.s_fpn_convs, self.fpn_convs):
+            for s_fpn_conv, fpn_conv, kernel_conv in zip(
+                    self.s_fpn_convs, self.fpn_convs, self.kernel_convs):
                 # s_conv_kernel_weights = s_fpn_conv.conv.weight
                 t_conv_kernel_weights = fpn_conv.conv.weight.detach()
-
-                s_conv_kernel_weights = self.kernel_convs[0](
-                    t_conv_kernel_weights)
-                s_conv_kernel_weights = self.kernel_convs[1](
+                s_conv_kernel_weights = kernel_conv[0](t_conv_kernel_weights)
+                s_conv_kernel_weights = kernel_conv[1](
                     s_conv_kernel_weights.permute(1, 0, 2,
                                                   3)).permute(1, 0, 2, 3)
                 s_fpn_conv.conv.weight.data = s_conv_kernel_weights.clone()
+                s_fpn_conv.conv.bias.data = kernel_conv[2](
+                    fpn_conv.conv.bias.detach())
                 '''
                 pyramid_kernel_loss = self.pyramid_kernel_loss(
                     s_conv_kernel_weights, t_conv_kernel_weights.detach())
