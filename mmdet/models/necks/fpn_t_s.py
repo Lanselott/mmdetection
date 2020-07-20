@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mmcv.cnn import xavier_init
@@ -243,8 +244,8 @@ class FPNTS(nn.Module):
                 pyramid_kernel_conv = nn.ModuleList()
                 pyramid_kernel_conv.append(nn.Conv2d(256, 128, 3,
                                                      padding=1))  # channel
-                pyramid_kernel_conv.append(nn.Conv2d(256, 128, 3,
-                                                     padding=1))  # kernel nums
+                # pyramid_kernel_conv.append(nn.Conv2d(256, 128, 3,
+                #                                      padding=1))  # kernel nums
                 pyramid_kernel_conv.append(nn.Linear(256, 128, bias=False))
                 self.kernel_convs.append(pyramid_kernel_conv)  # channel
 
@@ -323,12 +324,12 @@ class FPNTS(nn.Module):
                     self.s_fpn_convs, self.fpn_convs, self.kernel_convs):
                 # s_conv_kernel_weights = s_fpn_conv.conv.weight
                 t_conv_kernel_weights = fpn_conv.conv.weight.detach()
-                s_conv_kernel_weights = kernel_conv[0](t_conv_kernel_weights)
-                s_conv_kernel_weights = kernel_conv[1](
-                    s_conv_kernel_weights.permute(1, 0, 2,
-                                                  3)).permute(1, 0, 2, 3)
+                _s_conv_kernel_weights = kernel_conv[0](t_conv_kernel_weights)
+                s_conv_kernel_weights = (_s_conv_kernel_weights[:128] +
+                                         _s_conv_kernel_weights[128:]) / 2
                 s_fpn_conv.conv.weight.data = s_conv_kernel_weights.clone()
-                s_fpn_conv.conv.bias.data = kernel_conv[2](
+                
+                s_fpn_conv.conv.bias.data = kernel_conv[1](
                     fpn_conv.conv.bias.detach())
                 '''
                 pyramid_kernel_loss = self.pyramid_kernel_loss(
