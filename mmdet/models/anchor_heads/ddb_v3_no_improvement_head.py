@@ -512,9 +512,9 @@ class DDBV3NPHead(nn.Module):
             '''
             # NOTE: the grad of sorted branch is in sort order, diff from origin
             '''
-            sort_gradient_mask = (_bd_sort_iou >
+            sort_gradient_mask = (_bd_sort_iou >=
                                   (_bd_iou + self.iou_delta)).float()
-            origin_gradient_mask = (_bd_sort_iou <=
+            origin_gradient_mask = (_bd_sort_iou <
                                     (_bd_iou + self.iou_delta)).float()
             '''
             sorted_bbox_weight = _bd_sort_iou.mean(1)[0]
@@ -540,30 +540,25 @@ class DDBV3NPHead(nn.Module):
             else:
                 pos_decoded_sort_bbox_preds.register_hook(
                     lambda grad: grad * sort_gradient_mask)
-
+            
             pos_decoded_bbox_preds.register_hook(
                 lambda grad: grad * origin_gradient_mask)
             # pos_decoded_bbox_preds.register_hook(
             #     lambda grad: grad * 0)
-
             loss_sorted_bbox = self.loss_sorted_bbox(
                 pos_decoded_sort_bbox_preds,
-                pos_decoded_target_preds,
-                weight=sorted_ious_weights,
-                avg_factor=sorted_ious_weights.sum())
+                pos_decoded_target_preds)
+                # weight=sorted_ious_weights,
+                # avg_factor=sorted_ious_weights.sum())
 
             self.train_counter += 1
-            if self.stable_sort and self.train_counter <= 7330 * 2:
-                # sorted bboxes
-                loss_bbox = self.loss_bbox(pos_decoded_bbox_preds,
-                                           pos_decoded_target_preds)
-            else:
-                # origin boxes
-                loss_bbox = self.loss_bbox(
-                    pos_decoded_bbox_preds,
-                    pos_decoded_target_preds,
-                    weight=ious_weights,
-                    avg_factor=ious_weights.sum())
+        
+            # origin boxes
+            loss_bbox = self.loss_bbox(
+                pos_decoded_bbox_preds,
+                pos_decoded_target_preds)
+                # weight=ious_weights,
+                # avg_factor=ious_weights.sum())
 
             
             cls_weight = torch.ones_like(flatten_labels, dtype=flatten_cls_scores.dtype)
