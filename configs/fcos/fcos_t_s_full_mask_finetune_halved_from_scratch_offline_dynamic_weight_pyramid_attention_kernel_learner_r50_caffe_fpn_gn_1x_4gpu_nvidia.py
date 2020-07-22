@@ -15,7 +15,7 @@ model = dict(
         t_s_ratio=RATIO,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
-        frozen_stages=1,
+        frozen_stages=4,
         norm_cfg=dict(type='BN', requires_grad=False),
         style='caffe',
         pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),

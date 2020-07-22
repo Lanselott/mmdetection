@@ -666,7 +666,6 @@ class FCOSTSFullMaskHead(nn.Module):
         normal_init(self.fcos_s_centerness, std=0.01)
 
         if self.apply_pyramid_wise_alignment or self.pyramid_correlation:
-
             if self.naive_conv:
                 for m in self.t_s_pyramid_align:
                     normal_init(m, std=0.01)
