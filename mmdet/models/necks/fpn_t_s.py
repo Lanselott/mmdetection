@@ -322,7 +322,9 @@ class FPNTS(nn.Module):
             kernel_loss_tuple = tuple()
             for s_fpn_conv, fpn_conv, kernel_conv in zip(
                     self.s_fpn_convs, self.fpn_convs, self.kernel_convs):
+                # 256 * 256 -> 128 * 128
                 # s_conv_kernel_weights = s_fpn_conv.conv.weight
+
                 t_conv_kernel_weights = fpn_conv.conv.weight.detach()
                 _s_conv_kernel_weights = kernel_conv[0](t_conv_kernel_weights)
                 s_conv_kernel_weights = (_s_conv_kernel_weights[:128] +
