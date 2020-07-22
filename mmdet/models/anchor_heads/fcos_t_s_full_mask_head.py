@@ -509,10 +509,9 @@ class FCOSTSFullMaskHead(nn.Module):
                             padding=1))
 
             for i in range(self.multi_levels):
-                channel_delta = (self.feat_channels -
-                                 self.s_feat_channels) // self.multi_levels
+                channel_delta = (self.feat_channels - self.s_feat_channels)
+                # NOTE: Multi levels = 1 or 5 (1 means sharing among pyramids / 5 means no sharing)
                 if self.naive_conv:
-                    assert self.multi_levels == 1
                     '''
                     # naive conv layers 3x3
                     self.t_s_pyramid_align.append(
@@ -525,8 +524,8 @@ class FCOSTSFullMaskHead(nn.Module):
                     # 3x3
                     self.t_s_pyramid_align.append(
                         nn.Conv2d(
-                            self.s_feat_channels + channel_delta * i,
-                            self.s_feat_channels + channel_delta * (i + 1),
+                            self.s_feat_channels,
+                            self.s_feat_channels + channel_delta,
                             3,
                             padding=1))
 
@@ -534,8 +533,8 @@ class FCOSTSFullMaskHead(nn.Module):
                     # conv blocks
                     self.t_s_pyramid_align.append(
                         ConvModule(
-                            self.s_feat_channels + channel_delta * i,
-                            self.s_feat_channels + channel_delta * (i + 1),
+                            self.s_feat_channels,
+                            self.s_feat_channels + channel_delta,
                             3,
                             stride=1,
                             padding=1,
@@ -591,7 +590,6 @@ class FCOSTSFullMaskHead(nn.Module):
                     nn.Conv2d(
                         self.feat_channels, self.feat_channels, 3, padding=1))
             '''
-
         if self.apply_pri_pyramid_wise_alignment:
             for level in range(1, 4):
                 self.t_s_pri_pyramid_align.append(
@@ -806,8 +804,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                    self.s_scales, self.i_scales)
         else:
             return multi_apply(self.forward_single, t_feats, s_feats,
-                                t_pri_feats, s_pri_feats, self.scales,
-                                self.s_scales, placeholder)
+                               t_pri_feats, s_pri_feats, self.scales,
+                               self.s_scales, placeholder)
 
     def forward_single(self,
                        t_x,
@@ -823,6 +821,7 @@ class FCOSTSFullMaskHead(nn.Module):
                        kernel_losses=None):
         if self.eval_student and self.use_student_backbone:
             # NOTE: For evaluation, student backbone + usampled fpn + teacher heads
+            assert self.multi_levels == 1
             for t_s_pyramid_align_conv in self.t_s_pyramid_align:
                 t_x = t_s_pyramid_align_conv(s_x)
 
@@ -1018,6 +1017,8 @@ class FCOSTSFullMaskHead(nn.Module):
             else:
                 return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None, corr_pairs, None, None, None, None, None, None, None, None, None, None, None, None
         else:
+            print("self.multi_levels:{}".format(self.multi_levels))
+            
             if self.eval_student:
                 # assert self.use_intermediate_learner != self.use_student_backbone
                 if self.use_intermediate_learner:
@@ -1281,38 +1282,43 @@ class FCOSTSFullMaskHead(nn.Module):
                                 s_pyramid_feature.permute(0, 2, 3, 1).reshape(
                                     -1, self.s_feat_channels))
 
-                            if self.spatial_ratio > 1:
-                                for t_s_pyramid_align_conv in self.t_s_pyramid_align:
-                                    if self.direct_downsample:
-                                        s_pyramid_feature = F.interpolate(
-                                            s_pyramid_feature.unsqueeze(0),
-                                            size=pyramid_hint_pair[1].
-                                            shape[1:],
-                                            mode='nearest').squeeze(0)
-                                    else:
-                                        s_pyramid_feature = t_s_pyramid_align_conv(
-                                            F.interpolate(
-                                                s_pyramid_feature,
-                                                size=pyramid_hint_pair[1].
-                                                shape[2:],
-                                                mode='nearest'))
-                                    if self.apply_sharing_alignment:
-                                        raise NotImplementedError
+                            if self.multi_levels == 5:
+                                t_s_pyramid_align_conv = self.t_s_pyramid_align[
+                                    j]
                             else:
-                                for t_s_pyramid_align_conv in self.t_s_pyramid_align:
-                                    if self.direct_downsample:
-                                        s_pyramid_feature = F.interpolate(
-                                            s_pyramid_feature.unsqueeze(0),
-                                            size=pyramid_hint_pair[1].
-                                            shape[1:],
-                                            mode='nearest').squeeze(0)
-                                    else:
-                                        s_pyramid_feature = t_s_pyramid_align_conv(
-                                            s_pyramid_feature)
+                                t_s_pyramid_align_conv = self.t_s_pyramid_align[
+                                    0]
 
-                                    if self.inner_opt:
-                                        inner_s_pyramid_feature = t_s_pyramid_align_conv(
-                                            inner_s_pyramid_feature)
+                            if self.spatial_ratio > 1:
+                                # for t_s_pyramid_align_conv in self.t_s_pyramid_align:
+                                if self.direct_downsample:
+                                    s_pyramid_feature = F.interpolate(
+                                        s_pyramid_feature.unsqueeze(0),
+                                        size=pyramid_hint_pair[1].shape[1:],
+                                        mode='nearest').squeeze(0)
+                                else:
+                                    s_pyramid_feature = t_s_pyramid_align_conv(
+                                        F.interpolate(
+                                            s_pyramid_feature,
+                                            size=pyramid_hint_pair[1].
+                                            shape[2:],
+                                            mode='nearest'))
+                                if self.apply_sharing_alignment:
+                                    raise NotImplementedError
+                            else:
+                                # for t_s_pyramid_align_conv in self.t_s_pyramid_align:
+                                if self.direct_downsample:
+                                    s_pyramid_feature = F.interpolate(
+                                        s_pyramid_feature.unsqueeze(0),
+                                        size=pyramid_hint_pair[1].shape[1:],
+                                        mode='nearest').squeeze(0)
+                                else:
+                                    s_pyramid_feature = t_s_pyramid_align_conv(
+                                        s_pyramid_feature)
+
+                                if self.inner_opt:
+                                    inner_s_pyramid_feature = t_s_pyramid_align_conv(
+                                        inner_s_pyramid_feature)
 
                                 if self.apply_sharing_alignment:
                                     for sharing_alignment_conv in self.sharing_alignment_convs:

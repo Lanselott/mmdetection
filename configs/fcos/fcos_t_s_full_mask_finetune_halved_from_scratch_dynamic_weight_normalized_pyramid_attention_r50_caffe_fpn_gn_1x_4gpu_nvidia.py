@@ -53,6 +53,7 @@ model = dict(
         apply_feature_alignment=False,  # regression
         norm_pyramid=True,
         dynamic_weight=True,
+        multi_levels=5,
         temperature=1,
         align_level=0,
         apply_block_wise_alignment=BLOCK_ALIGN,
