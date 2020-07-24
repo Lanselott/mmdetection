@@ -329,10 +329,11 @@ class FPNTS(nn.Module):
                 _s_conv_kernel_weights = kernel_conv[0](t_conv_kernel_weights)
                 s_conv_kernel_weights = (_s_conv_kernel_weights[:128] +
                                          _s_conv_kernel_weights[128:]) / 2
-                s_fpn_conv.conv.weight.data = s_conv_kernel_weights.clone()
-                
-                s_fpn_conv.conv.bias.data = kernel_conv[1](
-                    fpn_conv.conv.bias.detach())
+                s_fpn_conv.conv.weight = torch.nn.Parameter(
+                    s_conv_kernel_weights.clone())
+                s_fpn_conv.conv.bias = torch.nn.Parameter(kernel_conv[1](
+                    fpn_conv.conv.bias.detach()))
+
                 '''
                 pyramid_kernel_loss = self.pyramid_kernel_loss(
                     s_conv_kernel_weights, t_conv_kernel_weights.detach())

@@ -1017,7 +1017,7 @@ class FCOSTSFullMaskHead(nn.Module):
             else:
                 return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None, corr_pairs, None, None, None, None, None, None, None, None, None, None, None, None
         else:
-            print("self.multi_levels:{}".format(self.multi_levels))
+            # print("self.multi_levels:{}".format(self.multi_levels))
             
             if self.eval_student:
                 # assert self.use_intermediate_learner != self.use_student_backbone
