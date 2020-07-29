@@ -574,6 +574,7 @@ class ResTSNet(nn.Module):
 
         for i in range(1, self.frozen_stages + 1):
             m = getattr(self, 'layer{}'.format(i))
+            
             m.eval()
             for param in m.parameters():
                 param.requires_grad = False
@@ -829,10 +830,12 @@ class ResTSNet(nn.Module):
         x = self.norm1(x)
         x = self.relu(x)
         x = self.maxpool(x)
+        
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
+
         outs = []
         s_outs = []
         # hint_losses = []

@@ -1018,7 +1018,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, None, None, corr_pairs, None, None, None, None, None, None, None, None, None, None, None, None
         else:
             # print("self.multi_levels:{}".format(self.multi_levels))
-            
+
             if self.eval_student:
                 # assert self.use_intermediate_learner != self.use_student_backbone
                 if self.use_intermediate_learner:
@@ -1527,7 +1527,7 @@ class FCOSTSFullMaskHead(nn.Module):
 
                         if self.logistic_train_first:
                             assert self.pyramid_train_first == False
-                            if self.train_step >= 7330 * 1 and self.train_step <= 7330 * 8:
+                            if self.train_step >= 7330 * 1 and self.train_step <= 7330 * 9:
                                 loss_dict.update({
                                     't_attention_iou_pyramid_hint_loss':
                                     t_attention_iou_pyramid_hint_loss,
@@ -1909,39 +1909,40 @@ class FCOSTSFullMaskHead(nn.Module):
                 #         and self.inner_opt == False) or (
                 #             self.train_step >= self.rouse_student_point
                 #             and self.inner_opt == True):
-                if self.apply_soft_regression_distill:
-                    soft_bbox_weight = 2
+                if self.apply_soft_regression_distill and self.train_step >= 7330 * 9:
+                    soft_bbox_weight = 1
 
-                    t_gt_pos_centerness = bbox_overlaps(
-                        t_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
+                    s_t_pos_centerness = bbox_overlaps(
+                        s_pred_bboxes, t_pred_bboxes,
+                        is_aligned=True).detach()
                     s_gt_pos_centerness = bbox_overlaps(
                         s_pred_bboxes, t_gt_bboxes, is_aligned=True).detach()
 
                     if self.apply_selective_regression_distill:
-                        t_gt_pos_centerness = torch.where(
-                            t_gt_pos_centerness > s_gt_pos_centerness,
-                            t_gt_pos_centerness,
-                            torch.zeros_like(t_gt_pos_centerness))
-                        s_gt_pos_centerness = torch.where(
-                            s_gt_pos_centerness > t_gt_pos_centerness,
+                        s_soft_bbox_weight = torch.where(
+                            s_t_pos_centerness >= s_gt_pos_centerness,
+                            s_t_pos_centerness,
+                            torch.zeros_like(s_t_pos_centerness))
+                        s_bbox_weight = torch.where(
+                            s_gt_pos_centerness > s_t_pos_centerness,
                             s_gt_pos_centerness,
                             torch.zeros_like(s_gt_pos_centerness))
 
-                        if t_gt_pos_centerness.sum() > 0:
+                        if s_t_pos_centerness.sum() > 0:
                             s_soft_loss_bbox = self.loss_bbox(
                                 s_pred_bboxes,
                                 t_pred_bboxes.detach(),
-                                weight=t_gt_pos_centerness,
-                                avg_factor=t_gt_pos_centerness.sum())
+                                weight=s_soft_bbox_weight,
+                                avg_factor=s_soft_bbox_weight.sum())
                         else:
-                            s_soft_loss_bbox = t_gt_pos_centerness.sum()
+                            s_soft_loss_bbox = s_t_pos_centerness.sum()
 
                         if s_gt_pos_centerness.sum() > 0:
                             s_loss_bbox = self.loss_bbox(
                                 s_pred_bboxes,
                                 t_gt_bboxes,
-                                weight=s_gt_pos_centerness,
-                                avg_factor=s_gt_pos_centerness.sum())
+                                weight=s_bbox_weight,
+                                avg_factor=s_bbox_weight.sum())
                         else:
                             s_soft_loss_bbox = s_gt_pos_centerness.sum()
 
@@ -1950,7 +1951,7 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_soft_loss_bbox = soft_bbox_weight * self.loss_bbox(
                             s_pred_bboxes,
                             t_pred_bboxes.detach(),
-                            weight=t_gt_pos_centerness)
+                            weight=s_soft_bbox_weight)
 
                     loss_dict.update(
                         s_soft_loss_bbox=s_soft_loss_bbox,
@@ -1971,14 +1972,14 @@ class FCOSTSFullMaskHead(nn.Module):
                             s_loss_centerness=s_loss_centerness,
                             s_loss_cls=s_loss_cls)
 
-                if self.apply_soft_cls_distill and self.train_step >= 1000:
+                if self.apply_soft_cls_distill and self.train_step >= 7330 * 9:
                     if self.spatial_ratio > 1:
                         # upsample student to match the size
                         # TODO: currently not use
                         assert True
                     # self.temperature = (1 - t_s_pred_ious.mean()) * 10
-                    self.adap_distill_loss_weight = (1.0 / 12.0) * (
-                        self.train_step // 7330)
+                    self.temperature = 1
+                    self.adap_distill_loss_weight = 1  # (1.0 / 12.0) * (self.train_step // 7330)
                     s_tempered_cls_scores = s_flatten_cls_scores / self.temperature
                     s_gt_labels = (t_flatten_cls_scores.detach() /
                                    self.temperature).sigmoid()

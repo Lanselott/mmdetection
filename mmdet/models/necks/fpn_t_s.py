@@ -335,7 +335,7 @@ class FPNTS(nn.Module):
                     t_conv_kernel_weights.view(256, -1)).permute(1, 0)
                 s_conv_kernel_weights = kernel_conv[1](
                     s_conv_kernel_weights).permute(1, 0).view(128, -1, 3, 3)
-                    
+
                 s_fpn_conv.conv.weight = torch.nn.Parameter(
                     s_conv_kernel_weights.clone())
                 s_fpn_conv.conv.bias = torch.nn.Parameter(kernel_conv[2](
