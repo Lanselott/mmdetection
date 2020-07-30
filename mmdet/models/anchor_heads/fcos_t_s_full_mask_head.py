@@ -117,8 +117,8 @@ class FCOSTSFullMaskHead(nn.Module):
                  direct_downsample=False,
                  attention_threshold=0.5,
                  freeze_teacher=False,
-                 beta=1,
-                 gamma=1,
+                 beta=1.5,
+                 gamma=2,
                  adap_distill_loss_weight=0.1,
                  inner_opt=False,
                  pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
@@ -1212,7 +1212,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             elif self.use_intermediate_learner:
                                 attention_lambda = 1  # + 1 * (self.train_step // 7330)
                             elif self.norm_pyramid:
-                                attention_lambda = 1000 + 1000 * (
+                                attention_lambda = 1000 + 2000 * (
                                     self.train_step // 7330)
                                 # attention_lambda = 1000.0 / (1.0 + math.exp(
                                 #     -2 * (self.train_step // 7330 - 1)))
@@ -1909,7 +1909,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 #         and self.inner_opt == False) or (
                 #             self.train_step >= self.rouse_student_point
                 #             and self.inner_opt == True):
-                if self.apply_soft_regression_distill and self.train_step >= 7330 * 9:
+                if self.apply_soft_regression_distill and self.train_step >= 7330 * 6:
                     soft_bbox_weight = 1
 
                     s_t_pos_centerness = bbox_overlaps(
@@ -1972,13 +1972,13 @@ class FCOSTSFullMaskHead(nn.Module):
                             s_loss_centerness=s_loss_centerness,
                             s_loss_cls=s_loss_cls)
 
-                if self.apply_soft_cls_distill and self.train_step >= 7330 * 9:
+                if self.apply_soft_cls_distill and self.train_step >= 7330 * 6:
                     if self.spatial_ratio > 1:
                         # upsample student to match the size
                         # TODO: currently not use
                         assert True
                     # self.temperature = (1 - t_s_pred_ious.mean()) * 10
-                    self.temperature = 1
+                    self.temperature = 2
                     self.adap_distill_loss_weight = 1  # (1.0 / 12.0) * (self.train_step // 7330)
                     s_tempered_cls_scores = s_flatten_cls_scores / self.temperature
                     s_gt_labels = (t_flatten_cls_scores.detach() /
