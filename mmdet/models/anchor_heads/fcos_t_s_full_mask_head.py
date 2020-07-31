@@ -1212,7 +1212,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             elif self.use_intermediate_learner:
                                 attention_lambda = 1  # + 1 * (self.train_step // 7330)
                             elif self.norm_pyramid:
-                                attention_lambda = 1000 + 2000 * (
+                                attention_lambda = 1000 + 1000 * (
                                     self.train_step // 7330)
                                 # attention_lambda = 1000.0 / (1.0 + math.exp(
                                 #     -2 * (self.train_step // 7330 - 1)))
@@ -1525,18 +1525,10 @@ class FCOSTSFullMaskHead(nn.Module):
 
                     if self.pyramid_wise_attention and not self.interactive_learning:
 
-                        if self.logistic_train_first:
-                            assert self.pyramid_train_first == False
-                            if self.train_step >= 7330 * 1 and self.train_step <= 7330 * 9:
-                                loss_dict.update({
-                                    't_attention_iou_pyramid_hint_loss':
-                                    t_attention_iou_pyramid_hint_loss,
-                                })
-                        else:
-                            loss_dict.update({
-                                't_attention_iou_pyramid_hint_loss':
-                                t_attention_iou_pyramid_hint_loss,
-                            })
+                        loss_dict.update({
+                            't_attention_iou_pyramid_hint_loss':
+                            t_attention_iou_pyramid_hint_loss,
+                        })
 
                         if self.use_intermediate_learner:
                             loss_dict.update({
@@ -1556,18 +1548,10 @@ class FCOSTSFullMaskHead(nn.Module):
                                 s_t_pyramid_feature_list,
                                 t_pyramid_feature_list.detach())
 
-                            if self.logistic_train_first:
-                                assert self.pyramid_train_first == False
-                                if self.train_step >= 7330 * 1 and self.train_step <= 7330 * 11:
-                                    loss_dict.update({
-                                        't_pyramid_hint_loss':
-                                        t_pyramid_hint_loss
-                                    })
-                            else:
-                                loss_dict.update({
-                                    't_pyramid_hint_loss':
-                                    t_pyramid_hint_loss
-                                })
+                            loss_dict.update({
+                                't_pyramid_hint_loss':
+                                t_pyramid_hint_loss
+                            })
 
                         if self.use_intermediate_learner:
                             inter_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
@@ -1951,7 +1935,8 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_soft_loss_bbox = soft_bbox_weight * self.loss_bbox(
                             s_pred_bboxes,
                             t_pred_bboxes.detach(),
-                            weight=s_soft_bbox_weight)
+                            weight=s_soft_bbox_weight,
+                            avg_factor=s_soft_bbox_weight.sum())
 
                     loss_dict.update(
                         s_soft_loss_bbox=s_soft_loss_bbox,
@@ -1959,18 +1944,10 @@ class FCOSTSFullMaskHead(nn.Module):
                         s_loss_centerness=s_loss_centerness,
                         s_loss_cls=s_loss_cls)
                 else:
-                    if self.pyramid_train_first:
-                        assert self.logistic_train_first == False
-                        if self.train_step >= 7330 * 11:
-                            loss_dict.update(
-                                s_loss_bbox=s_loss_bbox,
-                                s_loss_centerness=s_loss_centerness,
-                                s_loss_cls=s_loss_cls)
-                    else:
-                        loss_dict.update(
-                            s_loss_bbox=s_loss_bbox,
-                            s_loss_centerness=s_loss_centerness,
-                            s_loss_cls=s_loss_cls)
+                    loss_dict.update(
+                        s_loss_bbox=s_loss_bbox,
+                        s_loss_centerness=s_loss_centerness,
+                        s_loss_cls=s_loss_cls)
 
                 if self.apply_soft_cls_distill and self.train_step >= 7330 * 6:
                     if self.spatial_ratio > 1:

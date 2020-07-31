@@ -452,6 +452,7 @@ class ResTSNet(nn.Module):
         self.train_step = 0
 
         self._make_stem_layer(in_channels)
+        self._make_s_stem_layer(in_channels)
 
         self.res_layers = []
         self.s_res_layers = []
@@ -488,7 +489,7 @@ class ResTSNet(nn.Module):
         # student net
         # TODO: rewrite student layers;
         # current block1[0] layer input channel not fully pruned in same way
-        self.inplanes = 64  # it should be self.inplanes // self.t_s_ratio
+        self.inplanes = 64 // self.t_s_ratio
         student_block_output_channel = []
         for j, num_blocks in enumerate(self.s_stage_blocks):
             stride = strides[j]
@@ -516,7 +517,7 @@ class ResTSNet(nn.Module):
             s_layer_name = 's_layer{}'.format(j + 1)
             self.add_module(s_layer_name, s_res_layer)
             self.s_res_layers.append(s_layer_name)
-      
+
         self.feat_dim = self.s_block.expansion * 64 * 2**(
             len(self.stage_blocks) - 1)
         # hint knowlege, align teacher and student
@@ -539,12 +540,15 @@ class ResTSNet(nn.Module):
                         bias=self.norm_cfg is None))
                 '''
                 self.align_layers.append(
-                    nn.Conv2d(
-                        input_channel, out_channel, 3, padding=1))
+                    nn.Conv2d(input_channel, out_channel, 3, padding=1))
                 # print("self.inplanes:{}".format(self.inplanes))
     @property
     def norm1(self):
         return getattr(self, self.norm1_name)
+
+    @property
+    def s_norm1(self):
+        return getattr(self, self.s_norm1_name)
 
     def _make_stem_layer(self, in_channels):
         self.conv1 = build_conv_layer(
@@ -560,6 +564,21 @@ class ResTSNet(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
+    def _make_s_stem_layer(self, in_channels):
+        self.s_conv1 = build_conv_layer(
+            self.conv_cfg,
+            in_channels,
+            64 // self.t_s_ratio,
+            kernel_size=7,
+            stride=2,
+            padding=3,
+            bias=False)
+        self.s_norm1_name, s_norm1 = build_norm_layer(
+            self.norm_cfg, 64 // self.t_s_ratio, postfix=2)
+        self.add_module(self.s_norm1_name, s_norm1)
+        self.s_relu = nn.ReLU(inplace=True)
+        self.s_maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
     def _freeze_stages(self):
         if self.freeze_teacher:
             assert self.frozen_stages == 4
@@ -574,7 +593,6 @@ class ResTSNet(nn.Module):
 
         for i in range(1, self.frozen_stages + 1):
             m = getattr(self, 'layer{}'.format(i))
-            
             m.eval()
             for param in m.parameters():
                 param.requires_grad = False
@@ -825,16 +843,25 @@ class ResTSNet(nn.Module):
         self.train_step += 1
         # if self.rouse_student_point == self.train_step:
         #     self.copy_backbone()
+        if self.spatial_ratio != 1:
+            s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
+        else:
+            s_x = x
 
         x = self.conv1(x)
         x = self.norm1(x)
         x = self.relu(x)
         x = self.maxpool(x)
-        
-        if self.spatial_ratio != 1:
-            s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
-        else:
-            s_x = x
+
+        s_x = self.s_conv1(s_x)
+        s_x = self.s_norm1(s_x)
+        s_x = self.s_relu(s_x)
+        s_x = self.s_maxpool(s_x)
+
+        # if self.spatial_ratio != 1:
+        #     s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
+        # else:
+        #     s_x = x
 
         outs = []
         s_outs = []
@@ -858,7 +885,7 @@ class ResTSNet(nn.Module):
                 block_distill_pairs.append([aligned_s_feature, outs[j]])
             if j in self.out_indices:
                 s_outs.append(s_x)
-        
+
         if self.apply_block_wise_alignment:
             return tuple(outs), tuple(s_outs), tuple(block_distill_pairs)
         else:
