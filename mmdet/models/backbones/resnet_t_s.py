@@ -598,21 +598,28 @@ class ResTSNet(nn.Module):
                 param.requires_grad = False
 
     def copy_backbone(self):
+        # stem layer
+        self.s_conv1.weight.data.copy_(
+            F.interpolate(
+                self.conv1.weight.data.permute(2, 3, 0, 1).detach(),
+                size=self.s_conv1.weight.shape[:2],
+                mode='bilinear').permute(2, 3, 0, 1))
+        self.s_norm1.weight.data.copy_(
+            F.interpolate(
+                self.norm1.weight.data.unsqueeze(0).unsqueeze(0),
+                size=self.s_norm1.weight.shape[0],
+                mode='linear').view(-1))
+        self.s_norm1.bias.data.copy_(
+            F.interpolate(
+                self.norm1.bias.data.unsqueeze(0).unsqueeze(0),
+                size=self.s_norm1.bias.shape[0],
+                mode='linear').view(-1))
+
         for m in self.modules():
             if hasattr(m, 's_layer1'):
-                t_layers1 = m.layer1
-                s_layers1 = m.s_layer1
-                t_layers2 = m.layer2
-                s_layers2 = m.s_layer2
-                t_layers3 = m.layer3
-                s_layers3 = m.s_layer3
-                t_layers4 = m.layer4
-                s_layers4 = m.s_layer4
-                t_bottleneck_list = [
-                    t_layers1, t_layers2, t_layers3, t_layers4
-                ]
+                t_bottleneck_list = [m.layer1, m.layer2, m.layer3, m.layer4]
                 s_bottleneck_list = [
-                    s_layers1, s_layers2, s_layers3, s_layers4
+                    m.s_layer1, m.s_layer2, m.s_layer3, m.s_layer4
                 ]
                 # t_bottleneck_list = [t_layers1]
                 # s_bottleneck_list = [s_layers1]
@@ -710,19 +717,9 @@ class ResTSNet(nn.Module):
     def copy_backbone_topk(self):
         for m in self.modules():
             if hasattr(m, 's_layer1'):
-                t_layers1 = m.layer1
-                s_layers1 = m.s_layer1
-                t_layers2 = m.layer2
-                s_layers2 = m.s_layer2
-                t_layers3 = m.layer3
-                s_layers3 = m.s_layer3
-                t_layers4 = m.layer4
-                s_layers4 = m.s_layer4
-                t_bottleneck_list = [
-                    t_layers1, t_layers2, t_layers3, t_layers4
-                ]
+                t_bottleneck_list = [m.layer1, m.layer2, m.layer3, m.layer4]
                 s_bottleneck_list = [
-                    s_layers1, s_layers2, s_layers3, s_layers4
+                    m.s_layer1, m.s_layer2, m.s_layer3, m.s_layer4
                 ]
                 # t_bottleneck_list = [t_layers1]
                 # s_bottleneck_list = [s_layers1]
