@@ -807,12 +807,6 @@ class ResTSNet(nn.Module):
         if isinstance(pretrained, str):
             logger = logging.getLogger()
             load_checkpoint(self, pretrained, strict=False, logger=logger)
-            #
-            if self.good_initial:
-                if self.bn_topk_selection:
-                    self.copy_backbone_topk()
-                else:
-                    self.copy_backbone()
 
         elif pretrained is None:
             for m in self.modules():
@@ -838,8 +832,13 @@ class ResTSNet(nn.Module):
 
     def forward(self, x):
         self.train_step += 1
-        # if self.rouse_student_point == self.train_step:
-        #     self.copy_backbone()
+        # update for each iteration
+        if self.good_initial and self.train_step % 7330 == 0:
+            if self.bn_topk_selection:
+                self.copy_backbone_topk()
+            else:
+                self.copy_backbone()
+
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
