@@ -394,6 +394,7 @@ class ResTSNet(nn.Module):
                  apply_block_wise_alignment=False,
                  freeze_teacher=False,
                  good_initial=False,
+                 feature_adaption=False,
                  bn_topk_selection=False,
                  frozen_stages=-1,
                  conv_cfg=None,
@@ -428,6 +429,7 @@ class ResTSNet(nn.Module):
         self.freeze_teacher = freeze_teacher
         self.frozen_stages = frozen_stages
         self.good_initial = good_initial
+        self.feature_adaption = feature_adaption
         self.bn_topk_selection = bn_topk_selection
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
@@ -808,6 +810,12 @@ class ResTSNet(nn.Module):
             logger = logging.getLogger()
             load_checkpoint(self, pretrained, strict=False, logger=logger)
 
+            if self.good_initial and self.train_step % 7330 == 0:
+                if self.bn_topk_selection:
+                    self.copy_backbone_topk()
+                else:
+                    self.copy_backbone()
+
         elif pretrained is None:
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):
@@ -833,11 +841,13 @@ class ResTSNet(nn.Module):
     def forward(self, x):
         self.train_step += 1
         # update for each iteration
+        '''
         if self.good_initial and self.train_step % 7330 == 0:
             if self.bn_topk_selection:
                 self.copy_backbone_topk()
             else:
                 self.copy_backbone()
+        '''
 
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
@@ -859,6 +869,7 @@ class ResTSNet(nn.Module):
         # else:
         #     s_x = x
 
+        inputs = []
         outs = []
         s_outs = []
         # hint_losses = []
@@ -866,13 +877,26 @@ class ResTSNet(nn.Module):
 
         for i, layer_name in enumerate(self.res_layers):
             res_layer = getattr(self, layer_name)
+
+            if self.feature_adaption:
+                inputs.append(x)
+
             x = res_layer(x)
             if i in self.out_indices:
                 outs.append(x)
         # student net
         for j, s_layer_name in enumerate(self.s_res_layers):
             s_res_layer = getattr(self, s_layer_name)
-            s_x = s_res_layer(s_x)
+
+            if self.feature_adaption:
+                x_detached = inputs[j].permute(2, 3, 0, 1).detach()
+                s_x = (s_x + F.interpolate(
+                    x_detached, size=s_x.shape[:2], mode='bilinear').permute(
+                        2, 3, 0, 1)) / 2
+                s_x = s_res_layer(s_x)
+            else:
+                s_x = s_res_layer(s_x)
+
             # align to teacher network and get the loss
             if self.apply_block_wise_alignment:
                 aligned_s_feature = self.align_layers[j](s_x)
