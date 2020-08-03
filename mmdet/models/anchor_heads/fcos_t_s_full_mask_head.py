@@ -999,6 +999,8 @@ class FCOSTSFullMaskHead(nn.Module):
             if self.apply_pyramid_wise_alignment or self.siamese_distill or self.pyramid_correlation and not self.apply_head_wise_alignment:
                 if self.copy_teacher_fpn:
                     return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, t_fpn_bbox_pred, t_fpn_cls_score, t_fpn_centerness, None, None, None, None, None, None, None
+                elif self.apply_block_wise_alignment:
+                    return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, None, None, None, None, None, None, None, None
                 elif self.learn_from_teacher_backbone:
                     return cls_score, bbox_pred, centerness, s_cls_score, s_bbox_pred, s_centerness, hint_pairs, pyramid_hint_pairs, None, corr_pairs, pri_pyramid_hint_pairs, None, None, None, t_decreased_cls_score, t_decreased_bbox_pred, t_decreased_centerness, t_decreased_pyramid_hint_features, None, None, None, None
                 elif self.use_intermediate_learner or self.interactive_learning:
@@ -1167,7 +1169,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 for j, hint_feature in enumerate(hint_pairs):
                     s_block_feature = hint_feature[0]
                     t_block_feature = hint_feature[1].detach()
-
+                    
                     if self.block_teacher_attention:
                         # Apply method to partially update hint losses
                         block_distill_masks = torch.nn.functional.upsample(
