@@ -395,7 +395,7 @@ class ResTSNet(nn.Module):
                  freeze_teacher=False,
                  good_initial=False,
                  feature_adaption=False,
-                 train_mode=False,
+                 train_mode=True,
                  bn_topk_selection=False,
                  frozen_stages=-1,
                  conv_cfg=None,
