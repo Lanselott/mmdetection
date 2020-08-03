@@ -395,7 +395,7 @@ class ResTSNet(nn.Module):
                  freeze_teacher=False,
                  good_initial=False,
                  feature_adaption=False,
-                 train_mode=True,
+                 train_mode=False,
                  bn_topk_selection=False,
                  frozen_stages=-1,
                  conv_cfg=None,
@@ -874,13 +874,13 @@ class ResTSNet(nn.Module):
         inputs = []
         outs = []
         s_outs = []
-        block_distill_pairs = []
         # hint_losses = []
+        block_distill_pairs = []
 
         for i, layer_name in enumerate(self.res_layers):
             res_layer = getattr(self, layer_name)
 
-            if self.apply_block_wise_alignment:
+            if self.feature_adaption:
                 inputs.append(x)
 
             x = res_layer(x)
@@ -890,19 +890,23 @@ class ResTSNet(nn.Module):
         for j, s_layer_name in enumerate(self.s_res_layers):
             s_res_layer = getattr(self, s_layer_name)
 
-            if self.apply_block_wise_alignment and self.train_mode:
+            if self.feature_adaption and self.train_mode:
                 x_detached = inputs[j].permute(2, 3, 0, 1).detach()
-                x_detached = F.interpolate(
-                    x_detached, size=s_x.shape[:2],
-                    mode='bilinear').permute(2, 3, 0, 1)
-                adapted_outs = s_res_layer(x_detached).detach()
+                adaption_factor = self.train_step / 7330 / 12
+                s_x = adaption_factor * s_x + (
+                    1 - adaption_factor) * F.interpolate(
+                        x_detached, size=s_x.shape[:2],
+                        mode='bilinear').permute(2, 3, 0, 1)
                 s_x = s_res_layer(s_x)
-
-                block_distill_pairs.append([s_x, adapted_outs])
             else:
                 s_x = s_res_layer(s_x)
 
             # align to teacher network and get the loss
+            if self.apply_block_wise_alignment:
+                aligned_s_feature = self.align_layers[j](s_x)
+                # hint_losses.append(
+                #     self.pyramid_hint_loss(aligned_s_feature, outs[j].detach()))
+                block_distill_pairs.append([aligned_s_feature, outs[j]])
             if j in self.out_indices:
                 s_outs.append(s_x)
 
