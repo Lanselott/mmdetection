@@ -812,7 +812,7 @@ class ResTSNet(nn.Module):
             logger = logging.getLogger()
             load_checkpoint(self, pretrained, strict=False, logger=logger)
 
-            if self.good_initial and self.train_step % 7330 == 0:
+            if self.good_initial:
                 if self.bn_topk_selection:
                     self.copy_backbone_topk()
                 else:
@@ -892,12 +892,16 @@ class ResTSNet(nn.Module):
 
             if self.feature_adaption and self.train_mode:
                 x_detached = inputs[j].permute(2, 3, 0, 1).detach()
-                adaption_factor = self.train_step / 7330 / 12
+
+                adaption_factor = self.train_step / 7330 / 11
                 # adaption_factor = (7330 * 11) / 7330 / 12
-                s_x = adaption_factor * s_x + (
-                    1 - adaption_factor) * F.interpolate(
-                        x_detached, size=s_x.shape[:2],
-                        mode='bilinear').permute(2, 3, 0, 1)
+
+                if adaption_factor <= 7330 * 11:
+                    s_x = adaption_factor * s_x + (
+                        1 - adaption_factor) * F.interpolate(
+                            x_detached, size=s_x.shape[:2],
+                            mode='bilinear').permute(2, 3, 0, 1)
+
                 s_x = s_res_layer(s_x)
             else:
                 s_x = s_res_layer(s_x)
