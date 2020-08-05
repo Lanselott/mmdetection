@@ -893,6 +893,7 @@ class ResTSNet(nn.Module):
             if self.feature_adaption and self.train_mode:
                 x_detached = inputs[j].permute(2, 3, 0, 1).detach()
                 adaption_factor = self.train_step / 7330 / 12
+                # adaption_factor = (7330 * 11) / 7330 / 12
                 s_x = adaption_factor * s_x + (
                     1 - adaption_factor) * F.interpolate(
                         x_detached, size=s_x.shape[:2],
