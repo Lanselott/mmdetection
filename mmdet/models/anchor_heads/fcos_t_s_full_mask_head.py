@@ -1214,7 +1214,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             elif self.use_intermediate_learner:
                                 attention_lambda = 1  # + 1 * (self.train_step // 7330)
                             elif self.norm_pyramid:
-                                attention_lambda = 1000 + 1000 * (
+                                attention_lambda = 1000 + 500 * (
                                     self.train_step // 7330)
                                 # attention_lambda = 1000.0 / (1.0 + math.exp(
                                 #     -2 * (self.train_step // 7330 - 1)))
