@@ -1230,17 +1230,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                     -2 * (self.train_step // 7330 - 1)))
                                 # TODO: loss aware weights, IoU aware weights ....
                                 # v2
-
-                            # v3, sigmoid type
-                            # attention_lambda = 1 + 1.5 * self.train_step // 7330
-                            # attention_lambda = 0 + 2 * self.train_step // (
-                            #     7330 * 2)
-
-                            if self.downgrade_bg:
-                                pyramid_lambda = 1
-                            else:
-                                pyramid_lambda = attention_lambda
-
+                            pyramid_lambda = attention_lambda
+                        
                         else:
                             attention_lambda = 1  # + 1 * self.train_step // 7330
                             pyramid_lambda = 1

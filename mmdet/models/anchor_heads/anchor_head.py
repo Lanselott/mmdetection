@@ -3,6 +3,8 @@ from __future__ import division
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
 from mmcv.cnn import normal_init
 
 from mmdet.core import (AnchorGenerator, anchor_target, delta2bbox, force_fp32,
@@ -38,6 +40,7 @@ class AnchorHead(nn.Module):
                  s_feat_channels=128,
                  dynamic_weight=False,
                  pyramid_wise_attention=False,
+                 norm_pyramid=False,
                  anchor_scales=[8, 16, 32],
                  anchor_ratios=[0.5, 1.0, 2.0],
                  anchor_strides=[4, 8, 16, 32, 64],
@@ -57,6 +60,7 @@ class AnchorHead(nn.Module):
         self.feat_channels = feat_channels
         self.s_feat_channels = s_feat_channels
         self.pyramid_wise_attention = pyramid_wise_attention
+        self.norm_pyramid = norm_pyramid
         self.anchor_scales = anchor_scales
         self.anchor_ratios = anchor_ratios
         self.anchor_strides = anchor_strides
@@ -162,9 +166,13 @@ class AnchorHead(nn.Module):
         label_weights = label_weights.reshape(-1)
 
         if self.dynamic_weight:
-            attention_lambda = 8 + 2 * self.train_step // 7330
-            # pyramid_lambda = 8 / (1 + 0.33 * self.train_step // 7330)
-            pyramid_lambda = 8
+            if self.norm_pyramid:
+                attention_lambda = 1000 + 500 * (self.train_step // 7330)
+                pyramid_lambda = attention_lambda
+            else:
+                attention_lambda = 8 + 2 * self.train_step // 7330
+                # pyramid_lambda = 8 / (1 + 0.33 * self.train_step // 7330)
+                pyramid_lambda = 8
         else:
             attention_lambda = 8
             pyramid_lambda = 8
@@ -203,23 +211,30 @@ class AnchorHead(nn.Module):
             t_bbox_pred = bbox_pred[0].permute(0, 2, 3, 1).reshape(-1, 4)
             s_bbox_pred = bbox_pred[1].permute(0, 2, 3, 1).reshape(-1, 4)
 
-            pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(s_x_feats,
-                                                                          x_feats.detach())
+            if self.norm_pyramid:
+                s_x_feats = F.normalize(s_x_feats, p=2, dim=1)
+                x_feats = F.normalize(x_feats, p=2, dim=1)
+
+            pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
+                s_x_feats, x_feats.detach())
+
             if self.pyramid_wise_attention:
                 pos_bbox_inds = bbox_weights.reshape(
-                    self.num_anchors, -1, 4).sum(0).sum(1).nonzero().reshape(-1)
+                    self.num_anchors, -1,
+                    4).sum(0).sum(1).nonzero().reshape(-1)
                 t_pos_bbox_pred = t_bbox_pred[pos_bbox_inds]
                 s_pos_bbox_pred = s_bbox_pred[pos_bbox_inds]
 
                 if len(t_pos_bbox_pred) > 0:
-                    bbox_distance = torch.abs(
-                        t_pos_bbox_pred - s_pos_bbox_pred).sum(1)
-
+                    bbox_distance = torch.abs(t_pos_bbox_pred -
+                                              s_pos_bbox_pred).sum(1)
                     attention_weight = (
                         1 - bbox_distance / bbox_distance.max()).detach()
 
                     pos_attention_pyramid_hint_loss = attention_lambda * self.pyramid_hint_loss(
-                        s_x_feats[pos_bbox_inds], x_feats[pos_bbox_inds].detach(), weight=attention_weight)
+                        s_x_feats[pos_bbox_inds],
+                        x_feats[pos_bbox_inds].detach(),
+                        weight=attention_weight)
                 else:
                     pos_attention_pyramid_hint_loss = t_pos_bbox_pred.sum()
 
@@ -316,7 +331,8 @@ class AnchorHead(nn.Module):
                         s_loss_cls=s_loss_cls,
                         s_loss_bbox=s_loss_bbox,
                         pyramid_hint_loss=pyramid_hint_loss,
-                        pos_attention_pyramid_hint_loss=pos_attention_pyramid_hint_loss)
+                        pos_attention_pyramid_hint_loss=
+                        pos_attention_pyramid_hint_loss)
                 else:
                     t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss = multi_apply(
                         self.loss_single,
@@ -334,7 +350,8 @@ class AnchorHead(nn.Module):
                         t_loss_bbox=t_loss_bbox,
                         s_loss_bbox=s_loss_bbox,
                         pyramid_hint_loss=pyramid_hint_loss,
-                        pos_attention_pyramid_hint_loss=pos_attention_pyramid_hint_loss)
+                        pos_attention_pyramid_hint_loss=
+                        pos_attention_pyramid_hint_loss)
             else:
                 if self.finetune_student:
                     s_loss_cls, s_loss_bbox, pyramid_hint_loss = multi_apply(
