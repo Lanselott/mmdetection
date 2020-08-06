@@ -891,16 +891,13 @@ class ResTSNet(nn.Module):
             s_res_layer = getattr(self, s_layer_name)
 
             if self.feature_adaption and self.train_mode:
+                adaption_factor = self.train_step / 7330 / 12
+
                 x_detached = inputs[j].permute(2, 3, 0, 1).detach()
-
-                # adaption_factor = self.train_step / 7330 / 11
-                adaption_factor = (7330 * 11) / 7330 / 12
-
-                if adaption_factor <= 7330 * 11:
-                    s_x = adaption_factor * s_x + (
-                        1 - adaption_factor) * F.interpolate(
-                            x_detached, size=s_x.shape[:2],
-                            mode='bilinear').permute(2, 3, 0, 1)
+                s_x = adaption_factor * s_x + (
+                    1 - adaption_factor) * F.interpolate(
+                        x_detached, size=s_x.shape[:2],
+                        mode='bilinear').permute(2, 3, 0, 1)
                 
                 s_x = s_res_layer(s_x)
             else:
