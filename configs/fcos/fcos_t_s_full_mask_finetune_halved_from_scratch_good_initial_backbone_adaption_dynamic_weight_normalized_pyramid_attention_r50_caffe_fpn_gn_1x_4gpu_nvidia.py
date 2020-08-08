@@ -4,8 +4,8 @@ PYRAMID_ALIGN = True
 PRI_PYRAMID_ALIGN = False
 HEAD_ALIGN = False
 FREEZE_TEACHER = False
-GOOD_INITIAL=True
-BN_TOPK_SELECTION=False
+GOOD_INITIAL = True
+BN_TOPK_SELECTION = False
 RATIO = 2
 model = dict(
     type='FCOSTS',
@@ -25,8 +25,9 @@ model = dict(
         freeze_teacher=FREEZE_TEACHER,
         good_initial=GOOD_INITIAL,
         feature_adaption=True,
+        conv_downsample=True,
         bn_topk_selection=BN_TOPK_SELECTION,
-        ),
+    ),
     neck=dict(
         type='FPNTS',
         in_channels=[256, 512, 1024, 2048],

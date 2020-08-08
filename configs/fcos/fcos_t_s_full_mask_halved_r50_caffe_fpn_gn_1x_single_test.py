@@ -36,6 +36,7 @@ model = dict(
         freeze_teacher=FREEZE_TEACHER,
         good_initial=GOOD_INITIAL,
         feature_adaption=True,
+        conv_downsample=True,
         train_mode=True,
         bn_topk_selection=BN_TOPK_SELECTION,
         rouse_student_point=ROUSE_STUDENT_POINT),

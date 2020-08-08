@@ -2,7 +2,7 @@ import logging
 
 import torch.nn as nn
 import torch.utils.checkpoint as cp
-from mmcv.cnn import constant_init, kaiming_init
+from mmcv.cnn import constant_init, kaiming_init, normal_init
 from mmcv.runner import load_checkpoint
 from torch.nn.modules.batchnorm import _BatchNorm
 import torch.nn.functional as F
@@ -395,6 +395,7 @@ class ResTSNet(nn.Module):
                  freeze_teacher=False,
                  good_initial=False,
                  feature_adaption=False,
+                 conv_downsample=False,
                  train_mode=True,
                  bn_topk_selection=False,
                  frozen_stages=-1,
@@ -431,6 +432,7 @@ class ResTSNet(nn.Module):
         self.frozen_stages = frozen_stages
         self.good_initial = good_initial
         self.feature_adaption = feature_adaption
+        self.conv_downsample = conv_downsample
         self.bn_topk_selection = bn_topk_selection
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
@@ -531,21 +533,22 @@ class ResTSNet(nn.Module):
         if self.apply_block_wise_alignment:
             for out_channel in self.align_layers_output_channel_size:
                 input_channel = out_channel // self.t_s_ratio
-                '''
-                self.align_layers.append(
-                    ConvModule(
-                        input_channel,
-                        out_channel,
-                        3,
-                        stride=1,
-                        padding=1,
-                        conv_cfg=self.conv_cfg,
-                        norm_cfg=self.norm_cfg,
-                        bias=self.norm_cfg is None))
-                '''
+
                 self.align_layers.append(
                     nn.Conv2d(input_channel, out_channel, 3, padding=1))
                 # print("self.inplanes:{}".format(self.inplanes))
+        if self.feature_adaption and self.conv_downsample:
+            adaption_channels = [64, 256, 512, 1024]
+            self.adaption_layers = nn.ModuleList()
+
+            for adaption_channel in adaption_channels:
+                self.adaption_layers.append(
+                    nn.Conv2d(
+                        adaption_channel,
+                        adaption_channel // self.t_s_ratio,
+                        3,
+                        padding=1))
+
     @property
     def norm1(self):
         return getattr(self, self.norm1_name)
@@ -818,6 +821,10 @@ class ResTSNet(nn.Module):
                 else:
                     self.copy_backbone()
 
+        if self.feature_adaption and self.conv_downsample:
+            for m in self.adaption_layers:
+                normal_init(m, std=0.01)
+
         elif pretrained is None:
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):
@@ -893,12 +900,18 @@ class ResTSNet(nn.Module):
             if self.feature_adaption and self.train_mode:
                 adaption_factor = self.train_step / 7330 / 12
 
-                x_detached = inputs[j].permute(2, 3, 0, 1).detach()
-                s_x = adaption_factor * s_x + (
-                    1 - adaption_factor) * F.interpolate(
-                        x_detached, size=s_x.shape[:2],
-                        mode='bilinear').permute(2, 3, 0, 1)
-                
+                if self.conv_downsample:
+                    x_detached = inputs[j].detach()
+                    s_x = adaption_factor * s_x + (
+                        1 - adaption_factor) * self.adaption_layers[j](
+                            x_detached)
+                else:
+                    x_detached = inputs[j].permute(2, 3, 0, 1).detach()
+                    s_x = adaption_factor * s_x + (
+                        1 - adaption_factor) * F.interpolate(
+                            x_detached, size=s_x.shape[:2],
+                            mode='bilinear').permute(2, 3, 0, 1)
+
                 s_x = s_res_layer(s_x)
             else:
                 s_x = s_res_layer(s_x)
