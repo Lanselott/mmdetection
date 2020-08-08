@@ -1169,7 +1169,7 @@ class FCOSTSFullMaskHead(nn.Module):
                 for j, hint_feature in enumerate(hint_pairs):
                     s_block_feature = hint_feature[0]
                     t_block_feature = hint_feature[1].detach()
-                    
+
                     if self.block_teacher_attention:
                         # Apply method to partially update hint losses
                         block_distill_masks = torch.nn.functional.upsample(
@@ -1214,7 +1214,7 @@ class FCOSTSFullMaskHead(nn.Module):
                             elif self.use_intermediate_learner:
                                 attention_lambda = 1  # + 1 * (self.train_step // 7330)
                             elif self.norm_pyramid:
-                                attention_lambda = 1000 + 500 * (
+                                attention_lambda = 1000 + 1000 * (
                                     self.train_step // 7330)
                                 # attention_lambda = 1000.0 / (1.0 + math.exp(
                                 #     -2 * (self.train_step // 7330 - 1)))
@@ -1231,7 +1231,7 @@ class FCOSTSFullMaskHead(nn.Module):
                                 # TODO: loss aware weights, IoU aware weights ....
                                 # v2
                             pyramid_lambda = attention_lambda
-                        
+
                         else:
                             attention_lambda = 1  # + 1 * self.train_step // 7330
                             pyramid_lambda = 1
@@ -1541,10 +1541,8 @@ class FCOSTSFullMaskHead(nn.Module):
                                 s_t_pyramid_feature_list,
                                 t_pyramid_feature_list.detach())
 
-                            loss_dict.update({
-                                't_pyramid_hint_loss':
-                                t_pyramid_hint_loss
-                            })
+                            loss_dict.update(
+                                {'t_pyramid_hint_loss': t_pyramid_hint_loss})
 
                         if self.use_intermediate_learner:
                             inter_pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
