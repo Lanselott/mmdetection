@@ -916,7 +916,6 @@ class ResTSNet(nn.Module):
                         s_x = adaption_factor * s_x + (
                             1 - adaption_factor) * self.adaption_layers[j](
                                 x_detached) + constant
-                        embed()
                     else:
                         s_x = adaption_factor * s_x + (
                             1 - adaption_factor) * self.adaption_layers[j](
