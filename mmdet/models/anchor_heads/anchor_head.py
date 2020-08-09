@@ -169,8 +169,8 @@ class AnchorHead(nn.Module):
 
         if self.dynamic_weight:
             if self.norm_pyramid:
-                # attention_lambda = 500 + 100 * (self.train_step // 7330)
-                attention_lambda = 500 + 20 * (self.train_step // 7330)
+                attention_lambda = 500 + 100 * (self.train_step // 7330)
+                # attention_lambda = 500 + 20 * (self.train_step // 7330)
                 pyramid_lambda = attention_lambda
             else:
                 attention_lambda = 8.0 / (

@@ -545,7 +545,6 @@ class ResTSNet(nn.Module):
             self.adaption_layers = nn.ModuleList()
 
             for adaption_channel in adaption_channels:
-                '''
                 self.adaption_layers.append(
                     nn.Conv2d(
                         adaption_channel,
@@ -559,6 +558,7 @@ class ResTSNet(nn.Module):
                         adaption_channel // self.t_s_ratio,
                         1,
                         padding=0))
+                '''
 
     @property
     def norm1(self):
@@ -909,7 +909,8 @@ class ResTSNet(nn.Module):
             s_res_layer = getattr(self, s_layer_name)
 
             if self.feature_adaption and self.train_mode:
-                adaption_factor = self.train_step / 7330 / 12
+                adaption_factor = 7330 * 12 / 7330 / 12
+                # adaption_factor = self.train_step / 7330 / 12
                 
                 # FIXME: check the adaption_factor term
                 if adaption_factor >= 1:

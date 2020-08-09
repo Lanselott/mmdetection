@@ -33,6 +33,7 @@ model = dict(
         rouse_student_point=ROUSE_STUDENT_POINT,
         feature_adaption=True,
         conv_downsample=True,
+        constant_term=True,
     ),
     neck=dict(
         type='FPNTS',
