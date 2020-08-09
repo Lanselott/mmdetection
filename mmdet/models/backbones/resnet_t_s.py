@@ -545,12 +545,20 @@ class ResTSNet(nn.Module):
             self.adaption_layers = nn.ModuleList()
 
             for adaption_channel in adaption_channels:
+                '''
                 self.adaption_layers.append(
                     nn.Conv2d(
                         adaption_channel,
                         adaption_channel // self.t_s_ratio,
                         3,
                         padding=1))
+                '''
+                self.adaption_layers.append(
+                    nn.Conv2d(
+                        adaption_channel,
+                        adaption_channel // self.t_s_ratio,
+                        1,
+                        padding=0))
 
     @property
     def norm1(self):
