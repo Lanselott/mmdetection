@@ -15,7 +15,7 @@ USE_INTERMEDIATE_LEARNER = False
 # inference parameters
 SWITCH_TO_INTER_LEARNER = False
 # Asynmetric backbone settings
-S_IN_CHANNELS=[128, 256, 512, 1024]
+S_IN_CHANNELS = [128, 256, 512, 1024]
 
 model = dict(
     type='FCOSTS',
@@ -37,6 +37,7 @@ model = dict(
         good_initial=GOOD_INITIAL,
         feature_adaption=True,
         conv_downsample=True,
+        constant_term=True,
         train_mode=True,
         bn_topk_selection=BN_TOPK_SELECTION,
         rouse_student_point=ROUSE_STUDENT_POINT),
@@ -92,9 +93,9 @@ model = dict(
         apply_discriminator=False,
         siamese_distill=False,
         copy_teacher_fpn=COPY_TEACHER_FPN,
-        multi_levels=1, # 1 or 5
+        multi_levels=1,  # 1 or 5
         multi_branches=False,
-        naive_conv=True, # NOTE: Check it before evaluation!
+        naive_conv=True,  # NOTE: Check it before evaluation!
         apply_pri_pyramid_wise_alignment=PRI_PYRAMID_ALIGN,
         simple_pyramid_alignment=False,
         learn_from_missing_annotation=False,

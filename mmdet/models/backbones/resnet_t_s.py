@@ -397,6 +397,7 @@ class ResTSNet(nn.Module):
                  feature_adaption=False,
                  conv_downsample=False,
                  train_mode=True,
+                 constant_term=False,
                  bn_topk_selection=False,
                  frozen_stages=-1,
                  conv_cfg=None,
@@ -456,6 +457,7 @@ class ResTSNet(nn.Module):
         self.rouse_student_point = rouse_student_point
         self.train_step = 0
         self.train_mode = train_mode
+        self.constant_term = constant_term
 
         self._make_stem_layer(in_channels)
         self._make_s_stem_layer(in_channels)
@@ -899,7 +901,13 @@ class ResTSNet(nn.Module):
 
             if self.feature_adaption and self.train_mode:
                 adaption_factor = self.train_step / 7330 / 12
+                
+                # FIXME: check the adaption_factor term
+                if adaption_factor >= 1:
+                    adaption_factor = 1
 
+                if self.constant_term:
+                    pass
                 if self.conv_downsample:
                     x_detached = inputs[j].detach()
                     s_x = adaption_factor * s_x + (
