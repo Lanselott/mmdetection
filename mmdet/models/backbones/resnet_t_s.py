@@ -1,5 +1,6 @@
 import logging
 
+import torch
 import torch.nn as nn
 import torch.utils.checkpoint as cp
 from mmcv.cnn import constant_init, kaiming_init, normal_init
@@ -906,13 +907,20 @@ class ResTSNet(nn.Module):
                 if adaption_factor >= 1:
                     adaption_factor = 1
 
-                if self.constant_term:
-                    pass
+                
                 if self.conv_downsample:
                     x_detached = inputs[j].detach()
-                    s_x = adaption_factor * s_x + (
-                        1 - adaption_factor) * self.adaption_layers[j](
-                            x_detached)
+                    
+                    if self.constant_term:
+                        constant = torch.ones_like(s_x)
+                        s_x = adaption_factor * s_x + (
+                            1 - adaption_factor) * self.adaption_layers[j](
+                                x_detached) + constant
+                        embed()
+                    else:
+                        s_x = adaption_factor * s_x + (
+                            1 - adaption_factor) * self.adaption_layers[j](
+                                x_detached)
                 else:
                     x_detached = inputs[j].permute(2, 3, 0, 1).detach()
                     s_x = adaption_factor * s_x + (
