@@ -13,6 +13,8 @@ from mmdet.ops import ContextBlock, DeformConv, ModulatedDeformConv
 from ..registry import BACKBONES
 from ..utils import build_conv_layer, build_norm_layer, ConvModule
 from ..builder import build_loss
+
+import math
 from IPython import embed
 
 
@@ -909,26 +911,22 @@ class ResTSNet(nn.Module):
             s_res_layer = getattr(self, s_layer_name)
 
             if self.feature_adaption and self.train_mode:
-                adaption_factor = 7330 * 12 / 7330 / 12
+                # adaption_factor = 7330 * 11 / 7330 / 12
                 # adaption_factor = self.train_step / 7330 / 12
-                
-                # FIXME: check the adaption_factor term
-                if adaption_factor >= 1:
+                beta = 4
+                if self.train_step <= 7330 * 12 - 733:
+                    adaption_factor = 1 / (1 +
+                                        math.exp(beta - self.train_step / 7330))
+                else:
                     adaption_factor = 1
+                # print("adaption_factor:", adaption_factor)
 
-                
                 if self.conv_downsample:
                     x_detached = inputs[j].detach()
-                    
-                    if self.constant_term:
-                        constant = torch.ones_like(s_x)
-                        s_x = adaption_factor * s_x + (
-                            1 - adaption_factor) * self.adaption_layers[j](
-                                x_detached) + constant
-                    else:
-                        s_x = adaption_factor * s_x + (
-                            1 - adaption_factor) * self.adaption_layers[j](
-                                x_detached)
+
+                    s_x = adaption_factor * s_x + (
+                        1 - adaption_factor) * self.adaption_layers[j](
+                            x_detached)
                 else:
                     x_detached = inputs[j].permute(2, 3, 0, 1).detach()
                     s_x = adaption_factor * s_x + (
