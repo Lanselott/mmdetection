@@ -543,7 +543,7 @@ class ResTSNet(nn.Module):
                     nn.Conv2d(input_channel, out_channel, 3, padding=1))
                 # print("self.inplanes:{}".format(self.inplanes))
         if self.feature_adaption and self.conv_downsample:
-            adaption_channels = [64, 256, 512, 1024]
+            adaption_channels = [256, 512, 1024, 2048]
             self.adaption_layers = nn.ModuleList()
 
             for adaption_channel in adaption_channels:
@@ -870,27 +870,28 @@ class ResTSNet(nn.Module):
             else:
                 self.copy_backbone()
         '''
-
+        
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
-
+        
         x = self.conv1(x)
         x = self.norm1(x)
         x = self.relu(x)
         x = self.maxpool(x)
-
+        
         s_x = self.s_conv1(s_x)
         s_x = self.s_norm1(s_x)
         s_x = self.s_relu(s_x)
         s_x = self.s_maxpool(s_x)
-
-        # if self.spatial_ratio != 1:
-        #     s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
-        # else:
-        #     s_x = x
-
+        
+        '''
+        if self.spatial_ratio != 1:
+            s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
+        else:
+            s_x = x
+        '''
         inputs = []
         outs = []
         s_outs = []
@@ -899,10 +900,10 @@ class ResTSNet(nn.Module):
 
         for i, layer_name in enumerate(self.res_layers):
             res_layer = getattr(self, layer_name)
-
+            '''
             if self.feature_adaption:
                 inputs.append(x)
-
+            '''
             x = res_layer(x)
             if i in self.out_indices:
                 outs.append(x)
@@ -912,17 +913,21 @@ class ResTSNet(nn.Module):
 
             if self.feature_adaption and self.train_mode:
                 # adaption_factor = 7330 * 11 / 7330 / 12
-                # adaption_factor = self.train_step / 7330 / 12
-                beta = 6
-                if self.train_step <= 7330 * 12 - 733:
-                    adaption_factor = 1 / (1 +
-                                        math.exp(beta - self.train_step / 7330))
+                # beta = 6
+
+                if self.train_step <= 7330 * 12 - 50:
+                    # adaption_factor = 1 / (1 +
+                    #                     math.exp(beta - self.train_step / 7330))
+                    adaption_factor = self.train_step / 7330 / 12
                 else:
                     adaption_factor = 1
                 # print("adaption_factor:", adaption_factor)
 
+                s_x = s_res_layer(s_x)
+
                 if self.conv_downsample:
-                    x_detached = inputs[j].detach()
+                    # x_detached = inputs[j].detach()
+                    x_detached = outs[j].detach()
 
                     s_x = adaption_factor * s_x + (
                         1 - adaption_factor) * self.adaption_layers[j](
@@ -934,7 +939,6 @@ class ResTSNet(nn.Module):
                             x_detached, size=s_x.shape[:2],
                             mode='bilinear').permute(2, 3, 0, 1)
 
-                s_x = s_res_layer(s_x)
             else:
                 s_x = s_res_layer(s_x)
 
