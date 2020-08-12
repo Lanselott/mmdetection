@@ -500,7 +500,7 @@ class ResTSNet(nn.Module):
         # student net
         # TODO: rewrite student layers;
         # current block1[0] layer input channel not fully pruned in same way
-        self.inplanes = 64 // self.t_s_ratio
+        self.inplanes = 64 #// self.t_s_ratio
         student_block_output_channel = []
         for j, num_blocks in enumerate(self.s_stage_blocks):
             stride = strides[j]
@@ -870,28 +870,28 @@ class ResTSNet(nn.Module):
             else:
                 self.copy_backbone()
         '''
-        
+        '''
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
-        
+        '''
         x = self.conv1(x)
         x = self.norm1(x)
         x = self.relu(x)
         x = self.maxpool(x)
-        
+        '''
         s_x = self.s_conv1(s_x)
         s_x = self.s_norm1(s_x)
         s_x = self.s_relu(s_x)
         s_x = self.s_maxpool(s_x)
-        
         '''
+
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
-        '''
+
         inputs = []
         outs = []
         s_outs = []
@@ -928,7 +928,6 @@ class ResTSNet(nn.Module):
                 if self.conv_downsample:
                     # x_detached = inputs[j].detach()
                     x_detached = outs[j].detach()
-
                     s_x = adaption_factor * s_x + (
                         1 - adaption_factor) * self.adaption_layers[j](
                             x_detached)
