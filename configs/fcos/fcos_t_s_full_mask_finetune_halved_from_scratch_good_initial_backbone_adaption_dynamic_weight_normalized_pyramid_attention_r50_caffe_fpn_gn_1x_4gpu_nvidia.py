@@ -26,6 +26,7 @@ model = dict(
         good_initial=GOOD_INITIAL,
         feature_adaption=True,
         conv_downsample=True,
+        constant_term=True,
         bn_topk_selection=BN_TOPK_SELECTION,
     ),
     neck=dict(

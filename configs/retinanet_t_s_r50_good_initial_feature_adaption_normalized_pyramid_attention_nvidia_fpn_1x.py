@@ -32,6 +32,7 @@ model = dict(
         bn_topk_selection=BN_TOPK_SELECTION,
         rouse_student_point=ROUSE_STUDENT_POINT,
         feature_adaption=True,
+        constant_term=True,
         conv_downsample=True,
     ),
     neck=dict(

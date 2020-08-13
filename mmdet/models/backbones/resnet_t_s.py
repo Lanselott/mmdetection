@@ -500,7 +500,7 @@ class ResTSNet(nn.Module):
         # student net
         # TODO: rewrite student layers;
         # current block1[0] layer input channel not fully pruned in same way
-        self.inplanes = 64 #// self.t_s_ratio
+        self.inplanes = 64  #// self.t_s_ratio
         student_block_output_channel = []
         for j, num_blocks in enumerate(self.s_stage_blocks):
             stride = strides[j]
@@ -912,15 +912,13 @@ class ResTSNet(nn.Module):
             s_res_layer = getattr(self, s_layer_name)
 
             if self.feature_adaption and self.train_mode:
-                # adaption_factor = 7330 * 11 / 7330 / 12
+                adaption_factor = 7330 * 11 / 7330 / 12
                 # beta = 6
 
-                if self.train_step <= 7330 * 12 - 50:
-                    # adaption_factor = 1 / (1 +
-                    #                     math.exp(beta - self.train_step / 7330))
-                    adaption_factor = self.train_step / 7330 / 12
-                else:
-                    adaption_factor = 1
+                # adaption_factor = 1 / (1 +
+                #                     math.exp(beta - self.train_step / 7330))
+                # adaption_factor = self.train_step / 7330 / 12
+
                 # print("adaption_factor:", adaption_factor)
 
                 s_x = s_res_layer(s_x)
@@ -928,9 +926,25 @@ class ResTSNet(nn.Module):
                 if self.conv_downsample:
                     # x_detached = inputs[j].detach()
                     x_detached = outs[j].detach()
+                    x_detached_adapted = self.adaption_layers[j](x_detached)
+
+                    if self.constant_term:
+                        _, _, feature_w, feature_h = x_detached_adapted.shape
+                        x_detached_adapted = x_detached_adapted - x_detached_adapted.min(
+                            1)[0].view(-1, 1, feature_w, feature_h)
+                        x_detached_adapted = x_detached_adapted / x_detached_adapted.max(
+                            1)[0].view(-1, 1, feature_w,
+                                       feature_h).clamp(min=1e-3)
+                        s_x = s_x - s_x.min(1)[0].view(-1, 1, feature_w,
+                                                       feature_h)
+                        s_x = s_x / s_x.max(1)[0].view(
+                            -1, 1, feature_w, feature_h).clamp(min=1e-3)
+
+                    # print("s_x mean:", s_x.mean())
+                    # print("x_detached_adapted mean:",
+                    #       x_detached_adapted.mean())
                     s_x = adaption_factor * s_x + (
-                        1 - adaption_factor) * self.adaption_layers[j](
-                            x_detached)
+                        1 - adaption_factor) * x_detached_adapted
                 else:
                     x_detached = inputs[j].permute(2, 3, 0, 1).detach()
                     s_x = adaption_factor * s_x + (
