@@ -912,12 +912,12 @@ class ResTSNet(nn.Module):
             s_res_layer = getattr(self, s_layer_name)
 
             if self.feature_adaption and self.train_mode:
-                adaption_factor = 7330 * 11 / 7330 / 12
+                # adaption_factor = 7330 * 11 / 7330 / 12
                 # beta = 6
 
                 # adaption_factor = 1 / (1 +
                 #                     math.exp(beta - self.train_step / 7330))
-                # adaption_factor = self.train_step / 7330 / 12
+                adaption_factor = self.train_step / 7330 / 12
 
                 # print("adaption_factor:", adaption_factor)
 
@@ -954,6 +954,12 @@ class ResTSNet(nn.Module):
 
             else:
                 s_x = s_res_layer(s_x)
+                _, _, feature_w, feature_h = s_x.shape
+                
+                s_x = s_x - s_x.min(1)[0].view(-1, 1, feature_w,
+                                                       feature_h)
+                s_x = s_x / s_x.max(1)[0].view(
+                    -1, 1, feature_w, feature_h).clamp(min=1e-3)
 
             # align to teacher network and get the loss
             if self.apply_block_wise_alignment:
