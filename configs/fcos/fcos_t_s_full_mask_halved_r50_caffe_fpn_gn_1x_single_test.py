@@ -1,5 +1,5 @@
 # model settings
-BLOCK_ALIGN = False
+BLOCK_ALIGN = True
 PYRAMID_ALIGN = True
 PRI_PYRAMID_ALIGN = False
 PYRAMID_CORRELATION = False
@@ -35,10 +35,10 @@ model = dict(
         apply_block_wise_alignment=BLOCK_ALIGN,
         freeze_teacher=FREEZE_TEACHER,
         good_initial=GOOD_INITIAL,
-        feature_adaption=False,
-        train_mode=False,
+        feature_adaption=True,
+        train_mode=True,
         conv_downsample=True,
-        constant_term=False,
+        constant_term=True,
         bn_topk_selection=BN_TOPK_SELECTION,
         rouse_student_point=ROUSE_STUDENT_POINT),
     neck=dict(

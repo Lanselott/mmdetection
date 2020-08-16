@@ -31,6 +31,7 @@ model = dict(
         good_initial=GOOD_INITIAL,
         bn_topk_selection=BN_TOPK_SELECTION,
         rouse_student_point=ROUSE_STUDENT_POINT,
+        constant_term=True,
         feature_adaption=True,
         conv_downsample=True,
         train_mode=True),

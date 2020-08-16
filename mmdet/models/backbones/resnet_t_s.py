@@ -833,11 +833,6 @@ class ResTSNet(nn.Module):
                     self.copy_backbone_topk()
                 else:
                     self.copy_backbone()
-
-        if self.feature_adaption and self.conv_downsample:
-            for m in self.adaption_layers:
-                normal_init(m, std=0.01)
-
         elif pretrained is None:
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):
@@ -859,6 +854,11 @@ class ResTSNet(nn.Module):
                         constant_init(m.norm2, 0)
         else:
             raise TypeError('pretrained must be a str or None')
+
+        if self.feature_adaption and self.conv_downsample:
+            for m in self.adaption_layers:
+                normal_init(m, std=0.01)
+
 
     def forward(self, x):
         self.train_step += 1
@@ -918,9 +918,7 @@ class ResTSNet(nn.Module):
                 # adaption_factor = 1 / (1 +
                 #                     math.exp(beta - self.train_step / 7330))
                 adaption_factor = self.train_step / 7330 / 12
-
                 # print("adaption_factor:", adaption_factor)
-
                 s_x = s_res_layer(s_x)
 
                 if self.conv_downsample:
@@ -940,6 +938,10 @@ class ResTSNet(nn.Module):
                         s_x = s_x / s_x.max(1)[0].view(
                             -1, 1, feature_w, feature_h).clamp(min=1e-3)
 
+                    # align to teacher network and get the loss
+                    if self.apply_block_wise_alignment:
+                        block_distill_pairs.append([s_x, x_detached_adapted])
+
                     # print("s_x mean:", s_x.mean())
                     # print("x_detached_adapted mean:",
                     #       x_detached_adapted.mean())
@@ -955,18 +957,11 @@ class ResTSNet(nn.Module):
             else:
                 s_x = s_res_layer(s_x)
                 _, _, feature_w, feature_h = s_x.shape
-                
-                s_x = s_x - s_x.min(1)[0].view(-1, 1, feature_w,
-                                                       feature_h)
-                s_x = s_x / s_x.max(1)[0].view(
-                    -1, 1, feature_w, feature_h).clamp(min=1e-3)
 
-            # align to teacher network and get the loss
-            if self.apply_block_wise_alignment:
-                aligned_s_feature = self.align_layers[j](s_x)
-                # hint_losses.append(
-                #     self.pyramid_hint_loss(aligned_s_feature, outs[j].detach()))
-                block_distill_pairs.append([aligned_s_feature, outs[j]])
+                s_x = s_x - s_x.min(1)[0].view(-1, 1, feature_w, feature_h)
+                s_x = s_x / s_x.max(1)[0].view(-1, 1, feature_w,
+                                               feature_h).clamp(min=1e-3)
+
             if j in self.out_indices:
                 s_outs.append(s_x)
 

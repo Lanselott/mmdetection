@@ -778,6 +778,7 @@ class FCOSTSFullMaskHead(nn.Module):
         if self.apply_block_wise_alignment:
             hint_pairs = feats[4]
             hint_pairs += tuple('N')
+
             return multi_apply(self.forward_single, t_feats, s_feats,
                                t_pri_feats, s_pri_feats, self.scales,
                                self.s_scales, placeholder, hint_pairs)
