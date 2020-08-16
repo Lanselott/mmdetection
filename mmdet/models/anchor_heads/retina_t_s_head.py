@@ -141,12 +141,16 @@ class RetinaTSHead(AnchorHead):
         normal_init(self.s_retina_cls, std=0.01, bias=bias_cls)
         normal_init(self.s_retina_reg, std=0.01)
 
-    def forward_single(self, x, s_x, aligned_fpn=None):
+    def forward_single(self,
+                       x,
+                       s_x,
+                       block_pair=None,
+                       aligned_fpn=None):
+        # NOTE: some features are not used
         cls_feat = x
         reg_feat = x
         s_cls_feat = s_x
         s_reg_feat = s_x
-
         # align to teacher
         for s_t_align_conv in self.s_t_align_convs:
             s_x = s_t_align_conv(s_x)
@@ -167,9 +171,9 @@ class RetinaTSHead(AnchorHead):
         s_cls_score = self.s_retina_cls(s_cls_feat)
         s_bbox_pred = self.s_retina_reg(s_reg_feat)
         if self.eval_student and not self.training:
-            return s_cls_score, s_bbox_pred
+            return s_cls_score, s_bbox_pred, None
         elif not self.eval_student and not self.training:
-            return cls_score, bbox_pred
+            return cls_score, bbox_pred, None
         elif self.training:
             return tuple([cls_score, s_cls_score, x,
-                          s_x]), tuple([bbox_pred, s_bbox_pred])
+                          s_x]), tuple([bbox_pred, s_bbox_pred]), block_pair

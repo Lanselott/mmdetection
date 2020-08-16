@@ -50,6 +50,7 @@ class AnchorHead(nn.Module):
                  target_means=(.0, .0, .0, .0),
                  target_stds=(1.0, 1.0, 1.0, 1.0),
                  pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
+                 apply_block_wise_alignment=False,
                  loss_cls=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -86,6 +87,7 @@ class AnchorHead(nn.Module):
         self.loss_cls = build_loss(loss_cls)
         self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
         self.loss_bbox = build_loss(loss_bbox)
+        self.apply_block_wise_alignment = apply_block_wise_alignment
         self.fp16_enabled = False
 
         self.anchor_generators = []
@@ -113,7 +115,13 @@ class AnchorHead(nn.Module):
     def forward(self, feats):
         if type(feats) is tuple:
             # branch for distillation
-            return multi_apply(self.forward_single, feats[0], feats[1])
+            if self.apply_block_wise_alignment:
+                # NOTE: some features are not used
+                block_feats = feats[4] + tuple('N')
+                return multi_apply(self.forward_single, feats[0], feats[1],
+                                   block_feats)
+            else:
+                return multi_apply(self.forward_single, feats[0], feats[1])
         else:
             return multi_apply(self.forward_single, feats)
 
@@ -278,12 +286,12 @@ class AnchorHead(nn.Module):
     def loss(self,
              cls_scores,
              bbox_preds,
+             block_pairs,
              gt_bboxes,
              gt_labels,
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
-
         if type(cls_scores[0]) is tuple:
             # TODO: add settings and anchor targets for
             # different feature sizes between teacher and student
@@ -292,8 +300,8 @@ class AnchorHead(nn.Module):
         else:
             featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
             device = cls_scores[0].device
-        assert len(featmap_sizes) == len(self.anchor_generators)
 
+        assert len(featmap_sizes) == len(self.anchor_generators)
         anchor_list, valid_flag_list = self.get_anchors(
             featmap_sizes, img_metas, device=device)
 
@@ -317,8 +325,21 @@ class AnchorHead(nn.Module):
         num_total_samples = (
             num_total_pos + num_total_neg if self.sampling else num_total_pos)
 
+        loss_dict = {}
         if len(cls_scores[0]) > 2:
             # NOTE: well. distillation mode
+            if self.apply_block_wise_alignment:
+                block_pairs = block_pairs[:4]  # remove placeholder
+                for j, hint_feature in enumerate(block_pairs):
+                    s_block_feature = hint_feature[0]
+                    t_block_feature = hint_feature[1].detach()
+
+                    hint_loss = self.pyramid_hint_loss(
+                        s_block_feature, t_block_feature)
+                    
+                    loss_dict.update(
+                        {'hint_loss_block_{}'.format(j): hint_loss})
+
             if self.pyramid_wise_attention:
                 if self.finetune_student:
                     s_loss_cls, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss = multi_apply(
@@ -331,12 +352,17 @@ class AnchorHead(nn.Module):
                         bbox_weights_list,
                         num_total_samples=num_total_samples,
                         cfg=cfg)
-                    return dict(
-                        s_loss_cls=s_loss_cls,
-                        s_loss_bbox=s_loss_bbox,
-                        pyramid_hint_loss=pyramid_hint_loss,
-                        pos_attention_pyramid_hint_loss=
-                        pos_attention_pyramid_hint_loss)
+                    loss_dict.update({
+                        's_loss_cls':
+                        s_loss_cls,
+                        's_loss_bbox':
+                        s_loss_bbox,
+                        'pyramid_hint_loss':
+                        pyramid_hint_loss,
+                        'pos_attention_pyramid_hint_loss':
+                        pos_attention_pyramid_hint_loss
+                    })
+                    return loss_dict
                 else:
                     t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss = multi_apply(
                         self.loss_single,
@@ -348,14 +374,21 @@ class AnchorHead(nn.Module):
                         bbox_weights_list,
                         num_total_samples=num_total_samples,
                         cfg=cfg)
-                    return dict(
-                        t_loss_cls=t_loss_cls,
-                        s_loss_cls=s_loss_cls,
-                        t_loss_bbox=t_loss_bbox,
-                        s_loss_bbox=s_loss_bbox,
-                        pyramid_hint_loss=pyramid_hint_loss,
-                        pos_attention_pyramid_hint_loss=
-                        pos_attention_pyramid_hint_loss)
+                    loss_dict.update({
+                        't_loss_cls':
+                        t_loss_cls,
+                        't_loss_bbox':
+                        t_loss_bbox,
+                        's_loss_cls':
+                        s_loss_cls,
+                        's_loss_bbox':
+                        s_loss_bbox,
+                        'pyramid_hint_loss':
+                        pyramid_hint_loss,
+                        'pos_attention_pyramid_hint_loss':
+                        pos_attention_pyramid_hint_loss
+                    })
+                    return loss_dict
             else:
                 if self.finetune_student:
                     s_loss_cls, s_loss_bbox, pyramid_hint_loss = multi_apply(
@@ -368,10 +401,13 @@ class AnchorHead(nn.Module):
                         bbox_weights_list,
                         num_total_samples=num_total_samples,
                         cfg=cfg)
-                    return dict(
-                        s_loss_cls=s_loss_cls,
-                        s_loss_bbox=s_loss_bbox,
-                        pyramid_hint_loss=pyramid_hint_loss)
+                    loss_dict.update({
+                        's_loss_cls': s_loss_cls,
+                        's_loss_bbox': s_loss_bbox,
+                        'pyramid_hint_loss': pyramid_hint_loss
+                    })
+                    return loss_dict
+
                 else:
                     t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss = multi_apply(
                         self.loss_single,
@@ -383,12 +419,15 @@ class AnchorHead(nn.Module):
                         bbox_weights_list,
                         num_total_samples=num_total_samples,
                         cfg=cfg)
-                    return dict(
-                        t_loss_cls=t_loss_cls,
-                        s_loss_cls=s_loss_cls,
-                        t_loss_bbox=t_loss_bbox,
-                        s_loss_bbox=s_loss_bbox,
-                        pyramid_hint_loss=pyramid_hint_loss)
+                    loss_dict.update({
+                        't_loss_cls': t_loss_cls,
+                        's_loss_cls': s_loss_cls,
+                        't_loss_bbox': t_loss_bbox,
+                        's_loss_bbox': s_loss_bbox,
+                        'pyramid_hint_loss': pyramid_hint_loss
+                    })
+                    return loss_dict
+
         else:
             losses_cls, losses_bbox = multi_apply(
                 self.loss_single,
