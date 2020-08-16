@@ -33,7 +33,7 @@ model = dict(
         rouse_student_point=ROUSE_STUDENT_POINT,
         apply_block_wise_alignment=BLOCK_ALIGN,
         feature_adaption=True,
-        constant_term=False,
+        constant_term=True,
         conv_downsample=True,
     ),
     neck=dict(
@@ -42,7 +42,7 @@ model = dict(
         out_channels=256,
         s_in_channels=[128, 256, 512, 1024],
         s_out_channels=128,
-    start_level=1,
+        start_level=1,
         t_s_ratio=RATIO,
         add_extra_convs=True,
         extra_convs_on_inputs=False,  # use P5
