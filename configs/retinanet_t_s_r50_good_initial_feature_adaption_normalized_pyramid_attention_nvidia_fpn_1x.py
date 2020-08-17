@@ -1,5 +1,5 @@
 # model settings
-BLOCK_ALIGN = True
+BLOCK_ALIGN = False
 PYRAMID_ALIGN = True
 PRI_PYRAMID_ALIGN = False
 PYRAMID_CORRELATION = False

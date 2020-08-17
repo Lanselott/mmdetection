@@ -859,7 +859,6 @@ class ResTSNet(nn.Module):
             for m in self.adaption_layers:
                 normal_init(m, std=0.01)
 
-
     def forward(self, x):
         self.train_step += 1
         # update for each iteration
@@ -917,7 +916,10 @@ class ResTSNet(nn.Module):
 
                 # adaption_factor = 1 / (1 +
                 #                     math.exp(beta - self.train_step / 7330))
-                adaption_factor = self.train_step / 7330 / 12
+                if self.train_step <= 7330 * 6:
+                    adaption_factor = 1 - self.train_step / 7330 / 6
+                else:
+                    adaption_factor = (self.train_step - 7330 * 6) / 7330 / 6
                 # print("adaption_factor:", adaption_factor)
                 s_x = s_res_layer(s_x)
 
