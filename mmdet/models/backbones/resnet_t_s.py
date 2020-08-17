@@ -912,14 +912,19 @@ class ResTSNet(nn.Module):
 
             if self.feature_adaption and self.train_mode:
                 # adaption_factor = 7330 * 11 / 7330 / 12
-                # beta = 6
-
-                # adaption_factor = 1 / (1 +
-                #                     math.exp(beta - self.train_step / 7330))
-                if self.train_step <= 7330 * 6:
-                    adaption_factor = 1 - self.train_step / 7330 / 6
-                else:
-                    adaption_factor = (self.train_step - 7330 * 6) / 7330 / 6
+                '''
+                strategy 1:
+                '''
+                # if self.train_step <= 7330 * 6:
+                #     adaption_factor = 1 - self.train_step / 7330 / 6
+                # else:
+                #     adaption_factor = (self.train_step - 7330 * 6) / 7330 / 6
+                '''
+                strategy 2:
+                '''
+                if self.train_step >= 7330:
+                    self.train_step = 0
+                adaption_factor = self.train_step / 7330
                 # print("adaption_factor:", adaption_factor)
                 s_x = s_res_layer(s_x)
 
