@@ -119,7 +119,7 @@ class AnchorHead(nn.Module):
                 # NOTE: some features are not used
                 block_feats = feats[4] + tuple('N')
                 return multi_apply(self.forward_single, feats[0], feats[1],
-                                   block_feats)                
+                                   block_feats)
             else:
                 return multi_apply(self.forward_single, feats[0], feats[1])
         else:
@@ -329,12 +329,13 @@ class AnchorHead(nn.Module):
         if len(cls_scores[0]) > 2:
             # NOTE: well. distillation mode
             if self.apply_block_wise_alignment:
+                hint_factor = 10
                 block_pairs = block_pairs[:4]  # remove placeholder
                 for j, hint_feature in enumerate(block_pairs):
                     s_block_feature = hint_feature[0]
                     t_block_feature = hint_feature[1].detach()
 
-                    hint_loss = self.pyramid_hint_loss(
+                    hint_loss = hint_factor * self.pyramid_hint_loss(
                         s_block_feature, t_block_feature)
                     loss_dict.update(
                         {'hint_loss_block_{}'.format(j): hint_loss})
