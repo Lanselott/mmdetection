@@ -115,11 +115,11 @@ class AnchorHead(nn.Module):
     def forward(self, feats):
         if type(feats) is tuple:
             # branch for distillation
-            if self.apply_block_wise_alignment:
+            if self.apply_block_wise_alignment and not self.eval_student:
                 # NOTE: some features are not used
                 block_feats = feats[4] + tuple('N')
                 return multi_apply(self.forward_single, feats[0], feats[1],
-                                   block_feats)
+                                   block_feats)                
             else:
                 return multi_apply(self.forward_single, feats[0], feats[1])
         else:

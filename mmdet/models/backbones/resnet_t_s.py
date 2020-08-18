@@ -923,7 +923,7 @@ class ResTSNet(nn.Module):
                 strategy 2:
                 '''
                 if self.train_step >= 7330:
-                    adaption_factor = 0
+                    adaption_factor = 1
                 else:
                     adaption_factor = self.train_step / 7330
                 '''
@@ -970,10 +970,11 @@ class ResTSNet(nn.Module):
             else:
                 s_x = s_res_layer(s_x)
                 _, _, feature_w, feature_h = s_x.shape
-
-                s_x = s_x - s_x.min(1)[0].view(-1, 1, feature_w, feature_h)
-                s_x = s_x / s_x.max(1)[0].view(-1, 1, feature_w,
-                                               feature_h).clamp(min=1e-3)
+                
+                if self.constant_term:
+                    s_x = s_x - s_x.min(1)[0].view(-1, 1, feature_w, feature_h)
+                    s_x = s_x / s_x.max(1)[0].view(-1, 1, feature_w,
+                                                feature_h).clamp(min=1e-3)
 
             if j in self.out_indices:
                 s_outs.append(s_x)

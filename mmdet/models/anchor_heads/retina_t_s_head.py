@@ -171,9 +171,9 @@ class RetinaTSHead(AnchorHead):
         s_cls_score = self.s_retina_cls(s_cls_feat)
         s_bbox_pred = self.s_retina_reg(s_reg_feat)
         if self.eval_student and not self.training:
-            return s_cls_score, s_bbox_pred, None
+            return s_cls_score, s_bbox_pred
         elif not self.eval_student and not self.training:
-            return cls_score, bbox_pred, None
+            return cls_score, bbox_pred
         elif self.training:
             return tuple([cls_score, s_cls_score, x,
                           s_x]), tuple([bbox_pred, s_bbox_pred]), block_pair
