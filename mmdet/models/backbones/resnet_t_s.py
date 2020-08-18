@@ -502,7 +502,7 @@ class ResTSNet(nn.Module):
         # student net
         # TODO: rewrite student layers;
         # current block1[0] layer input channel not fully pruned in same way
-        self.inplanes = 64  #// self.t_s_ratio
+        self.inplanes = 64 // self.t_s_ratio
         student_block_output_channel = []
         for j, num_blocks in enumerate(self.s_stage_blocks):
             stride = strides[j]
@@ -545,10 +545,12 @@ class ResTSNet(nn.Module):
                     nn.Conv2d(input_channel, out_channel, 3, padding=1))
                 # print("self.inplanes:{}".format(self.inplanes))
         if self.feature_adaption and self.conv_downsample:
-            adaption_channels = [256, 512, 1024, 2048]
+            assert self.kernel_adaption == False
+
+            self.adaption_channels = [256, 512, 1024, 2048]
             self.adaption_layers = nn.ModuleList()
 
-            for adaption_channel in adaption_channels:
+            for adaption_channel in self.adaption_channels:
                 self.adaption_layers.append(
                     nn.Conv2d(
                         adaption_channel,
@@ -563,6 +565,18 @@ class ResTSNet(nn.Module):
                         1,
                         padding=0))
                 '''
+        if self.kernel_adaption:
+            assert self.feature_adaption == False
+
+            self.adaption_channels = [64, 128, 256, 512, 1024, 2048]
+            self.adaption_layers = nn.ModuleList()
+
+            for adaption_channel in self.adaption_channels:
+                self.adaption_layers.append(
+                    nn.Linear(
+                        adaption_channel,
+                        adaption_channel // self.t_s_ratio,
+                    ))
 
     @property
     def norm1(self):
@@ -618,12 +632,20 @@ class ResTSNet(nn.Module):
             m.eval()
             for param in m.parameters():
                 param.requires_grad = False
-    
+
     def adapt_kernel(self):
         # stem layer
+        t_stem_conv_data = self.conv1.weight.data.permute(2, 3, 0, 1).detach()
+        t_stem_conv_channel = t_stem_conv_data.shape[3]
+
+        for j, adaption_channel in enumerate(
+                                self.adaption_channels):
+            if t_stem_conv_channel == adaption_channel:
+                t_stem_conv_data = self.adaption_layers[j](t_stem_conv_data)
+
         self.s_conv1.weight.data.copy_(
             F.interpolate(
-                self.conv1.weight.data.permute(2, 3, 0, 1).detach(),
+                t_stem_conv_data,
                 size=self.s_conv1.weight.shape[:2],
                 mode='bilinear').permute(2, 3, 0, 1))
 
@@ -641,20 +663,37 @@ class ResTSNet(nn.Module):
                         # conv
                         t_layer_conv1_data = t_layer.conv1.weight.data.permute(
                             2, 3, 0, 1).detach()
+                        t_layer_conv2_data = t_layer.conv2.weight.data.permute(
+                            2, 3, 0, 1).detach()
+                        t_layer_conv3_data = t_layer.conv3.weight.data.permute(
+                            2, 3, 0, 1).detach()
+
+                        t_conv1_channel = t_layer_conv1_data.shape[3]
+                        t_conv2_channel = t_layer_conv2_data.shape[3]
+                        t_conv3_channel = t_layer_conv3_data.shape[3]
+
+                        for j, adaption_channel in enumerate(
+                                self.adaption_channels):
+                            if t_conv1_channel == adaption_channel:
+                                t_layer_conv1_data = self.adaption_layers[j](
+                                    t_layer_conv1_data)
+                            if t_conv2_channel == adaption_channel:
+                                t_layer_conv2_data = self.adaption_layers[j](
+                                    t_layer_conv2_data)
+                            if t_conv3_channel == adaption_channel:
+                                t_layer_conv3_data = self.adaption_layers[j](
+                                    t_layer_conv3_data)
+
                         s_layer.conv1.weight.data.copy_(
                             F.interpolate(
                                 t_layer_conv1_data,
                                 size=s_layer.conv1.weight.shape[:2],
                                 mode='bilinear').permute(2, 3, 0, 1))
-                        t_layer_conv2_data = t_layer.conv2.weight.data.permute(
-                            2, 3, 0, 1).detach()
                         s_layer.conv2.weight.data.copy_(
                             F.interpolate(
                                 t_layer_conv2_data,
                                 size=s_layer.conv2.weight.shape[:2],
                                 mode='bilinear').permute(2, 3, 0, 1))
-                        t_layer_conv3_data = t_layer.conv3.weight.data.permute(
-                            2, 3, 0, 1).detach()
                         s_layer.conv3.weight.data.copy_(
                             F.interpolate(
                                 t_layer_conv3_data,
@@ -665,13 +704,22 @@ class ResTSNet(nn.Module):
                             # donwsample
                             t_layer_downsample_conv_data = t_layer.downsample[
                                 0].weight.data.permute(2, 3, 0, 1)
+                            t_downsample_conv_channel = t_layer_downsample_conv_data.shape[
+                                3]
+
+                            for j, adaption_channel in enumerate(
+                                    self.adaption_channels):
+                                if t_downsample_conv_channel == adaption_channel:
+                                    t_layer_downsample_conv_data = self.adaption_layers[
+                                        j](
+                                            t_layer_downsample_conv_data)
                             s_layer.downsample[0].weight.data.copy_(
                                 F.interpolate(
                                     t_layer_downsample_conv_data,
                                     size=s_layer.downsample[0].weight.
                                     shape[:2],
                                     mode='bilinear').permute(2, 3, 0, 1))
-    
+
     def copy_backbone(self):
         # stem layer
         self.s_conv1.weight.data.copy_(
@@ -916,39 +964,31 @@ class ResTSNet(nn.Module):
 
     def forward(self, x):
         self.train_step += 1
-        # update for each iteration
-        '''
-        if self.good_initial and self.train_step % 7330 == 0:
-            if self.bn_topk_selection:
-                self.copy_backbone_topk()
-            else:
-                self.copy_backbone()
-        '''
-        '''
-        if self.spatial_ratio != 1:
-            s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
-        else:
-            s_x = x
-        '''
-        x = self.conv1(x)
-        x = self.norm1(x)
-        x = self.relu(x)
-        x = self.maxpool(x)
-        '''
-        s_x = self.s_conv1(s_x)
-        s_x = self.s_norm1(s_x)
-        s_x = self.s_relu(s_x)
-        s_x = self.s_maxpool(s_x)
-        '''
 
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
-        
+
         if self.kernel_adaption:
             # no 'copy' bn yet
             self.adapt_kernel()
+
+        x = self.conv1(x)
+        x = self.norm1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+
+        s_x = self.s_conv1(s_x)
+        s_x = self.s_norm1(s_x)
+        s_x = self.s_relu(s_x)
+        s_x = self.s_maxpool(s_x)
+        '''
+        if self.spatial_ratio != 1:
+            s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
+        else:
+            s_x = x
+        '''
 
         inputs = []
         outs = []
@@ -971,9 +1011,9 @@ class ResTSNet(nn.Module):
 
             if self.feature_adaption and self.train_mode:
                 adaption_factor = 0.5
-                
+
                 s_x = s_res_layer(s_x)
-                
+
                 if self.conv_downsample:
                     # x_detached = inputs[j].detach()
                     x_detached = outs[j].detach()
@@ -995,7 +1035,7 @@ class ResTSNet(nn.Module):
 
                     s_x = adaption_factor * s_x + (
                         1 - adaption_factor) * x_detached_adapted
-                    
+
                     if self.apply_block_wise_alignment:
                         block_distill_pairs.append([s_x, x_detached_adapted])
                 else:
@@ -1008,11 +1048,11 @@ class ResTSNet(nn.Module):
             else:
                 s_x = s_res_layer(s_x)
                 _, _, feature_w, feature_h = s_x.shape
-                
+
                 if self.constant_term:
                     s_x = s_x - s_x.min(1)[0].view(-1, 1, feature_w, feature_h)
                     s_x = s_x / s_x.max(1)[0].view(-1, 1, feature_w,
-                                                feature_h).clamp(min=1e-3)
+                                                   feature_h).clamp(min=1e-3)
 
             if j in self.out_indices:
                 s_outs.append(s_x)
