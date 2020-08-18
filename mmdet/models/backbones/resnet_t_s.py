@@ -569,14 +569,17 @@ class ResTSNet(nn.Module):
             assert self.feature_adaption == False
 
             self.adaption_channels = [64, 128, 256, 512, 1024, 2048]
-            self.adaption_layers = nn.ModuleList()
+            self.adaption_layers_group = nn.ModuleList()
 
-            for adaption_channel in self.adaption_channels:
-                self.adaption_layers.append(
-                    nn.Linear(
-                        adaption_channel,
-                        adaption_channel // self.t_s_ratio,
-                    ))
+            for _ in range(4):
+                adaption_layers = nn.ModuleList()
+                for adaption_channel in self.adaption_channels:
+                    adaption_layers.append(
+                        nn.Linear(
+                            adaption_channel,
+                            adaption_channel // self.t_s_ratio,
+                        ))
+                self.adaption_layers_group.append(adaption_layers)
 
     @property
     def norm1(self):
@@ -638,8 +641,9 @@ class ResTSNet(nn.Module):
         t_stem_conv_data = self.conv1.weight.data.permute(2, 3, 0, 1).detach()
         t_stem_conv_channel = t_stem_conv_data.shape[3]
 
-        for j, adaption_channel in enumerate(
-                                self.adaption_channels):
+        for j, adaption_channel in enumerate(self.adaption_channels):
+            adaption_layers = self.adaption_layers_group[0]
+
             if t_stem_conv_channel == adaption_channel:
                 t_stem_conv_data = self.adaption_layers[j](t_stem_conv_data)
 
@@ -655,11 +659,13 @@ class ResTSNet(nn.Module):
                 s_bottleneck_list = [
                     m.s_layer1, m.s_layer2, m.s_layer3, m.s_layer4
                 ]
+
                 # t_bottleneck_list = [t_layers1]
                 # s_bottleneck_list = [s_layers1]
-                for t_layers, s_layers in zip(t_bottleneck_list,
-                                              s_bottleneck_list):
+                for k, (t_layers, s_layers) in enumerate(zip(t_bottleneck_list,
+                                              s_bottleneck_list)):
                     for t_layer, s_layer in zip(t_layers, s_layers):
+                        adaption_layers = self.adaption_layers_group[k]
                         # conv
                         t_layer_conv1_data = t_layer.conv1.weight.data.permute(
                             2, 3, 0, 1).detach()
@@ -675,13 +681,13 @@ class ResTSNet(nn.Module):
                         for j, adaption_channel in enumerate(
                                 self.adaption_channels):
                             if t_conv1_channel == adaption_channel:
-                                t_layer_conv1_data = self.adaption_layers[j](
+                                t_layer_conv1_data = adaption_layers[j](
                                     t_layer_conv1_data)
                             if t_conv2_channel == adaption_channel:
-                                t_layer_conv2_data = self.adaption_layers[j](
+                                t_layer_conv2_data = adaption_layers[j](
                                     t_layer_conv2_data)
                             if t_conv3_channel == adaption_channel:
-                                t_layer_conv3_data = self.adaption_layers[j](
+                                t_layer_conv3_data = adaption_layers[j](
                                     t_layer_conv3_data)
 
                         s_layer.conv1.weight.data.copy_(
@@ -710,7 +716,7 @@ class ResTSNet(nn.Module):
                             for j, adaption_channel in enumerate(
                                     self.adaption_channels):
                                 if t_downsample_conv_channel == adaption_channel:
-                                    t_layer_downsample_conv_data = self.adaption_layers[
+                                    t_layer_downsample_conv_data = adaption_layers[
                                         j](
                                             t_layer_downsample_conv_data)
                             s_layer.downsample[0].weight.data.copy_(
