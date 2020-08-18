@@ -336,7 +336,6 @@ class AnchorHead(nn.Module):
 
                     hint_loss = self.pyramid_hint_loss(
                         s_block_feature, t_block_feature)
-                    
                     loss_dict.update(
                         {'hint_loss_block_{}'.format(j): hint_loss})
 

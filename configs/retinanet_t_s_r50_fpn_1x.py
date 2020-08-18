@@ -1,5 +1,5 @@
 # model settings
-BLOCK_ALIGN = False
+BLOCK_ALIGN = True
 PYRAMID_ALIGN = True
 PRI_PYRAMID_ALIGN = False
 PYRAMID_CORRELATION = False
@@ -33,9 +33,9 @@ model = dict(
         rouse_student_point=ROUSE_STUDENT_POINT,
         apply_block_wise_alignment=BLOCK_ALIGN,
         constant_term=False,
-        feature_adaption=False,
+        feature_adaption=True,
         conv_downsample=True,
-        train_mode=False),
+        train_mode=True),
     neck=dict(
         type='FPNTS',
         in_channels=[256, 512, 1024, 2048],

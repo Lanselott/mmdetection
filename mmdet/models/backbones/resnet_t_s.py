@@ -922,10 +922,7 @@ class ResTSNet(nn.Module):
                 '''
                 strategy 2:
                 '''
-                if self.train_step >= 7330:
-                    adaption_factor = 1
-                else:
-                    adaption_factor = self.train_step / 7330
+                adaption_factor = 0.5
                 '''
                 origin strategy:
                 '''
@@ -952,14 +949,15 @@ class ResTSNet(nn.Module):
                             -1, 1, feature_w, feature_h).clamp(min=1e-3)
 
                     # align to teacher network and get the loss
-                    if self.apply_block_wise_alignment:
-                        block_distill_pairs.append([s_x, x_detached_adapted])
 
                     # print("s_x mean:", s_x.mean())
                     # print("x_detached_adapted mean:",
                     #       x_detached_adapted.mean())
                     s_x = adaption_factor * s_x + (
                         1 - adaption_factor) * x_detached_adapted
+                    
+                    if self.apply_block_wise_alignment:
+                        block_distill_pairs.append([s_x, x_detached_adapted])
                 else:
                     x_detached = inputs[j].permute(2, 3, 0, 1).detach()
                     s_x = adaption_factor * s_x + (
