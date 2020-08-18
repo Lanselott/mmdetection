@@ -398,6 +398,7 @@ class ResTSNet(nn.Module):
                  freeze_teacher=False,
                  good_initial=False,
                  feature_adaption=False,
+                 kernel_adaption=False,
                  conv_downsample=False,
                  train_mode=True,
                  constant_term=False,
@@ -436,6 +437,7 @@ class ResTSNet(nn.Module):
         self.frozen_stages = frozen_stages
         self.good_initial = good_initial
         self.feature_adaption = feature_adaption
+        self.kernel_adaption = kernel_adaption
         self.conv_downsample = conv_downsample
         self.bn_topk_selection = bn_topk_selection
         self.conv_cfg = conv_cfg
@@ -616,7 +618,60 @@ class ResTSNet(nn.Module):
             m.eval()
             for param in m.parameters():
                 param.requires_grad = False
+    
+    def adapt_kernel(self):
+        # stem layer
+        self.s_conv1.weight.data.copy_(
+            F.interpolate(
+                self.conv1.weight.data.permute(2, 3, 0, 1).detach(),
+                size=self.s_conv1.weight.shape[:2],
+                mode='bilinear').permute(2, 3, 0, 1))
 
+        for m in self.modules():
+            if hasattr(m, 's_layer1'):
+                t_bottleneck_list = [m.layer1, m.layer2, m.layer3, m.layer4]
+                s_bottleneck_list = [
+                    m.s_layer1, m.s_layer2, m.s_layer3, m.s_layer4
+                ]
+                # t_bottleneck_list = [t_layers1]
+                # s_bottleneck_list = [s_layers1]
+                for t_layers, s_layers in zip(t_bottleneck_list,
+                                              s_bottleneck_list):
+                    for t_layer, s_layer in zip(t_layers, s_layers):
+                        # conv
+                        t_layer_conv1_data = t_layer.conv1.weight.data.permute(
+                            2, 3, 0, 1).detach()
+                        s_layer.conv1.weight.data.copy_(
+                            F.interpolate(
+                                t_layer_conv1_data,
+                                size=s_layer.conv1.weight.shape[:2],
+                                mode='bilinear').permute(2, 3, 0, 1))
+                        t_layer_conv2_data = t_layer.conv2.weight.data.permute(
+                            2, 3, 0, 1).detach()
+                        s_layer.conv2.weight.data.copy_(
+                            F.interpolate(
+                                t_layer_conv2_data,
+                                size=s_layer.conv2.weight.shape[:2],
+                                mode='bilinear').permute(2, 3, 0, 1))
+                        t_layer_conv3_data = t_layer.conv3.weight.data.permute(
+                            2, 3, 0, 1).detach()
+                        s_layer.conv3.weight.data.copy_(
+                            F.interpolate(
+                                t_layer_conv3_data,
+                                size=s_layer.conv3.weight.shape[:2],
+                                mode='bilinear').permute(2, 3, 0, 1))
+
+                        if t_layer.downsample is not None:
+                            # donwsample
+                            t_layer_downsample_conv_data = t_layer.downsample[
+                                0].weight.data.permute(2, 3, 0, 1)
+                            s_layer.downsample[0].weight.data.copy_(
+                                F.interpolate(
+                                    t_layer_downsample_conv_data,
+                                    size=s_layer.downsample[0].weight.
+                                    shape[:2],
+                                    mode='bilinear').permute(2, 3, 0, 1))
+    
     def copy_backbone(self):
         # stem layer
         self.s_conv1.weight.data.copy_(
@@ -890,6 +945,10 @@ class ResTSNet(nn.Module):
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
+        
+        if self.kernel_adaption:
+            # no 'copy' bn yet
+            self.adapt_kernel()
 
         inputs = []
         outs = []
@@ -911,26 +970,10 @@ class ResTSNet(nn.Module):
             s_res_layer = getattr(self, s_layer_name)
 
             if self.feature_adaption and self.train_mode:
-                # adaption_factor = 7330 * 11 / 7330 / 12
-                '''
-                strategy 1:
-                '''
-                # if self.train_step <= 7330 * 6:
-                #     adaption_factor = 1 - self.train_step / 7330 / 6
-                # else:
-                #     adaption_factor = (self.train_step - 7330 * 6) / 7330 / 6
-                '''
-                strategy 2:
-                '''
                 adaption_factor = 0.5
-                '''
-                origin strategy:
-                '''
-                # adaption_factor = self.train_step / 7330 / 12
-
-                # print("adaption_factor:", adaption_factor)
+                
                 s_x = s_res_layer(s_x)
-
+                
                 if self.conv_downsample:
                     # x_detached = inputs[j].detach()
                     x_detached = outs[j].detach()
@@ -950,9 +993,6 @@ class ResTSNet(nn.Module):
 
                     # align to teacher network and get the loss
 
-                    # print("s_x mean:", s_x.mean())
-                    # print("x_detached_adapted mean:",
-                    #       x_detached_adapted.mean())
                     s_x = adaption_factor * s_x + (
                         1 - adaption_factor) * x_detached_adapted
                     
