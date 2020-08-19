@@ -568,17 +568,25 @@ class ResTSNet(nn.Module):
         if self.kernel_adaption:
             assert self.feature_adaption == False
 
-            self.adaption_channels = [64, 128, 256, 512, 1024, 2048]
+            self.adaption_channels = [[64, 256], [128, 256, 512],
+                                      [256, 512, 1024], [512, 1024, 2048]]
             self.adaption_layers_group = nn.ModuleList()
 
-            for _ in range(4):
+            for i in range(len(self.adaption_channels)):
                 adaption_layers = nn.ModuleList()
-                for adaption_channel in self.adaption_channels:
+                for adaption_channel in self.adaption_channels[i]:
                     adaption_layers.append(
-                        nn.Linear(
+                        nn.Conv2d(
                             adaption_channel,
                             adaption_channel // self.t_s_ratio,
-                        ))
+                            3,
+                            padding=1))
+                    adaption_layers.append(
+                        nn.Conv2d(
+                            adaption_channel,
+                            adaption_channel // self.t_s_ratio,
+                            1,
+                            padding=0))
                 self.adaption_layers_group.append(adaption_layers)
 
     @property
@@ -641,11 +649,11 @@ class ResTSNet(nn.Module):
         t_stem_conv_data = self.conv1.weight.data.permute(2, 3, 0, 1).detach()
         t_stem_conv_channel = t_stem_conv_data.shape[3]
 
-        for j, adaption_channel in enumerate(self.adaption_channels):
-            adaption_layers = self.adaption_layers_group[0]
+        # for j, adaption_channel in enumerate(self.adaption_channels):
+        #     adaption_layers = self.adaption_layers_group[0]
 
-            if t_stem_conv_channel == adaption_channel:
-                t_stem_conv_data = self.adaption_layers[j](t_stem_conv_data)
+        #     if t_stem_conv_channel == adaption_channel:
+        #         t_stem_conv_data = self.adaption_layers[j](t_stem_conv_data)
 
         self.s_conv1.weight.data.copy_(
             F.interpolate(
@@ -659,37 +667,41 @@ class ResTSNet(nn.Module):
                 s_bottleneck_list = [
                     m.s_layer1, m.s_layer2, m.s_layer3, m.s_layer4
                 ]
-
                 # t_bottleneck_list = [t_layers1]
                 # s_bottleneck_list = [s_layers1]
-                for k, (t_layers, s_layers) in enumerate(zip(t_bottleneck_list,
-                                              s_bottleneck_list)):
+                for k, (t_layers, s_layers) in enumerate(
+                        zip(t_bottleneck_list, s_bottleneck_list)):
                     for t_layer, s_layer in zip(t_layers, s_layers):
                         adaption_layers = self.adaption_layers_group[k]
                         # conv
-                        t_layer_conv1_data = t_layer.conv1.weight.data.permute(
-                            2, 3, 0, 1).detach()
-                        t_layer_conv2_data = t_layer.conv2.weight.data.permute(
-                            2, 3, 0, 1).detach()
-                        t_layer_conv3_data = t_layer.conv3.weight.data.permute(
-                            2, 3, 0, 1).detach()
+                        t_layer_conv1_data = t_layer.conv1.weight.data.detach()
+                        t_layer_conv2_data = t_layer.conv2.weight.data.detach()
+                        t_layer_conv3_data = t_layer.conv3.weight.data.detach()
 
-                        t_conv1_channel = t_layer_conv1_data.shape[3]
-                        t_conv2_channel = t_layer_conv2_data.shape[3]
-                        t_conv3_channel = t_layer_conv3_data.shape[3]
+                        _, t_conv1_channel, _, t_conv1_kernel_size = t_layer_conv1_data.shape
+                        _, t_conv2_channel, _, t_conv2_kernel_size = t_layer_conv2_data.shape
+                        _, t_conv3_channel, _, t_conv3_kernel_size = t_layer_conv3_data.shape
 
-                        for j, adaption_channel in enumerate(
-                                self.adaption_channels):
-                            if t_conv1_channel == adaption_channel:
-                                t_layer_conv1_data = adaption_layers[j](
-                                    t_layer_conv1_data)
-                            if t_conv2_channel == adaption_channel:
-                                t_layer_conv2_data = adaption_layers[j](
-                                    t_layer_conv2_data)
-                            if t_conv3_channel == adaption_channel:
-                                t_layer_conv3_data = adaption_layers[j](
-                                    t_layer_conv3_data)
-
+                        for j, adaption_layer in enumerate(adaption_layers):
+                            # match the adaption kernel size for adaption
+                            num_kernel, in_channel, kernel_size, _ = adaption_layer.weight.shape
+                            if t_conv1_channel == in_channel and t_conv1_kernel_size == kernel_size:
+                                t_layer_conv1_data = adaption_layer(
+                                    t_layer_conv1_data).permute(2, 3, 0, 1)
+                            if t_conv2_channel == in_channel and t_conv2_kernel_size == kernel_size:
+                                t_layer_conv2_data = adaption_layer(
+                                    t_layer_conv2_data).permute(2, 3, 0, 1)
+                            if t_conv3_channel == in_channel and t_conv3_kernel_size == kernel_size:
+                                t_layer_conv3_data = adaption_layer(
+                                    t_layer_conv3_data).permute(2, 3, 0, 1)
+                        # print("t_layer_conv1_data shape:",
+                        #       t_layer_conv1_data.shape)
+                        # print("t_layer_conv2_data shape:",
+                        #       t_layer_conv2_data.shape)
+                        # print("t_layer_conv3_data shape:",
+                        #       t_layer_conv3_data.shape)
+                        # print("adaption_layers:", adaption_layers)
+                        # embed()
                         s_layer.conv1.weight.data.copy_(
                             F.interpolate(
                                 t_layer_conv1_data,
@@ -709,16 +721,18 @@ class ResTSNet(nn.Module):
                         if t_layer.downsample is not None:
                             # donwsample
                             t_layer_downsample_conv_data = t_layer.downsample[
-                                0].weight.data.permute(2, 3, 0, 1)
-                            t_downsample_conv_channel = t_layer_downsample_conv_data.shape[
-                                3]
+                                0].weight.data.detach()
+                            _, t_downsample_conv_channel, _, t_downsample_conv_kernel_size = t_layer_downsample_conv_data.shape
 
-                            for j, adaption_channel in enumerate(
-                                    self.adaption_channels):
-                                if t_downsample_conv_channel == adaption_channel:
-                                    t_layer_downsample_conv_data = adaption_layers[
-                                        j](
-                                            t_layer_downsample_conv_data)
+                            for j, adaption_layer in enumerate(
+                                    adaption_layers):
+                                # match the adaption kernel size for adaption
+                                num_kernel, in_channel, kernel_size, _ = adaption_layer.weight.shape
+                                if t_downsample_conv_channel == in_channel and t_downsample_conv_kernel_size == kernel_size:
+                                    t_layer_downsample_conv_data = adaption_layer(
+                                        t_layer_downsample_conv_data).permute(
+                                            2, 3, 0, 1)
+
                             s_layer.downsample[0].weight.data.copy_(
                                 F.interpolate(
                                     t_layer_downsample_conv_data,
