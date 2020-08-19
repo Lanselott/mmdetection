@@ -686,9 +686,9 @@ class ResTSNet(nn.Module):
                         adaption_layers = self.adaption_layers_group[k]
                         linear_layers = self.linear_layers_group[k]
                         # conv
-                        t_layer_conv1_data = t_layer.conv1.weight.data.detach()
-                        t_layer_conv2_data = t_layer.conv2.weight.data.detach()
-                        t_layer_conv3_data = t_layer.conv3.weight.data.detach()
+                        t_layer_conv1_data = t_layer.conv1.weight.detach()
+                        t_layer_conv2_data = t_layer.conv2.weight.detach()
+                        t_layer_conv3_data = t_layer.conv3.weight.detach()
 
                         t_conv1_batch, t_conv1_channel, _, t_conv1_kernel_size = t_layer_conv1_data.shape
                         t_conv2_batch, t_conv2_channel, _, t_conv2_kernel_size = t_layer_conv2_data.shape
@@ -706,34 +706,37 @@ class ResTSNet(nn.Module):
                             if t_conv3_channel == in_channel and t_conv3_kernel_size == kernel_size:
                                 t_layer_conv3_data = adaption_layer(
                                     t_layer_conv3_data).permute(1, 2, 3, 0)
-
-                        for j, linear_layer in enumerate(linear_layers):
-                            out_linear_shape, in_linear_shape = linear_layer.weight.shape
-                            if in_linear_shape == t_conv1_batch:
-                                t_layer_conv1_data = linear_layer(
-                                    t_layer_conv1_data).permute(3, 0, 1, 2)
-                                s_layer.conv1.weight.data = t_layer_conv1_data
-                            if in_linear_shape == t_conv2_batch:
-                                t_layer_conv2_data = linear_layer(
-                                    t_layer_conv2_data).permute(3, 0, 1, 2)
-                                s_layer.conv2.weight.data = t_layer_conv2_data
-                            if in_linear_shape == t_conv3_batch:
-                                t_layer_conv3_data = linear_layer(
-                                    t_layer_conv3_data).permute(3, 0, 1, 2)
-                                s_layer.conv3.weight.data = t_layer_conv3_data
                         
+                        with torch.no_grad():
+                            for j, linear_layer in enumerate(linear_layers):
+                                out_linear_shape, in_linear_shape = linear_layer.weight.shape
+                                if in_linear_shape == t_conv1_batch:
+                                    t_layer_conv1_data = linear_layer(
+                                        t_layer_conv1_data).permute(3, 0, 1, 2)
+                                    s_layer.conv1.weight.copy_(
+                                        t_layer_conv1_data)
+                                if in_linear_shape == t_conv2_batch:
+                                    t_layer_conv2_data = linear_layer(
+                                        t_layer_conv2_data).permute(3, 0, 1, 2)
+                                    s_layer.conv2.weight.copy_(
+                                        t_layer_conv2_data)
+                                if in_linear_shape == t_conv3_batch:
+                                    t_layer_conv3_data = linear_layer(
+                                        t_layer_conv3_data).permute(3, 0, 1, 2)
+                                    s_layer.conv3.weight.copy_(
+                                        t_layer_conv3_data)
                         '''
-                        s_layer.conv1.weight.data.copy_(
+                        s_layer.conv1.weight.copy_(
                             F.interpolate(
                                 t_layer_conv1_data,
                                 size=s_layer.conv1.weight.shape[:2],
                                 mode='bilinear').permute(2, 3, 0, 1))
-                        s_layer.conv2.weight.data.copy_(
+                        s_layer.conv2.weight.copy_(
                             F.interpolate(
                                 t_layer_conv2_data,
                                 size=s_layer.conv2.weight.shape[:2],
                                 mode='bilinear').permute(2, 3, 0, 1))
-                        s_layer.conv3.weight.data.copy_(
+                        s_layer.conv3.weight.copy_(
                             F.interpolate(
                                 t_layer_conv3_data,
                                 size=s_layer.conv3.weight.shape[:2],
@@ -742,7 +745,7 @@ class ResTSNet(nn.Module):
                         if t_layer.downsample is not None:
                             # donwsample
                             t_layer_downsample_conv_data = t_layer.downsample[
-                                0].weight.data.detach()
+                                0].weight.detach()
                             t_downsample_conv_batch, t_downsample_conv_channel, _, t_downsample_conv_kernel_size = t_layer_downsample_conv_data.shape
 
                             for j, adaption_layer in enumerate(
@@ -753,16 +756,18 @@ class ResTSNet(nn.Module):
                                     t_layer_downsample_conv_data = adaption_layer(
                                         t_layer_downsample_conv_data).permute(
                                             1, 2, 3, 0)
-                            for j, linear_layer in enumerate(linear_layers):
-                                out_linear_shape, in_linear_shape = linear_layer.weight.shape
+                            with torch.no_grad():
+                                for j, linear_layer in enumerate(linear_layers):
+                                    out_linear_shape, in_linear_shape = linear_layer.weight.shape
 
-                                if in_linear_shape == t_downsample_conv_batch:
-                                    t_layer_downsample_conv_data = linear_layer(
-                                        t_layer_downsample_conv_data).permute(
-                                            3, 0, 1, 2)
-                                    s_layer.downsample[0].weight.data = t_layer_downsample_conv_data
+                                    if in_linear_shape == t_downsample_conv_batch:
+                                        t_layer_downsample_conv_data = linear_layer(
+                                            t_layer_downsample_conv_data).permute(
+                                                3, 0, 1, 2)
+                                        s_layer.downsample[0].weight.copy_(
+                                            t_layer_downsample_conv_data)
                             '''
-                            s_layer.downsample[0].weight.data.copy_(
+                            s_layer.downsample[0].weight.copy_(
                                 F.interpolate(
                                     t_layer_downsample_conv_data,
                                     size=s_layer.downsample[0].weight.
