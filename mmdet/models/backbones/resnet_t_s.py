@@ -712,18 +712,16 @@ class ResTSNet(nn.Module):
                             if in_linear_shape == t_conv1_batch:
                                 t_layer_conv1_data = linear_layer(
                                     t_layer_conv1_data).permute(3, 0, 1, 2)
-                                s_layer.conv1.weight.data.copy_(
-                                    t_layer_conv1_data)
+                                s_layer.conv1.weight.data = t_layer_conv1_data
                             if in_linear_shape == t_conv2_batch:
                                 t_layer_conv2_data = linear_layer(
                                     t_layer_conv2_data).permute(3, 0, 1, 2)
-                                s_layer.conv2.weight.data.copy_(
-                                    t_layer_conv2_data)
+                                s_layer.conv2.weight.data = t_layer_conv2_data
                             if in_linear_shape == t_conv3_batch:
                                 t_layer_conv3_data = linear_layer(
                                     t_layer_conv3_data).permute(3, 0, 1, 2)
-                                s_layer.conv3.weight.data.copy_(
-                                    t_layer_conv3_data)
+                                s_layer.conv3.weight.data = t_layer_conv3_data
+                        
                         '''
                         s_layer.conv1.weight.data.copy_(
                             F.interpolate(
@@ -762,8 +760,7 @@ class ResTSNet(nn.Module):
                                     t_layer_downsample_conv_data = linear_layer(
                                         t_layer_downsample_conv_data).permute(
                                             3, 0, 1, 2)
-                                    s_layer.downsample[0].weight.data.copy_(
-                                        t_layer_downsample_conv_data)
+                                    s_layer.downsample[0].weight.data = t_layer_downsample_conv_data
                             '''
                             s_layer.downsample[0].weight.data.copy_(
                                 F.interpolate(
