@@ -586,6 +586,7 @@ class ResTSNet(nn.Module):
                                      [256, 256, 1024], [256, 256, 1024]],
                                     [[512, 512, 2048, 2048], [512, 512, 2048],
                                      [512, 512, 2048]]]
+
             self.adaption_layers_group = nn.ModuleList()
             self.linear_layers_group = nn.ModuleList()
 
@@ -719,36 +720,36 @@ class ResTSNet(nn.Module):
                         t_conv2_batch, t_conv2_channel, _, t_conv2_kernel_size = t_layer_conv2_data.shape
                         t_conv3_batch, t_conv3_channel, _, t_conv3_kernel_size = t_layer_conv3_data.shape
                         # match the adaption kernel size for adaption
-                        with torch.no_grad():
-                            if t_conv1_kernel_size == 3:
-                                t_layer_conv1_data = adaption_layers[0](
-                                    t_layer_conv1_data).permute(1, 2, 3, 0)
-                            else:
-                                t_layer_conv1_data = adaption_layers[1](
-                                    t_layer_conv1_data).permute(1, 2, 3, 0)
-                            if t_conv2_kernel_size == 3:
-                                t_layer_conv2_data = adaption_layers[2](
-                                    t_layer_conv2_data).permute(1, 2, 3, 0)
-                            else:
-                                t_layer_conv2_data = adaption_layers[3](
-                                    t_layer_conv2_data).permute(1, 2, 3, 0)
-                            if t_conv3_kernel_size == 3:
-                                t_layer_conv3_data = adaption_layers[4](
-                                    t_layer_conv3_data).permute(1, 2, 3, 0)
-                            else:
-                                t_layer_conv3_data = adaption_layers[5](
-                                    t_layer_conv3_data).permute(1, 2, 3, 0)
+                        # with torch.no_grad():
+                        if t_conv1_kernel_size == 3:
+                            t_layer_conv1_data = adaption_layers[0](
+                                t_layer_conv1_data).permute(1, 2, 3, 0)
+                        else:
+                            t_layer_conv1_data = adaption_layers[1](
+                                t_layer_conv1_data).permute(1, 2, 3, 0)
+                        if t_conv2_kernel_size == 3:
+                            t_layer_conv2_data = adaption_layers[2](
+                                t_layer_conv2_data).permute(1, 2, 3, 0)
+                        else:
+                            t_layer_conv2_data = adaption_layers[3](
+                                t_layer_conv2_data).permute(1, 2, 3, 0)
+                        if t_conv3_kernel_size == 3:
+                            t_layer_conv3_data = adaption_layers[4](
+                                t_layer_conv3_data).permute(1, 2, 3, 0)
+                        else:
+                            t_layer_conv3_data = adaption_layers[5](
+                                t_layer_conv3_data).permute(1, 2, 3, 0)
 
-                            t_layer_conv1_data = linear_layers[0](
-                                t_layer_conv1_data).permute(3, 0, 1, 2)
-                            s_layer.conv1.weight.copy_(t_layer_conv1_data)
-                            t_layer_conv2_data = linear_layers[1](
-                                t_layer_conv2_data).permute(3, 0, 1, 2)
-                            s_layer.conv2.weight.copy_(t_layer_conv2_data)
-                            t_layer_conv3_data = linear_layers[2](
-                                t_layer_conv3_data).permute(3, 0, 1, 2)
-                            s_layer.conv3.weight.copy_(t_layer_conv3_data)
-            
+                        t_layer_conv1_data = linear_layers[0](
+                            t_layer_conv1_data).permute(3, 0, 1, 2)
+                        s_layer.conv1.weight.data.copy_(t_layer_conv1_data)
+                        t_layer_conv2_data = linear_layers[1](
+                            t_layer_conv2_data).permute(3, 0, 1, 2)
+                        s_layer.conv2.weight.data.copy_(t_layer_conv2_data)
+                        t_layer_conv3_data = linear_layers[2](
+                            t_layer_conv3_data).permute(3, 0, 1, 2)
+                        s_layer.conv3.weight.data.copy_(t_layer_conv3_data)
+
                         if t_layer.downsample is not None:
                             # donwsample
                             t_layer_downsample_conv_data = t_layer.downsample[
@@ -756,20 +757,20 @@ class ResTSNet(nn.Module):
                             t_downsample_conv_batch, t_downsample_conv_channel, _, t_downsample_conv_kernel_size = t_layer_downsample_conv_data.shape
 
                             # match the adaption kernel size for adaption
-                            with torch.no_grad():            
-                                if t_downsample_conv_kernel_size == 3:
-                                    t_layer_downsample_conv_data = adaption_layers[
-                                        6](t_layer_downsample_conv_data).permute(
-                                            1, 2, 3, 0)
-                                else:
-                                    t_layer_downsample_conv_data = adaption_layers[
-                                        7](t_layer_downsample_conv_data).permute(
-                                            1, 2, 3, 0)
-                                t_layer_downsample_conv_data = linear_layers[3](
-                                    t_layer_downsample_conv_data
-                                ).permute(3, 0, 1, 2)
-                                s_layer.downsample[0].weight.copy_(
-                                    t_layer_downsample_conv_data)
+                            # with torch.no_grad():
+                            if t_downsample_conv_kernel_size == 3:
+                                t_layer_downsample_conv_data = adaption_layers[
+                                    6](t_layer_downsample_conv_data).permute(
+                                        1, 2, 3, 0)
+                            else:
+                                t_layer_downsample_conv_data = adaption_layers[
+                                    7](t_layer_downsample_conv_data).permute(
+                                        1, 2, 3, 0)
+                            t_layer_downsample_conv_data = linear_layers[3](
+                                t_layer_downsample_conv_data).permute(
+                                    3, 0, 1, 2)
+                            s_layer.downsample[0].weight.data.copy_(
+                                t_layer_downsample_conv_data)
 
     def copy_backbone(self):
         # stem layer
