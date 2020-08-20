@@ -616,8 +616,10 @@ class ResTSNet(nn.Module):
                     linear_layers = nn.ModuleList()
                     for linear_channel in self.linear_channels[i][k]:
                         linear_layers.append(
-                            nn.Linear(linear_channel,
-                                      linear_channel // self.t_s_ratio))
+                            nn.Linear(
+                                linear_channel,
+                                linear_channel // self.t_s_ratio,
+                                bias=False))
                     linear_blocks.append(linear_layers)
                 self.linear_layers_group.append(linear_blocks)
 
