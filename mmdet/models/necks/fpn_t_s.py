@@ -378,7 +378,8 @@ class FPNTS(nn.Module):
             return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
                 inputs[1]), tuple(inputs[2])
         elif self.pure_student_term:
-            return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
+            # pure student fpn fetures <-align-> teacher fpn features
+            return tuple(t_outs), tuple(pure_s_outs), tuple(inputs[0]), tuple(
                 inputs[1]), tuple(pure_s_outs)
         elif self.copy_teacher_fpn:
             return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
