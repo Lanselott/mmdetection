@@ -716,9 +716,9 @@ class ResTSNet(nn.Module):
                         linear_layers = self.linear_layers_group[k][l]
 
                         # conv
-                        t_layer_conv1_data = t_layer.conv1.weight.data
-                        t_layer_conv2_data = t_layer.conv2.weight.data
-                        t_layer_conv3_data = t_layer.conv3.weight.data
+                        t_layer_conv1_data = t_layer.conv1.weight.detach()
+                        t_layer_conv2_data = t_layer.conv2.weight.detach()
+                        t_layer_conv3_data = t_layer.conv3.weight.detach()
 
                         t_conv1_batch, t_conv1_channel, _, t_conv1_kernel_size = t_layer_conv1_data.shape
                         t_conv2_batch, t_conv2_channel, _, t_conv2_kernel_size = t_layer_conv2_data.shape
@@ -784,12 +784,13 @@ class ResTSNet(nn.Module):
                                 t_layer_downsample_conv_data)
 
     def copy_backbone(self):
+        factor = 0.5
         # stem layer
-        self.s_conv1.weight.data.add_(
-            F.interpolate(
+        self.s_conv1.weight.data = factor * self.s_conv1.weight.data + (
+            1 - factor) * F.interpolate(
                 self.conv1.weight.data.permute(2, 3, 0, 1).detach(),
                 size=self.s_conv1.weight.shape[:2],
-                mode='bilinear').permute(2, 3, 0, 1))
+                mode='bilinear').permute(2, 3, 0, 1)
 
         for m in self.modules():
             if hasattr(m, 's_layer1'):
@@ -805,36 +806,39 @@ class ResTSNet(nn.Module):
                         # conv
                         t_layer_conv1_data = t_layer.conv1.weight.data.permute(
                             2, 3, 0, 1).detach()
-                        s_layer.conv1.weight.data.add_(
-                            F.interpolate(
+                        s_layer.conv1.weight.data = factor * s_layer.conv1.weight.data + (
+                            1 - factor) * F.interpolate(
                                 t_layer_conv1_data,
                                 size=s_layer.conv1.weight.shape[:2],
-                                mode='bilinear').permute(2, 3, 0, 1))
+                                mode='bilinear').permute(2, 3, 0, 1)
                         t_layer_conv2_data = t_layer.conv2.weight.data.permute(
                             2, 3, 0, 1).detach()
-                        s_layer.conv2.weight.data.add_(
-                            F.interpolate(
+                        s_layer.conv2.weight.data = factor * s_layer.conv2.weight.data + (
+                            1 - factor) * F.interpolate(
                                 t_layer_conv2_data,
                                 size=s_layer.conv2.weight.shape[:2],
-                                mode='bilinear').permute(2, 3, 0, 1))
+                                mode='bilinear').permute(2, 3, 0, 1)
                         t_layer_conv3_data = t_layer.conv3.weight.data.permute(
                             2, 3, 0, 1).detach()
-                        s_layer.conv3.weight.data.add_(
-                            F.interpolate(
+                        s_layer.conv3.weight.data = factor * s_layer.conv3.weight.data + (
+                            1 - factor) * F.interpolate(
                                 t_layer_conv3_data,
                                 size=s_layer.conv3.weight.shape[:2],
-                                mode='bilinear').permute(2, 3, 0, 1))
+                                mode='bilinear').permute(2, 3, 0, 1)
 
                         if t_layer.downsample is not None:
                             # donwsample
                             t_layer_downsample_conv_data = t_layer.downsample[
                                 0].weight.data.permute(2, 3, 0, 1)
-                            s_layer.downsample[0].weight.data.add_(
-                                F.interpolate(
-                                    t_layer_downsample_conv_data,
-                                    size=s_layer.downsample[0].weight.
-                                    shape[:2],
-                                    mode='bilinear').permute(2, 3, 0, 1))
+                            s_layer.downsample[
+                                0].weight.data = factor * s_layer.downsample[
+                                    0].weight.data + (
+                                        1 - factor) * F.interpolate(
+                                            t_layer_downsample_conv_data,
+                                            size=s_layer.downsample[0].weight.
+                                            shape[:2],
+                                            mode='bilinear').permute(
+                                                2, 3, 0, 1)
 
     def init_weights(self, pretrained=None):
         if isinstance(pretrained, str):
@@ -876,12 +880,12 @@ class ResTSNet(nn.Module):
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
-        '''
-        # FIXME: no gradient update in adaption layers 
+
+        # FIXME: no gradient update in adaption layers
         if self.kernel_adaption:
             # no 'copy' bn yet
             self.adapt_kernel()
-        '''
+
         self.copy_backbone()
 
         x = self.conv1(x)
