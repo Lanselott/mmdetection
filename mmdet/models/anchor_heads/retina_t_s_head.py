@@ -39,6 +39,7 @@ class RetinaTSHead(AnchorHead):
                  scales_per_octave=3,
                  eval_student=False,
                  finetune_student=False,
+                 pure_student_term=False,
                  conv_cfg=None,
                  norm_cfg=None,
                  **kwargs):
@@ -47,6 +48,7 @@ class RetinaTSHead(AnchorHead):
         self.scales_per_octave = scales_per_octave
         self.eval_student = eval_student
         self.finetune_student = finetune_student
+        self.pure_student_term = pure_student_term
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         octave_scales = np.array(
@@ -141,16 +143,16 @@ class RetinaTSHead(AnchorHead):
         normal_init(self.s_retina_cls, std=0.01, bias=bias_cls)
         normal_init(self.s_retina_reg, std=0.01)
 
-    def forward_single(self,
-                       x,
-                       s_x,
-                       block_pair=None,
-                       aligned_fpn=None):
+    def forward_single(self, x, s_x, pure_s_x=None, aligned_fpn=None):
         # NOTE: some features are not used
         cls_feat = x
         reg_feat = x
         s_cls_feat = s_x
         s_reg_feat = s_x
+        if self.pure_student_term:
+            s_pure_cls_feat = pure_s_x
+            s_pure_reg_feat = pure_s_x
+
         # align to teacher
         for s_t_align_conv in self.s_t_align_convs:
             s_x = s_t_align_conv(s_x)
@@ -165,15 +167,26 @@ class RetinaTSHead(AnchorHead):
         for s_reg_conv in self.s_reg_convs:
             s_reg_feat = s_reg_conv(s_reg_feat)
 
+        if self.pure_student_term:
+            for s_cls_conv in self.s_cls_convs:
+                s_pure_cls_feat = s_cls_conv(s_pure_cls_feat)
+            for s_reg_conv in self.s_reg_convs:
+                s_pure_reg_feat = s_reg_conv(s_pure_reg_feat)
+
         cls_score = self.retina_cls(cls_feat)
         bbox_pred = self.retina_reg(reg_feat)
 
         s_cls_score = self.s_retina_cls(s_cls_feat)
         s_bbox_pred = self.s_retina_reg(s_reg_feat)
+
+        if self.pure_student_term:
+            s_pure_cls_score = self.s_retina_cls(s_pure_cls_feat)
+            s_pure_bbox_pred = self.s_retina_reg(s_pure_reg_feat)
+
         if self.eval_student and not self.training:
             return s_cls_score, s_bbox_pred
         elif not self.eval_student and not self.training:
             return cls_score, bbox_pred
         elif self.training:
-            return tuple([cls_score, s_cls_score, x,
-                          s_x]), tuple([bbox_pred, s_bbox_pred]), block_pair
+            return tuple([cls_score, s_cls_score, x, s_x, s_pure_cls_score
+                          ]), tuple([bbox_pred, s_bbox_pred, s_pure_bbox_pred])

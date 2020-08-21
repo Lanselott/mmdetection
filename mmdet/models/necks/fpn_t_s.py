@@ -28,6 +28,7 @@ class FPNTS(nn.Module):
             add_extra_convs=False,
             extra_convs_on_inputs=True,
             relu_before_extra_convs=False,
+            pure_student_term=False,
             apply_block_wise_alignment=False,
             kernel_meta_learner=False,
             copy_teacher_fpn=False,
@@ -50,6 +51,7 @@ class FPNTS(nn.Module):
         self.num_outs = num_outs
         self.activation = activation
         self.relu_before_extra_convs = relu_before_extra_convs
+        self.pure_student_term = pure_student_term
         self.apply_block_wise_alignment = apply_block_wise_alignment
         self.kernel_meta_learner = kernel_meta_learner
         self.copy_teacher_fpn = copy_teacher_fpn
@@ -352,6 +354,9 @@ class FPNTS(nn.Module):
         # Student Net
         s_outs = self.single_forward(inputs[1], self.s_fpn_convs,
                                      self.s_lateral_convs)
+        if self.pure_student_term:
+            pure_s_outs = self.single_forward(inputs[2], self.s_fpn_convs,
+                                              self.s_lateral_convs)
 
         if self.copy_teacher_fpn:
             aligned_inputs = tuple()
@@ -372,6 +377,9 @@ class FPNTS(nn.Module):
             # push hint loss to head
             return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
                 inputs[1]), tuple(inputs[2])
+        elif self.pure_student_term:
+            return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
+                inputs[1]), tuple(pure_s_outs)
         elif self.copy_teacher_fpn:
             return tuple(t_outs), tuple(s_outs), tuple(inputs[0]), tuple(
                 inputs[1]), tuple(aligned_outputs)

@@ -402,6 +402,7 @@ class ResTSNet(nn.Module):
                  conv_downsample=False,
                  train_mode=True,
                  constant_term=False,
+                 pure_student_term=False,
                  bn_topk_selection=False,
                  frozen_stages=-1,
                  conv_cfg=None,
@@ -463,6 +464,7 @@ class ResTSNet(nn.Module):
         self.train_step = 0
         self.train_mode = train_mode
         self.constant_term = constant_term
+        self.pure_student_term = pure_student_term
 
         self._make_stem_layer(in_channels)
         self._make_s_stem_layer(in_channels)
@@ -714,44 +716,51 @@ class ResTSNet(nn.Module):
                         linear_layers = self.linear_layers_group[k][l]
 
                         # conv
-                        t_layer_conv1_data = t_layer.conv1.weight.detach()
-                        t_layer_conv2_data = t_layer.conv2.weight.detach()
-                        t_layer_conv3_data = t_layer.conv3.weight.detach()
+                        t_layer_conv1_data = t_layer.conv1.weight.data
+                        t_layer_conv2_data = t_layer.conv2.weight.data
+                        t_layer_conv3_data = t_layer.conv3.weight.data
 
                         t_conv1_batch, t_conv1_channel, _, t_conv1_kernel_size = t_layer_conv1_data.shape
                         t_conv2_batch, t_conv2_channel, _, t_conv2_kernel_size = t_layer_conv2_data.shape
                         t_conv3_batch, t_conv3_channel, _, t_conv3_kernel_size = t_layer_conv3_data.shape
                         # match the adaption kernel size for adaption
-                        # with torch.no_grad():
-                        if t_conv1_kernel_size == 3:
-                            t_layer_conv1_data = adaption_layers[0](
-                                t_layer_conv1_data).permute(1, 2, 3, 0)
-                        else:
-                            t_layer_conv1_data = adaption_layers[1](
-                                t_layer_conv1_data).permute(1, 2, 3, 0)
-                        if t_conv2_kernel_size == 3:
-                            t_layer_conv2_data = adaption_layers[2](
-                                t_layer_conv2_data).permute(1, 2, 3, 0)
-                        else:
-                            t_layer_conv2_data = adaption_layers[3](
-                                t_layer_conv2_data).permute(1, 2, 3, 0)
-                        if t_conv3_kernel_size == 3:
-                            t_layer_conv3_data = adaption_layers[4](
-                                t_layer_conv3_data).permute(1, 2, 3, 0)
-                        else:
-                            t_layer_conv3_data = adaption_layers[5](
-                                t_layer_conv3_data).permute(1, 2, 3, 0)
+                        with torch.no_grad():
+                            if t_conv1_kernel_size == 3:
+                                t_layer_conv1_data = adaption_layers[0](
+                                    t_layer_conv1_data).permute(1, 2, 3, 0)
+                            else:
+                                t_layer_conv1_data = adaption_layers[1](
+                                    t_layer_conv1_data).permute(1, 2, 3, 0)
+                            if t_conv2_kernel_size == 3:
+                                t_layer_conv2_data = adaption_layers[2](
+                                    t_layer_conv2_data).permute(1, 2, 3, 0)
+                            else:
+                                t_layer_conv2_data = adaption_layers[3](
+                                    t_layer_conv2_data).permute(1, 2, 3, 0)
+                            if t_conv3_kernel_size == 3:
+                                t_layer_conv3_data = adaption_layers[4](
+                                    t_layer_conv3_data).permute(1, 2, 3, 0)
+                            else:
+                                t_layer_conv3_data = adaption_layers[5](
+                                    t_layer_conv3_data).permute(1, 2, 3, 0)
+                            t_layer_conv1_data = linear_layers[0](
+                                t_layer_conv1_data).permute(3, 0, 1, 2)
+                            s_layer.conv1.weight.copy_(t_layer_conv1_data)
+                            t_layer_conv2_data = linear_layers[1](
+                                t_layer_conv2_data).permute(3, 0, 1, 2)
+                            s_layer.conv2.weight.copy_(t_layer_conv2_data)
+                            t_layer_conv3_data = linear_layers[2](
+                                t_layer_conv3_data).permute(3, 0, 1, 2)
+                            s_layer.conv3.weight.copy_(t_layer_conv3_data)
 
-                        t_layer_conv1_data = linear_layers[0](
-                            t_layer_conv1_data).permute(3, 0, 1, 2)
-                        s_layer.conv1.weight.data.copy_(t_layer_conv1_data)
-                        t_layer_conv2_data = linear_layers[1](
-                            t_layer_conv2_data).permute(3, 0, 1, 2)
-                        s_layer.conv2.weight.data.copy_(t_layer_conv2_data)
-                        t_layer_conv3_data = linear_layers[2](
-                            t_layer_conv3_data).permute(3, 0, 1, 2)
-                        s_layer.conv3.weight.data.copy_(t_layer_conv3_data)
-
+                        # print("adaption_layers[5]:",
+                        #       adaption_layers[5].weight.sum())
+                        # print("adaption_layers[5]:",
+                        #       adaption_layers[5].bias.sum())
+                        # embed()
+                        # print(" s_layer.conv3.weight:",
+                        #       s_layer.conv3.weight.sum())
+                        print("====")
                         if t_layer.downsample is not None:
                             # donwsample
                             t_layer_downsample_conv_data = t_layer.downsample[
@@ -1023,11 +1032,12 @@ class ResTSNet(nn.Module):
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
-
+        '''
+        # FIXME: no gradient update in adaption layers 
         if self.kernel_adaption:
             # no 'copy' bn yet
             self.adapt_kernel()
-
+        '''
         x = self.conv1(x)
         x = self.norm1(x)
         x = self.relu(x)
@@ -1043,6 +1053,9 @@ class ResTSNet(nn.Module):
         else:
             s_x = x
         '''
+        if self.pure_student_term:
+            pure_s_x = s_x
+            s_pure_outs = []
 
         inputs = []
         outs = []
@@ -1068,22 +1081,13 @@ class ResTSNet(nn.Module):
 
                 s_x = s_res_layer(s_x)
 
+                if self.pure_student_term:
+                    pure_s_x = s_res_layer(pure_s_x)
+
                 if self.conv_downsample:
                     # x_detached = inputs[j].detach()
                     x_detached = outs[j].detach()
                     x_detached_adapted = self.adaption_layers[j](x_detached)
-
-                    if self.constant_term:
-                        _, _, feature_w, feature_h = x_detached_adapted.shape
-                        x_detached_adapted = x_detached_adapted - x_detached_adapted.min(
-                            1)[0].view(-1, 1, feature_w, feature_h)
-                        x_detached_adapted = x_detached_adapted / x_detached_adapted.max(
-                            1)[0].view(-1, 1, feature_w,
-                                       feature_h).clamp(min=1e-3)
-                        s_x = s_x - s_x.min(1)[0].view(-1, 1, feature_w,
-                                                       feature_h)
-                        s_x = s_x / s_x.max(1)[0].view(
-                            -1, 1, feature_w, feature_h).clamp(min=1e-3)
 
                     # align to teacher network and get the loss
 
@@ -1103,16 +1107,16 @@ class ResTSNet(nn.Module):
                 s_x = s_res_layer(s_x)
                 _, _, feature_w, feature_h = s_x.shape
 
-                if self.constant_term:
-                    s_x = s_x - s_x.min(1)[0].view(-1, 1, feature_w, feature_h)
-                    s_x = s_x / s_x.max(1)[0].view(-1, 1, feature_w,
-                                                   feature_h).clamp(min=1e-3)
-
             if j in self.out_indices:
                 s_outs.append(s_x)
+                if self.pure_student_term:
+                    s_pure_outs.append(pure_s_x)
 
+        assert self.apply_block_wise_alignment != self.pure_student_term
         if self.apply_block_wise_alignment:
             return tuple(outs), tuple(s_outs), tuple(block_distill_pairs)
+        elif self.pure_student_term:
+            return tuple(outs), tuple(s_outs), tuple(s_pure_outs)
         else:
             return tuple(outs), tuple(s_outs)
 
