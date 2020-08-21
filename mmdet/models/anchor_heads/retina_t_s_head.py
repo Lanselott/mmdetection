@@ -192,8 +192,9 @@ class RetinaTSHead(AnchorHead):
             return cls_score, bbox_pred
         elif self.training:
             if self.pure_student_term:
-                return tuple([cls_score, s_cls_score, x, pure_s_x, s_pure_cls_score
-                            ]), tuple([bbox_pred, s_bbox_pred, s_pure_bbox_pred])
+                return tuple([
+                    cls_score, s_cls_score, x, pure_s_x, s_pure_cls_score
+                ]), tuple([bbox_pred, s_bbox_pred, s_pure_bbox_pred])
             else:
-                return tuple([cls_score, s_cls_score, x, s_x, s_pure_cls_score
-                            ]), tuple([bbox_pred, s_bbox_pred, s_pure_bbox_pred])
+                return tuple([cls_score, s_cls_score, x,
+                              s_x]), tuple([bbox_pred, s_bbox_pred])
