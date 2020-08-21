@@ -155,7 +155,10 @@ class RetinaTSHead(AnchorHead):
 
         # align to teacher
         for s_t_align_conv in self.s_t_align_convs:
-            s_x = s_t_align_conv(s_x)
+            if self.pure_student_term:
+                pure_s_x = s_t_align_conv(pure_s_x)
+            else:
+                s_x = s_t_align_conv(s_x)
 
         for cls_conv in self.cls_convs:
             cls_feat = cls_conv(cls_feat)
@@ -188,5 +191,9 @@ class RetinaTSHead(AnchorHead):
         elif not self.eval_student and not self.training:
             return cls_score, bbox_pred
         elif self.training:
-            return tuple([cls_score, s_cls_score, x, s_x, s_pure_cls_score
-                          ]), tuple([bbox_pred, s_bbox_pred, s_pure_bbox_pred])
+            if self.pure_student_term:
+                return tuple([cls_score, s_cls_score, x, pure_s_x, s_pure_cls_score
+                            ]), tuple([bbox_pred, s_bbox_pred, s_pure_bbox_pred])
+            else:
+                return tuple([cls_score, s_cls_score, x, s_x, s_pure_cls_score
+                            ]), tuple([bbox_pred, s_bbox_pred, s_pure_bbox_pred])
