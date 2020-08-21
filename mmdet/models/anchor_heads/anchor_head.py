@@ -197,7 +197,7 @@ class AnchorHead(nn.Module):
             s_x_feats = cls_score[3].permute(0, 2, 3, 1).reshape(
                 -1, self.feat_channels)
             if self.pure_student_term:
-                pue_s_cls_score = cls_score[4].permute(0, 2, 3, 1).reshape(
+                s_pure_cls_score = cls_score[4].permute(0, 2, 3, 1).reshape(
                     -1, self.cls_out_channels)
         else:
             cls_score = cls_score.permute(0, 2, 3,
@@ -215,7 +215,7 @@ class AnchorHead(nn.Module):
                 avg_factor=num_total_samples)
             if self.pure_student_term:
                 s_pure_loss_cls = self.loss_cls(
-                    pue_s_cls_score,
+                    s_pure_cls_score,
                     labels,
                     label_weights,
                     avg_factor=num_total_samples)
