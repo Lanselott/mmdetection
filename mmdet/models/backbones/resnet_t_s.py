@@ -682,8 +682,8 @@ class ResTSNet(nn.Module):
 
     def adapt_kernel(self, s_x, j):
         # stem layer
-        t_stem_conv_data = self.conv1.weight.data.permute(2, 3, 0, 1).detach()
-        t_stem_conv_channel = t_stem_conv_data.shape[3]
+        # t_stem_conv_data = self.conv1.weight.data.permute(2, 3, 0, 1).detach()
+        # t_stem_conv_channel = t_stem_conv_data.shape[3]
 
         # if j == 0:
         #     self.s_conv1.weight.data.copy_(
@@ -734,26 +734,26 @@ class ResTSNet(nn.Module):
             # NOTE: Manually apply convolution on student features
             t_layer_conv1_data = linear_layers[0](t_layer_conv1_data).permute(
                 3, 0, 1, 2)
-            s_x = F.conv2d(s_x, t_layer_conv1_data, stride=(1, 1))
-            s_x = s_layer.bn1(s_x)
-            s_x = s_layer.relu(s_x)
+            s_out = F.conv2d(s_x, t_layer_conv1_data, stride=(1, 1))
+            s_out = s_layer.bn1(s_out)
+            s_out = s_layer.relu(s_out)
 
             t_layer_conv2_data = linear_layers[1](t_layer_conv2_data).permute(
                 3, 0, 1, 2)
             if j >= 1 and l == 0:
-                s_x = F.conv2d(
-                    s_x, t_layer_conv2_data, stride=(2, 2), padding=(1, 1))
+                s_out = F.conv2d(
+                    s_out, t_layer_conv2_data, stride=(2, 2), padding=(1, 1))
             else:
-                s_x = F.conv2d(
-                    s_x, t_layer_conv2_data, stride=(1, 1), padding=(1, 1))
-            s_x = s_layer.bn2(s_x)
-            s_x = s_layer.relu(s_x)
+                s_out = F.conv2d(
+                    s_out, t_layer_conv2_data, stride=(1, 1), padding=(1, 1))
+            s_out = s_layer.bn2(s_out)
+            s_out = s_layer.relu(s_out)
 
             t_layer_conv3_data = linear_layers[2](t_layer_conv3_data).permute(
                 3, 0, 1, 2)
-            s_x = F.conv2d(s_x, t_layer_conv3_data, stride=(1, 1))
-            s_x = s_layer.bn3(s_x)
-            s_x = s_layer.relu(s_x)
+            s_out = F.conv2d(s_out, t_layer_conv3_data, stride=(1, 1))
+            s_out = s_layer.bn3(s_out)
+            s_out = s_layer.relu(s_out)
             # print("adaption_layers[5]:",
             #       adaption_layers[5].weight.sum())
 
@@ -781,12 +781,12 @@ class ResTSNet(nn.Module):
                 else:
                     identity = F.conv2d(
                         identity, t_layer_downsample_conv_data, stride=(1, 1))
-                identity = s_layer.downsample[1](identity)
-                s_x = s_x + identity
+                identity = s_layer.downsample[1](s_x)
+                s_out += identity
 
-            s_x = s_layer.relu(s_x)
+            s_out = s_layer.relu(s_out)
             
-        return s_x
+        return s_out
 
     def copy_backbone(self):
         factor = 0.5
