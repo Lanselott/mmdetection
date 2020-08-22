@@ -928,8 +928,8 @@ class ResTSNet(nn.Module):
             # FIXME: no gradient update in adaption layers
             if self.kernel_adaption:
                 # no 'copy' bn yet
-                with torch.no_grad():
-                    s_x = self.adapt_kernel(s_x, j)
+                # with torch.no_grad():
+                s_x = self.adapt_kernel(s_x, j)
             elif self.feature_adaption and self.train_mode:
                 adaption_factor = 0.5
 
