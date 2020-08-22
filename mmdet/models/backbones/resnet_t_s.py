@@ -781,7 +781,8 @@ class ResTSNet(nn.Module):
                 else:
                     identity = F.conv2d(
                         identity, t_layer_downsample_conv_data, stride=(1, 1))
-                identity = s_layer.downsample[1](s_x)
+            
+                identity = s_layer.downsample[1](identity)
                 s_out += identity
 
             s_out = s_layer.relu(s_out)
