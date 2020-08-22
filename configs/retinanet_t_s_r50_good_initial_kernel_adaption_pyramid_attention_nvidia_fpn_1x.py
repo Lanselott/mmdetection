@@ -37,8 +37,8 @@ model = dict(
         pure_student_term=PURE_STUDENT_TERM,
         feature_adaption=False,
         constant_term=False,
-        conv_downsample=True,
-        kernel_adaption=False,
+        conv_downsample=False,
+        kernel_adaption=True,
     ),
     neck=dict(
         type='FPNTS',

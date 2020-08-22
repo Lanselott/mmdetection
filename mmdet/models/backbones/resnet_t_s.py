@@ -680,7 +680,7 @@ class ResTSNet(nn.Module):
             for param in m.parameters():
                 param.requires_grad = False
 
-    def adapt_kernel(self):
+    def adapt_kernel(self, s_x):
         # stem layer
         t_stem_conv_data = self.conv1.weight.data.permute(2, 3, 0, 1).detach()
         t_stem_conv_channel = t_stem_conv_data.shape[3]
@@ -690,6 +690,7 @@ class ResTSNet(nn.Module):
 
         #     if t_stem_conv_channel == adaption_channel:
         #         t_stem_conv_data = self.adaption_layers[j](t_stem_conv_data)
+        factor = 0.5
 
         self.s_conv1.weight.data.copy_(
             F.interpolate(
@@ -697,91 +698,90 @@ class ResTSNet(nn.Module):
                 size=self.s_conv1.weight.shape[:2],
                 mode='bilinear').permute(2, 3, 0, 1))
 
-        for m in self.modules():
-            if hasattr(m, 's_layer1'):
-                t_bottleneck_list = [m.layer1, m.layer2, m.layer3, m.layer4]
-                s_bottleneck_list = [
-                    m.s_layer1, m.s_layer2, m.s_layer3, m.s_layer4
-                ]
-                # t_bottleneck_list = [t_layers1]
-                # s_bottleneck_list = [s_layers1]
+        for j, (t_layer_name, s_layer_name) in enumerate(
+                zip(self.res_layers, self.s_res_layers)):
+            s_bottlenecks = getattr(self, s_layer_name)
+            t_bottlenecks = getattr(self, t_layer_name)
 
-                # stage wise
-                for k, (t_bottlenecks, s_bottlenecks) in enumerate(
-                        zip(t_bottleneck_list, s_bottleneck_list)):
-                    # bottleneck
-                    for l, (t_layer, s_layer) in enumerate(
-                            zip(t_bottlenecks, s_bottlenecks)):
-                        adaption_layers = self.adaption_layers_group[k][l]
-                        linear_layers = self.linear_layers_group[k][l]
+            for l, (t_layer,
+                    s_layer) in enumerate(zip(t_bottlenecks, s_bottlenecks)):
+                adaption_layers = self.adaption_layers_group[j][l]
+                linear_layers = self.linear_layers_group[j][l]
+                # conv
+                t_layer_conv1_data = t_layer.conv1.weight.detach()
+                t_layer_conv2_data = t_layer.conv2.weight.detach()
+                t_layer_conv3_data = t_layer.conv3.weight.detach()
 
-                        # conv
-                        t_layer_conv1_data = t_layer.conv1.weight.detach()
-                        t_layer_conv2_data = t_layer.conv2.weight.detach()
-                        t_layer_conv3_data = t_layer.conv3.weight.detach()
+                t_conv1_batch, t_conv1_channel, _, t_conv1_kernel_size = t_layer_conv1_data.shape
+                t_conv2_batch, t_conv2_channel, _, t_conv2_kernel_size = t_layer_conv2_data.shape
+                t_conv3_batch, t_conv3_channel, _, t_conv3_kernel_size = t_layer_conv3_data.shape
+                # match the adaption kernel size for adaption
+                # with torch.no_grad():
+                if t_conv1_kernel_size == 3:
+                    t_layer_conv1_data = adaption_layers[0](
+                        t_layer_conv1_data).permute(1, 2, 3, 0)
+                else:
+                    t_layer_conv1_data = adaption_layers[1](
+                        t_layer_conv1_data).permute(1, 2, 3, 0)
+                if t_conv2_kernel_size == 3:
+                    t_layer_conv2_data = adaption_layers[2](
+                        t_layer_conv2_data).permute(1, 2, 3, 0)
+                else:
+                    t_layer_conv2_data = adaption_layers[3](
+                        t_layer_conv2_data).permute(1, 2, 3, 0)
+                if t_conv3_kernel_size == 3:
+                    t_layer_conv3_data = adaption_layers[4](
+                        t_layer_conv3_data).permute(1, 2, 3, 0)
+                else:
+                    t_layer_conv3_data = adaption_layers[5](
+                        t_layer_conv3_data).permute(1, 2, 3, 0)
+                identity = s_x
+                # NOTE: Manually apply convolution on student features
+                t_layer_conv1_data = linear_layers[0](
+                    t_layer_conv1_data).permute(3, 0, 1, 2)
+                s_x = F.conv2d(s_x, t_layer_conv1_data, stride=(1, 1))
+                s_x = s_layer.bn1(s_x)
+                s_x = s_layer.relu(s_x)
 
-                        t_conv1_batch, t_conv1_channel, _, t_conv1_kernel_size = t_layer_conv1_data.shape
-                        t_conv2_batch, t_conv2_channel, _, t_conv2_kernel_size = t_layer_conv2_data.shape
-                        t_conv3_batch, t_conv3_channel, _, t_conv3_kernel_size = t_layer_conv3_data.shape
-                        # match the adaption kernel size for adaption
-                        with torch.no_grad():
-                            if t_conv1_kernel_size == 3:
-                                t_layer_conv1_data = adaption_layers[0](
-                                    t_layer_conv1_data).permute(1, 2, 3, 0)
-                            else:
-                                t_layer_conv1_data = adaption_layers[1](
-                                    t_layer_conv1_data).permute(1, 2, 3, 0)
-                            if t_conv2_kernel_size == 3:
-                                t_layer_conv2_data = adaption_layers[2](
-                                    t_layer_conv2_data).permute(1, 2, 3, 0)
-                            else:
-                                t_layer_conv2_data = adaption_layers[3](
-                                    t_layer_conv2_data).permute(1, 2, 3, 0)
-                            if t_conv3_kernel_size == 3:
-                                t_layer_conv3_data = adaption_layers[4](
-                                    t_layer_conv3_data).permute(1, 2, 3, 0)
-                            else:
-                                t_layer_conv3_data = adaption_layers[5](
-                                    t_layer_conv3_data).permute(1, 2, 3, 0)
-                            t_layer_conv1_data = linear_layers[0](
-                                t_layer_conv1_data).permute(3, 0, 1, 2)
-                            s_layer.conv1.weight.copy_(t_layer_conv1_data)
-                            t_layer_conv2_data = linear_layers[1](
-                                t_layer_conv2_data).permute(3, 0, 1, 2)
-                            s_layer.conv2.weight.copy_(t_layer_conv2_data)
-                            t_layer_conv3_data = linear_layers[2](
-                                t_layer_conv3_data).permute(3, 0, 1, 2)
-                            s_layer.conv3.weight.copy_(t_layer_conv3_data)
+                t_layer_conv2_data = linear_layers[1](
+                    t_layer_conv2_data).permute(3, 0, 1, 2)
+                s_x = F.conv2d(
+                    s_x, t_layer_conv2_data, stride=(1, 1), padding=(1, 1))
+                s_x = s_layer.bn2(s_x)
+                s_x = s_layer.relu(s_x)
 
-                        # print("adaption_layers[5]:",
-                        #       adaption_layers[5].weight.sum())
-                        # print("adaption_layers[5]:",
-                        #       adaption_layers[5].bias.sum())
-                        # embed()
-                        # print(" s_layer.conv3.weight:",
-                        #       s_layer.conv3.weight.sum())
-                        print("====")
-                        if t_layer.downsample is not None:
-                            # donwsample
-                            t_layer_downsample_conv_data = t_layer.downsample[
-                                0].weight.detach()
-                            t_downsample_conv_batch, t_downsample_conv_channel, _, t_downsample_conv_kernel_size = t_layer_downsample_conv_data.shape
+                t_layer_conv3_data = linear_layers[2](
+                    t_layer_conv3_data).permute(3, 0, 1, 2)
+                s_x = F.conv2d(s_x, t_layer_conv3_data, stride=(1, 1))
+                s_x = s_layer.bn3(s_x)
+                s_x = s_layer.relu(s_x)
+                # print("adaption_layers[5]:",
+                #       adaption_layers[5].weight.sum())
 
-                            # match the adaption kernel size for adaption
-                            # with torch.no_grad():
-                            if t_downsample_conv_kernel_size == 3:
-                                t_layer_downsample_conv_data = adaption_layers[
-                                    6](t_layer_downsample_conv_data).permute(
-                                        1, 2, 3, 0)
-                            else:
-                                t_layer_downsample_conv_data = adaption_layers[
-                                    7](t_layer_downsample_conv_data).permute(
-                                        1, 2, 3, 0)
-                            t_layer_downsample_conv_data = linear_layers[3](
-                                t_layer_downsample_conv_data).permute(
-                                    3, 0, 1, 2)
-                            s_layer.downsample[0].weight.data.copy_(
-                                t_layer_downsample_conv_data)
+                if t_layer.downsample is not None:
+                    # donwsample
+                    t_layer_downsample_conv_data = t_layer.downsample[
+                        0].weight.detach()
+                    t_downsample_conv_batch, t_downsample_conv_channel, _, t_downsample_conv_kernel_size = t_layer_downsample_conv_data.shape
+
+                    # match the adaption kernel size for adaption
+                    # with torch.no_grad():
+                    if t_downsample_conv_kernel_size == 3:
+                        t_layer_downsample_conv_data = adaption_layers[6](
+                            t_layer_downsample_conv_data).permute(1, 2, 3, 0)
+                    else:
+                        t_layer_downsample_conv_data = adaption_layers[7](
+                            t_layer_downsample_conv_data).permute(1, 2, 3, 0)
+
+                    t_layer_downsample_conv_data = linear_layers[3](
+                        t_layer_downsample_conv_data).permute(3, 0, 1, 2)
+                    identity = F.conv2d(
+                        identity, t_layer_downsample_conv_data, stride=(1, 1))
+                    identity = s_layer.downsample[1](identity)
+                    s_x += identity
+                
+                s_x = s_layer.relu(s_x)
+        return s_x
 
     def copy_backbone(self):
         factor = 0.5
@@ -881,11 +881,6 @@ class ResTSNet(nn.Module):
         else:
             s_x = x
 
-        # FIXME: no gradient update in adaption layers
-        if self.kernel_adaption:
-            # no 'copy' bn yet
-            self.adapt_kernel()
-
         self.copy_backbone()
 
         x = self.conv1(x)
@@ -926,7 +921,12 @@ class ResTSNet(nn.Module):
         for j, s_layer_name in enumerate(self.s_res_layers):
             s_res_layer = getattr(self, s_layer_name)
 
-            if self.feature_adaption and self.train_mode:
+            # FIXME: no gradient update in adaption layers
+            if self.kernel_adaption:
+                # no 'copy' bn yet
+                s_x = self.adapt_kernel(s_x)
+
+            elif self.feature_adaption and self.train_mode:
                 adaption_factor = 0.5
 
                 s_x = s_res_layer(s_x)
