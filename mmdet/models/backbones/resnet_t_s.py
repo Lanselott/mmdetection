@@ -877,29 +877,29 @@ class ResTSNet(nn.Module):
 
     def forward(self, x):
         self.train_step += 1
-
+        # '''
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
-
-        self.copy_backbone()
-
+        # '''
         x = self.conv1(x)
         x = self.norm1(x)
         x = self.relu(x)
         x = self.maxpool(x)
-
+        
         s_x = self.s_conv1(s_x)
         s_x = self.s_norm1(s_x)
         s_x = self.s_relu(s_x)
         s_x = self.s_maxpool(s_x)
+        
         '''
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
         '''
+        
         if self.pure_student_term:
             pure_s_x = s_x
             s_pure_outs = []
