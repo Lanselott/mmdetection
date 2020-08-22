@@ -782,9 +782,10 @@ class ResTSNet(nn.Module):
                     identity = F.conv2d(
                         identity, t_layer_downsample_conv_data, stride=(1, 1))
                 identity = s_layer.downsample[1](identity)
-                s_x += identity
+                s_x = s_x + identity
 
             s_x = s_layer.relu(s_x)
+            
         return s_x
 
     def copy_backbone(self):
