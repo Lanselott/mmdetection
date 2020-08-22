@@ -693,6 +693,7 @@ class ResTSNet(nn.Module):
         #             mode='bilinear').permute(2, 3, 0, 1))
         #     s_x = F.conv2d(s_x, t_layer_conv3_data, stride=(1, 1))
 
+        s_out = s_x
         s_layer_name = self.s_res_layers[j]
         t_layer_name = self.res_layers[j]
         s_bottlenecks = getattr(self, s_layer_name)
@@ -730,11 +731,11 @@ class ResTSNet(nn.Module):
             else:
                 t_layer_conv3_data = adaption_layers[5](
                     t_layer_conv3_data).permute(1, 2, 3, 0)
-            identity = s_x
+            identity = s_out
             # NOTE: Manually apply convolution on student features
             t_layer_conv1_data = linear_layers[0](t_layer_conv1_data).permute(
                 3, 0, 1, 2)
-            s_out = F.conv2d(s_x, t_layer_conv1_data, stride=(1, 1))
+            s_out = F.conv2d(s_out, t_layer_conv1_data, stride=(1, 1))
             s_out = s_layer.bn1(s_out)
             s_out = s_layer.relu(s_out)
 
