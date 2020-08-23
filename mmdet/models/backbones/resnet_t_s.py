@@ -711,33 +711,41 @@ class ResTSNet(nn.Module):
         # with torch.no_grad():
         if t_conv1_kernel_size == 3:
             t_layer_conv1_data = adaption_layers[0](
-                t_layer_conv1_data).permute(1, 2, 3, 0)
+                t_layer_conv1_data).permute(2, 3, 0, 1)
         else:
             t_layer_conv1_data = adaption_layers[1](
-                t_layer_conv1_data).permute(1, 2, 3, 0)
+                t_layer_conv1_data).permute(2, 3, 0, 1)
         if t_conv2_kernel_size == 3:
             t_layer_conv2_data = adaption_layers[2](
-                t_layer_conv2_data).permute(1, 2, 3, 0)
+                t_layer_conv2_data).permute(2, 3, 0, 1)
         else:
             t_layer_conv2_data = adaption_layers[3](
-                t_layer_conv2_data).permute(1, 2, 3, 0)
+                t_layer_conv2_data).permute(2, 3, 0, 1)
         if t_conv3_kernel_size == 3:
             t_layer_conv3_data = adaption_layers[4](
-                t_layer_conv3_data).permute(1, 2, 3, 0)
+                t_layer_conv3_data).permute(2, 3, 0, 1)
         else:
             t_layer_conv3_data = adaption_layers[5](
-                t_layer_conv3_data).permute(1, 2, 3, 0)
+                t_layer_conv3_data).permute(2, 3, 0, 1)
 
         # NOTE: Manually apply convolution on student features
         # TODO: F.relu cannot be inplace, figure out why
-        t_layer_conv1_data = linear_layers[0](t_layer_conv1_data).permute(
-            3, 0, 1, 2)
+        t_layer_conv1_data = F.interpolate(
+            t_layer_conv1_data,
+            size=s_layer.conv1.weight.shape[:2],
+            mode='bilinear').permute(2, 3, 0, 1)
+        # t_layer_conv1_data = linear_layers[0](t_layer_conv1_data).permute(
+        #     3, 0, 1, 2)
         s_out = F.conv2d(s_x, t_layer_conv1_data, stride=(1, 1))
         s_out = s_layer.bn1(s_out)
         s_out = F.relu(s_out)
 
-        t_layer_conv2_data = linear_layers[1](t_layer_conv2_data).permute(
-            3, 0, 1, 2)
+        t_layer_conv2_data = F.interpolate(
+            t_layer_conv2_data,
+            size=s_layer.conv2.weight.shape[:2],
+            mode='bilinear').permute(2, 3, 0, 1)
+        # t_layer_conv2_data = linear_layers[1](t_layer_conv2_data).permute(
+        #     3, 0, 1, 2)
         if j >= 1 and l == 0:
             s_out = F.conv2d(
                 s_out, t_layer_conv2_data, stride=(2, 2), padding=(1, 1))
@@ -747,8 +755,12 @@ class ResTSNet(nn.Module):
         s_out = s_layer.bn2(s_out)
         s_out = F.relu(s_out)
 
-        t_layer_conv3_data = linear_layers[2](t_layer_conv3_data).permute(
-            3, 0, 1, 2)
+        t_layer_conv3_data = F.interpolate(
+            t_layer_conv3_data,
+            size=s_layer.conv3.weight.shape[:2],
+            mode='bilinear').permute(2, 3, 0, 1)
+        # t_layer_conv3_data = linear_layers[2](t_layer_conv3_data).permute(
+        #     3, 0, 1, 2)
         s_out = F.conv2d(s_out, t_layer_conv3_data, stride=(1, 1))
         s_out = s_layer.bn3(s_out)
         s_out = F.relu(s_out)
@@ -765,13 +777,17 @@ class ResTSNet(nn.Module):
             # with torch.no_grad():
             if t_downsample_conv_kernel_size == 3:
                 t_layer_downsample_conv_data = adaption_layers[6](
-                    t_layer_downsample_conv_data).permute(1, 2, 3, 0)
+                    t_layer_downsample_conv_data).permute(2, 3, 0, 1)
             else:
                 t_layer_downsample_conv_data = adaption_layers[7](
-                    t_layer_downsample_conv_data).permute(1, 2, 3, 0)
+                    t_layer_downsample_conv_data).permute(2, 3, 0, 1)
 
-            t_layer_downsample_conv_data = linear_layers[3](
-                t_layer_downsample_conv_data).permute(3, 0, 1, 2)
+            t_layer_downsample_conv_data = F.interpolate(
+                t_layer_downsample_conv_data,
+                size=s_layer.downsample[0].weight.shape[:2],
+                mode='bilinear').permute(2, 3, 0, 1)
+            # t_layer_downsample_conv_data = linear_layers[3](
+            #     t_layer_downsample_conv_data).permute(3, 0, 1, 2)
 
             if j >= 1 and l == 0:
                 identity = F.conv2d(
@@ -891,9 +907,13 @@ class ResTSNet(nn.Module):
         x = self.maxpool(x)
 
         if self.kernel_adaption:
-            s_conv1_weight = self.conv1_linear(
-                self.conv1.weight.data.permute(1, 2, 3,
-                                               0)).permute(3, 0, 1, 2)
+            # s_conv1_weight = self.conv1_linear(
+            #     self.conv1.weight.data.permute(1, 2, 3,
+            #                                    0)).permute(3, 0, 1, 2)
+            s_conv1_weight = F.interpolate(
+                self.conv1.weight.data.permute(2, 3, 0, 1),
+                size=self.s_conv1.weight.shape[:2],
+                mode='bilinear').permute(2, 3, 0, 1)
             s_x = F.conv2d(s_x, s_conv1_weight, stride=(2, 2), padding=(3, 3))
         else:
             s_x = self.s_conv1(s_x)
@@ -901,7 +921,6 @@ class ResTSNet(nn.Module):
         s_x = self.s_norm1(s_x)
         s_x = self.s_relu(s_x)
         s_x = self.s_maxpool(s_x)
-
         '''
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
