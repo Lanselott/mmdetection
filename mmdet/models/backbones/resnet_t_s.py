@@ -592,6 +592,8 @@ class ResTSNet(nn.Module):
             self.adaption_layers_group = nn.ModuleList()
             self.linear_layers_group = nn.ModuleList()
 
+            self.conv1_linear = nn.Linear(64, 32, bias=False)
+
             for i in range(len(self.adaption_channels)):
                 adaption_blocks = nn.ModuleList()
                 linear_blocks = nn.ModuleList()
@@ -621,7 +623,7 @@ class ResTSNet(nn.Module):
                             nn.Linear(
                                 linear_channel,
                                 linear_channel // self.t_s_ratio,
-                                bias=True))
+                                bias=False))
                     linear_blocks.append(linear_layers)
                 self.linear_layers_group.append(linear_blocks)
 
@@ -888,10 +890,18 @@ class ResTSNet(nn.Module):
         x = self.relu(x)
         x = self.maxpool(x)
 
-        s_x = self.s_conv1(s_x)
+        if self.kernel_adaption:
+            s_conv1_weight = self.conv1_linear(
+                self.conv1.weight.data.permute(1, 2, 3,
+                                               0)).permute(3, 0, 1, 2)
+            s_x = F.conv2d(s_x, s_conv1_weight, stride=(2, 2), padding=(3, 3))
+        else:
+            s_x = self.s_conv1(s_x)
+
         s_x = self.s_norm1(s_x)
         s_x = self.s_relu(s_x)
         s_x = self.s_maxpool(s_x)
+
         '''
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
