@@ -569,7 +569,7 @@ class ResTSNet(nn.Module):
                 '''
         if self.kernel_adaption:
             assert self.feature_adaption == False
-
+            '''
             self.adaption_channels = [[[64, 64, 64, 64], [256, 64, 64],
                                        [256, 64, 64]],
                                       [[256, 128, 128, 256], [512, 128, 128],
@@ -588,12 +588,35 @@ class ResTSNet(nn.Module):
                                      [256, 256, 1024], [256, 256, 1024]],
                                     [[512, 512, 2048, 2048], [512, 512, 2048],
                                      [512, 512, 2048]]]
+            '''
+            '''
+            self.adaption_channels = [[[64], [256], [256]],
+                                      [[256], [512], [512], [512]],
+                                      [[512], [1024], [1024], [1024], [1024],
+                                       [1024]], [[1024], [2048], [2048]]]
+            self.linear_channels = [[[64], [64], [64]],
+                                    [[128], [128], [128], [128]],
+                                    [[256], [256], [256], [256], [256], [256]],
+                                    [[512], [512], [512]]]
+            '''
+            self.adaption_channels = [[[64], [-1], [-1]],
+                                      [[256], [-1], [-1], [-1]],
+                                      [[512], [-1], [-1], [-1], [-1], [-1]],
+                                      [[1024], [-1], [-1]]]
+            self.linear_channels = [[[64], [-1], [-1]],
+                                    [[128], [-1], [-1], [-1]],
+                                    [[256], [-1], [-1], [-1], [-1], [-1]],
+                                    [[512], [-1], [-1]]]
 
             self.adaption_layers_group = nn.ModuleList()
             self.linear_layers_group = nn.ModuleList()
-
+            self.conv1_adaption_3d = nn.Conv3d(
+                64,
+                64 // self.t_s_ratio,
+                kernel_size=(3 // self.t_s_ratio, 1, 1),
+                padding=0)
+            '''
             self.conv1_linear = nn.Linear(64, 32, bias=False)
-
             for i in range(len(self.adaption_channels)):
                 adaption_blocks = nn.ModuleList()
                 linear_blocks = nn.ModuleList()
@@ -601,12 +624,6 @@ class ResTSNet(nn.Module):
                 for j in range(len(self.adaption_channels[i])):
                     adaption_layers = nn.ModuleList()
                     for adaption_channel in self.adaption_channels[i][j]:
-                        adaption_layers.append(
-                            nn.Conv2d(
-                                adaption_channel,
-                                adaption_channel // self.t_s_ratio,
-                                3,
-                                padding=1))
                         adaption_layers.append(
                             nn.Conv2d(
                                 adaption_channel,
@@ -626,6 +643,27 @@ class ResTSNet(nn.Module):
                                 bias=False))
                     linear_blocks.append(linear_layers)
                 self.linear_layers_group.append(linear_blocks)
+            '''
+            # 3d conv
+            for i in range(len(self.adaption_channels)):
+                adaption_blocks = nn.ModuleList()
+
+                for j in range(len(self.adaption_channels[i])):
+                    adaption_layers = nn.ModuleList()
+                    for linear_channel, adaption_channel in zip(
+                            self.linear_channels[i][j],
+                            self.adaption_channels[i][j]):
+                        if linear_channel != -1 and adaption_channel != -1:
+                            adaption_layers.append(
+                                nn.Conv3d(
+                                    linear_channel,
+                                    linear_channel // self.t_s_ratio,
+                                    kernel_size=(
+                                        adaption_channel // self.t_s_ratio + 1,
+                                        1, 1),
+                                    padding=0))
+                    adaption_blocks.append(adaption_layers)
+                self.adaption_layers_group.append(adaption_blocks)
 
     @property
     def norm1(self):
@@ -694,52 +732,38 @@ class ResTSNet(nn.Module):
         #             size=self.s_conv1.weight.shape[:2],
         #             mode='bilinear').permute(2, 3, 0, 1))
         #     s_x = F.conv2d(s_x, t_layer_conv3_data, stride=(1, 1))
-        torch.autograd.set_detect_anomaly(True)
         identity = s_x
-
-        adaption_layers = self.adaption_layers_group[j][l]
+        '''
         linear_layers = self.linear_layers_group[j][l]
+        '''
         # conv
         t_layer_conv1_data = t_layer.conv1.weight.detach()
+        '''
         t_layer_conv2_data = t_layer.conv2.weight.detach()
         t_layer_conv3_data = t_layer.conv3.weight.detach()
+        '''
+        if l == 0:  # only adapt on first layer of each block
+            adaption_layers = self.adaption_layers_group[j][l]
+            # match the adaption kernel size for adaption
+            t_layer_conv1_data = torch.squeeze(
+                adaption_layers[0](torch.unsqueeze(t_layer_conv1_data,
+                                                   axis=0)), 0)
+            '''
+            t_layer_conv2_data = adaption_layers[1](t_layer_conv2_data).permute(
+                2, 3, 0, 1)
 
-        t_conv1_batch, t_conv1_channel, _, t_conv1_kernel_size = t_layer_conv1_data.shape
-        t_conv2_batch, t_conv2_channel, _, t_conv2_kernel_size = t_layer_conv2_data.shape
-        t_conv3_batch, t_conv3_channel, _, t_conv3_kernel_size = t_layer_conv3_data.shape
-        # match the adaption kernel size for adaption
-        # with torch.no_grad():
-        if t_conv1_kernel_size == 3:
-            t_layer_conv1_data = adaption_layers[0](
-                t_layer_conv1_data).permute(2, 3, 0, 1)
+            t_layer_conv3_data = adaption_layers[2](t_layer_conv3_data).permute(
+                2, 3, 0, 1)
+            '''
+            # NOTE: Manually apply convolution on student features
+            # TODO: F.relu cannot be inplace, figure out why
+            s_out = F.conv2d(s_x, t_layer_conv1_data, stride=(1, 1))
         else:
-            t_layer_conv1_data = adaption_layers[1](
-                t_layer_conv1_data).permute(2, 3, 0, 1)
-        if t_conv2_kernel_size == 3:
-            t_layer_conv2_data = adaption_layers[2](
-                t_layer_conv2_data).permute(2, 3, 0, 1)
-        else:
-            t_layer_conv2_data = adaption_layers[3](
-                t_layer_conv2_data).permute(2, 3, 0, 1)
-        if t_conv3_kernel_size == 3:
-            t_layer_conv3_data = adaption_layers[4](
-                t_layer_conv3_data).permute(2, 3, 0, 1)
-        else:
-            t_layer_conv3_data = adaption_layers[5](
-                t_layer_conv3_data).permute(2, 3, 0, 1)
+            s_out = s_layer.conv1(s_x)
 
-        # NOTE: Manually apply convolution on student features
-        # TODO: F.relu cannot be inplace, figure out why
-        t_layer_conv1_data = F.interpolate(
-            t_layer_conv1_data,
-            size=s_layer.conv1.weight.shape[:2],
-            mode='bilinear').permute(2, 3, 0, 1)
-        # t_layer_conv1_data = linear_layers[0](t_layer_conv1_data).permute(
-        #     3, 0, 1, 2)
-        s_out = F.conv2d(s_x, t_layer_conv1_data, stride=(1, 1))
         s_out = s_layer.bn1(s_out)
         s_out = F.relu(s_out)
-
+        '''
         t_layer_conv2_data = F.interpolate(
             t_layer_conv2_data,
             size=s_layer.conv2.weight.shape[:2],
@@ -754,7 +778,11 @@ class ResTSNet(nn.Module):
                 s_out, t_layer_conv2_data, stride=(1, 1), padding=(1, 1))
         s_out = s_layer.bn2(s_out)
         s_out = F.relu(s_out)
-
+        '''
+        s_out = s_layer.conv2(s_out)
+        s_out = s_layer.bn2(s_out)
+        s_out = F.relu(s_out)
+        '''
         t_layer_conv3_data = F.interpolate(
             t_layer_conv3_data,
             size=s_layer.conv3.weight.shape[:2],
@@ -764,10 +792,13 @@ class ResTSNet(nn.Module):
         s_out = F.conv2d(s_out, t_layer_conv3_data, stride=(1, 1))
         s_out = s_layer.bn3(s_out)
         s_out = F.relu(s_out)
-        # print("adaption_layers[5]:",
-        #       adaption_layers[5].weight.sum())
+        '''
+        s_out = s_layer.conv3(s_out)
+        s_out = s_layer.bn3(s_out)
+        s_out = F.relu(s_out)
 
         if t_layer.downsample is not None:
+            '''
             # donwsample
             t_layer_downsample_conv_data = t_layer.downsample[0].weight.detach(
             )
@@ -775,12 +806,8 @@ class ResTSNet(nn.Module):
 
             # match the adaption kernel size for adaption
             # with torch.no_grad():
-            if t_downsample_conv_kernel_size == 3:
-                t_layer_downsample_conv_data = adaption_layers[6](
-                    t_layer_downsample_conv_data).permute(2, 3, 0, 1)
-            else:
-                t_layer_downsample_conv_data = adaption_layers[7](
-                    t_layer_downsample_conv_data).permute(2, 3, 0, 1)
+            t_layer_downsample_conv_data = adaption_layers[3](
+                t_layer_downsample_conv_data).permute(2, 3, 0, 1)
 
             t_layer_downsample_conv_data = F.interpolate(
                 t_layer_downsample_conv_data,
@@ -795,7 +822,8 @@ class ResTSNet(nn.Module):
             else:
                 identity = F.conv2d(
                     identity, t_layer_downsample_conv_data, stride=(1, 1))
-
+            '''
+            identity = s_layer.downsample[0](s_x)
             identity = s_layer.downsample[1](identity)
 
         s_out += identity
@@ -910,10 +938,10 @@ class ResTSNet(nn.Module):
             # s_conv1_weight = self.conv1_linear(
             #     self.conv1.weight.data.permute(1, 2, 3,
             #                                    0)).permute(3, 0, 1, 2)
-            s_conv1_weight = F.interpolate(
-                self.conv1.weight.data.permute(2, 3, 0, 1),
-                size=self.s_conv1.weight.shape[:2],
-                mode='bilinear').permute(2, 3, 0, 1)
+            s_conv1_weight = torch.squeeze(
+                self.conv1_adaption_3d(
+                    torch.unsqueeze(self.conv1.weight.data, 0)), 0)
+
             s_x = F.conv2d(s_x, s_conv1_weight, stride=(2, 2), padding=(3, 3))
         else:
             s_x = self.s_conv1(s_x)
