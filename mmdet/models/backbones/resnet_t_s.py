@@ -776,7 +776,7 @@ class ResTSNet(nn.Module):
         t_layer_conv2_data = t_layer.conv2.weight.detach()
         t_layer_conv3_data = t_layer.conv3.weight.detach()
         '''
-        if l == 0 or l == 1 or l == 2 or l == 3:  # only adapt on first layer of each block
+        if l < len(self.adaption_layers_group[j]):  # only adapt on first layer of each block
             adaption_layers = self.adaption_layers_group[j][l]
             # match the adaption kernel size for adaption
             t_layer_conv1_data = torch.squeeze(
