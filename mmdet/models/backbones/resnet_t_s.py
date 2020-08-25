@@ -610,7 +610,7 @@ class ResTSNet(nn.Module):
                                     [[256], [-1], [-1], [-1], [-1], [-1]],
                                     [[512], [-1], [-1]]]
             '''
-
+            '''
             # two block alignment
             self.adaption_channels = [[[64], [256], [-1]],
                                       [[256], [512], [-1], [-1]],
@@ -620,6 +620,7 @@ class ResTSNet(nn.Module):
                                     [[128], [128], [-1], [-1]],
                                     [[256], [256], [-1], [-1], [-1], [-1]],
                                     [[512], [512], [-1]]]
+            '''
             '''
             # three block alignment
             self.adaption_channels = [[[64], [256], [256]],
@@ -632,7 +633,7 @@ class ResTSNet(nn.Module):
                                     [[512], [512], [512]]]
             '''
             # all block alignment
-            '''
+            
             self.adaption_channels = [[[64], [256], [256]],
                                       [[256], [512], [512], [512]],
                                       [[512], [1024], [1024], [1024], [1024],
@@ -641,7 +642,7 @@ class ResTSNet(nn.Module):
                                     [[128], [128], [128], [128]],
                                     [[256], [256], [256], [256], [256], [256]],
                                     [[512], [512], [512]]]
-            '''
+            
             self.adaption_layers_group = nn.ModuleList()
             self.linear_layers_group = nn.ModuleList()
             self.conv1_adaption_3d = nn.Conv3d(
@@ -765,7 +766,7 @@ class ResTSNet(nn.Module):
         t_layer_conv2_data = t_layer.conv2.weight.detach()
         t_layer_conv3_data = t_layer.conv3.weight.detach()
         '''
-        if l == 0 or l == 1:  # l < len(self.adaption_layers_group[j]):  # only adapt on first layer of each block
+        if l < len(self.adaption_layers_group[j]):  # only adapt on first layer of each block
             adaption_layers = self.adaption_layers_group[j][l]
             # match the adaption kernel size for adaption
             t_layer_conv1_data = torch.squeeze(
