@@ -610,17 +610,16 @@ class ResTSNet(nn.Module):
                                     [[256], [-1], [-1], [-1], [-1], [-1]],
                                     [[512], [-1], [-1]]]
             '''
-            '''
+
             # two block alignment
             self.adaption_channels = [[[64], [256], [-1]],
                                       [[256], [512], [-1], [-1]],
-                                      [[512], [1024], [-1], [-1], [-1],
-                                       [-1]], [[1024], [2048], [-1]]]
+                                      [[512], [1024], [-1], [-1], [-1], [-1]],
+                                      [[1024], [2048], [-1]]]
             self.linear_channels = [[[64], [64], [-1]],
                                     [[128], [128], [-1], [-1]],
                                     [[256], [256], [-1], [-1], [-1], [-1]],
                                     [[512], [512], [-1]]]
-            '''
             '''
             # three block alignment
             self.adaption_channels = [[[64], [256], [256]],
@@ -633,6 +632,7 @@ class ResTSNet(nn.Module):
                                     [[512], [512], [512]]]
             '''
             # all block alignment
+            '''
             self.adaption_channels = [[[64], [256], [256]],
                                       [[256], [512], [512], [512]],
                                       [[512], [1024], [1024], [1024], [1024],
@@ -641,7 +641,7 @@ class ResTSNet(nn.Module):
                                     [[128], [128], [128], [128]],
                                     [[256], [256], [256], [256], [256], [256]],
                                     [[512], [512], [512]]]
-
+            '''
             self.adaption_layers_group = nn.ModuleList()
             self.linear_layers_group = nn.ModuleList()
             self.conv1_adaption_3d = nn.Conv3d(
@@ -754,18 +754,7 @@ class ResTSNet(nn.Module):
             for param in m.parameters():
                 param.requires_grad = False
 
-    def adapt_kernel(self, s_x, j, l, t_layer, s_layer):
-        # stem layer
-        # t_stem_conv_data = self.conv1.weight.data.permute(2, 3, 0, 1).detach()
-        # t_stem_conv_channel = t_stem_conv_data.shape[3]
-
-        # if j == 0:
-        #     self.s_conv1.weight.data.copy_(
-        #         F.interpolate(
-        #             t_stem_conv_data,
-        #             size=self.s_conv1.weight.shape[:2],
-        #             mode='bilinear').permute(2, 3, 0, 1))
-        #     s_x = F.conv2d(s_x, t_layer_conv3_data, stride=(1, 1))
+    def adapt_kernel_train(self, s_x, j, l, t_layer, s_layer):
         identity = s_x
         '''
         linear_layers = self.linear_layers_group[j][l]
@@ -776,7 +765,7 @@ class ResTSNet(nn.Module):
         t_layer_conv2_data = t_layer.conv2.weight.detach()
         t_layer_conv3_data = t_layer.conv3.weight.detach()
         '''
-        if l < len(self.adaption_layers_group[j]):  # only adapt on first layer of each block
+        if l == 0 or l == 1:  # l < len(self.adaption_layers_group[j]):  # only adapt on first layer of each block
             adaption_layers = self.adaption_layers_group[j][l]
             # match the adaption kernel size for adaption
             t_layer_conv1_data = torch.squeeze(
@@ -797,39 +786,13 @@ class ResTSNet(nn.Module):
 
         s_out = s_layer.bn1(s_out)
         s_out = F.relu(s_out)
-        '''
-        t_layer_conv2_data = F.interpolate(
-            t_layer_conv2_data,
-            size=s_layer.conv2.weight.shape[:2],
-            mode='bilinear').permute(2, 3, 0, 1)
-        # t_layer_conv2_data = linear_layers[1](t_layer_conv2_data).permute(
-        #     3, 0, 1, 2)
-        if j >= 1 and l == 0:
-            s_out = F.conv2d(
-                s_out, t_layer_conv2_data, stride=(2, 2), padding=(1, 1))
-        else:
-            s_out = F.conv2d(
-                s_out, t_layer_conv2_data, stride=(1, 1), padding=(1, 1))
-        s_out = s_layer.bn2(s_out)
-        s_out = F.relu(s_out)
-        '''
+
         s_out = s_layer.conv2(s_out)
         s_out = s_layer.bn2(s_out)
         s_out = F.relu(s_out)
-        '''
-        t_layer_conv3_data = F.interpolate(
-            t_layer_conv3_data,
-            size=s_layer.conv3.weight.shape[:2],
-            mode='bilinear').permute(2, 3, 0, 1)
-        # t_layer_conv3_data = linear_layers[2](t_layer_conv3_data).permute(
-        #     3, 0, 1, 2)
-        s_out = F.conv2d(s_out, t_layer_conv3_data, stride=(1, 1))
-        s_out = s_layer.bn3(s_out)
-        s_out = F.relu(s_out)
-        '''
+
         s_out = s_layer.conv3(s_out)
         s_out = s_layer.bn3(s_out)
-        s_out = F.relu(s_out)
 
         if t_layer.downsample is not None:
             '''
@@ -864,6 +827,31 @@ class ResTSNet(nn.Module):
         s_out = F.relu(s_out)
 
         return s_out
+
+    def adapt_kernel_inference(self, j, l, t_layer, s_layer):
+        '''
+        linear_layers = self.linear_layers_group[j][l]
+        '''
+        # conv
+        t_layer_conv1_data = t_layer.conv1.weight.detach()
+        '''
+        t_layer_conv2_data = t_layer.conv2.weight.detach()
+        t_layer_conv3_data = t_layer.conv3.weight.detach()
+        '''
+        s_conv1_weight = torch.squeeze(
+            self.conv1_adaption_3d(torch.unsqueeze(self.conv1.weight.data, 0)),
+            0)
+        self.s_conv1.weight = torch.nn.Parameter(s_conv1_weight)
+
+        if l == 0 or l == 1:  # l < len(self.adaption_layers_group[j]):  # only adapt on first layer of each block
+            adaption_layers = self.adaption_layers_group[j][l]
+            # match the adaption kernel size for adaption
+            t_layer_conv1_data = torch.squeeze(
+                adaption_layers[0](torch.unsqueeze(t_layer_conv1_data,
+                                                   axis=0)), 0)
+            # NOTE: Manually apply convolution on student features
+            # TODO: F.relu cannot be inplace, figure out why
+            s_layer.conv1.weight = torch.nn.Parameter(t_layer_conv1_data)
 
     def copy_backbone(self):
         factor = 0.5
@@ -955,6 +943,17 @@ class ResTSNet(nn.Module):
             for m in self.adaption_layers:
                 normal_init(m, std=0.01)
 
+        if not self.train_mode and self.kernel_adaption:
+            for j, s_layer_name in enumerate(self.s_res_layers):
+                s_layer_name = self.s_res_layers[j]
+                t_layer_name = self.res_layers[j]
+                s_bottlenecks = getattr(self, s_layer_name)
+                t_bottlenecks = getattr(self, t_layer_name)
+
+                for l, (t_layer, s_layer) in enumerate(
+                        zip(t_bottlenecks, s_bottlenecks)):
+                    self.adapt_kernel_inference(j, l, t_layer, s_layer)
+
     def forward(self, x):
         self.train_step += 1
         # '''
@@ -968,7 +967,7 @@ class ResTSNet(nn.Module):
         x = self.relu(x)
         x = self.maxpool(x)
 
-        if self.kernel_adaption:
+        if self.kernel_adaption and self.train_mode:
             # s_conv1_weight = self.conv1_linear(
             #     self.conv1.weight.data.permute(1, 2, 3,
             #                                    0)).permute(3, 0, 1, 2)
@@ -1014,7 +1013,7 @@ class ResTSNet(nn.Module):
             s_res_layer = getattr(self, s_layer_name)
 
             # FIXME: no gradient update in adaption layers
-            if self.kernel_adaption:
+            if self.kernel_adaption and self.train_mode:
                 # no 'copy' bn yet
                 # with torch.no_grad():
                 s_layer_name = self.s_res_layers[j]
@@ -1024,9 +1023,11 @@ class ResTSNet(nn.Module):
 
                 for l, (t_layer, s_layer) in enumerate(
                         zip(t_bottlenecks, s_bottlenecks)):
-                    s_x = self.adapt_kernel(s_x, j, l, t_layer, s_layer)
-
-            elif self.feature_adaption and self.train_mode:
+                    s_x = self.adapt_kernel_train(s_x, j, l, t_layer, s_layer)
+            else:
+                s_x = s_res_layer(s_x)
+            '''
+            if self.feature_adaption and self.train_mode:
                 adaption_factor = 0.5
 
                 s_x = s_res_layer(s_x)
@@ -1056,7 +1057,7 @@ class ResTSNet(nn.Module):
             else:
                 s_x = s_res_layer(s_x)
                 _, _, feature_w, feature_h = s_x.shape
-
+            '''
             if j in self.out_indices:
                 s_outs.append(s_x)
                 if self.pure_student_term:
