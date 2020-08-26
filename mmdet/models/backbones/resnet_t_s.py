@@ -610,17 +610,26 @@ class ResTSNet(nn.Module):
                                     [[256, -1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1]],
                                     [[512, -1, -1, -1], [-1, -1, -1], [-1, -1, -1]]]
             '''
-            '''
+
             # two block alignment
-            self.adaption_channels = [[[64, -1, -1, -1], [256, -1, -1], [-1, -1, -1]],
-                                      [[256, -1, -1, -1], [512, -1, -1], [-1, -1, -1], [-1, -1, -1]],
-                                      [[512, -1, -1, -1], [1024, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1]],
-                                      [[1024, -1, -1, -1], [2048, -1, -1], [-1, -1, -1]]]
-            self.linear_channels = [[[64, -1, -1, -1], [64, -1, -1], [-1, -1, -1]],
-                                    [[128, -1, -1, -1], [128, -1, -1], [-1, -1, -1], [-1, -1, -1]],
-                                    [[256, -1, -1, -1], [256, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1]],
-                                    [[512, -1, -1, -1], [512, -1, -1], [-1, -1, -1]]]
-            '''
+            self.adaption_channels = [[[64, -1, -1, -1], [256, -1, -1],
+                                       [-1, -1, -1]],
+                                      [[256, -1, -1, -1], [512, -1, -1],
+                                       [-1, -1, -1], [-1, -1, -1]],
+                                      [[512, -1, -1, -1], [1024, -1, -1],
+                                       [-1, -1, -1], [-1, -1, -1],
+                                       [-1, -1, -1], [-1, -1, -1]],
+                                      [[1024, -1, -1, -1], [2048, -1, -1],
+                                       [-1, -1, -1]]]
+            self.linear_channels = [[[64, -1, -1, -1], [64, -1, -1],
+                                     [-1, -1, -1]],
+                                    [[128, -1, -1, -1], [128, -1, -1],
+                                     [-1, -1, -1], [-1, -1, -1]],
+                                    [[256, -1, -1, -1], [256, -1, -1],
+                                     [-1, -1, -1], [-1, -1, -1], [-1, -1, -1],
+                                     [-1, -1, -1]],
+                                    [[512, -1, -1, -1], [512, -1, -1],
+                                     [-1, -1, -1]]]
             '''
             # three block alignment
             self.adaption_channels = [[[64, -1, -1, -1], [256, -1, -1], [256, -1, -1]],
@@ -643,6 +652,7 @@ class ResTSNet(nn.Module):
                                     [[256, -1, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1]],
                                     [[512, -1, -1, -1], [512, -1, -1], [512, -1, -1]]]
             '''
+            
             self.adaption_channels = [[[64, 64, -1, -1], [256, 64, -1],
                                        [256, 64, -1]],
                                       [[256, 128, -1, -1], [512, 128, -1],
@@ -650,8 +660,8 @@ class ResTSNet(nn.Module):
                                       [[512, 256, -1, -1], [1024, 256, -1],
                                        [1024, 256, -1], [1024, 256, -1],
                                        [1024, 256, -1], [1024, 256, -1]],
-                                      [[1024, 512, -1, -1], [2048, 512],
-                                       [2048, 512]]]
+                                      [[1024, 512, -1, -1], [2048, 512, -1],
+                                       [2048, 512, -1]]]
             self.linear_channels = [[[64, 64, -1, -1], [64, 64, -1],
                                      [64, 64, -1]],
                                     [[128, 128, -1, -1], [128, 128, -1],
@@ -661,6 +671,7 @@ class ResTSNet(nn.Module):
                                      [256, 256, -1], [256, 256, -1]],
                                     [[512, 512, -1, -1], [512, 512, -1],
                                      [512, 512, -1]]]
+            
 
             self.adaption_layers_group = nn.ModuleList()
             self.linear_layers_group = nn.ModuleList()
@@ -704,7 +715,7 @@ class ResTSNet(nn.Module):
 
                 for j in range(len(self.adaption_channels[i])):
                     adaption_layers = nn.ModuleList()
-                    
+
                     for linear_channel, adaption_channel in zip(
                             self.linear_channels[i][j],
                             self.adaption_channels[i][j]):
@@ -854,24 +865,44 @@ class ResTSNet(nn.Module):
         '''
         # conv
         t_layer_conv1_data = t_layer.conv1.weight.detach()
-        '''
         t_layer_conv2_data = t_layer.conv2.weight.detach()
         t_layer_conv3_data = t_layer.conv3.weight.detach()
-        '''
+
         s_conv1_weight = torch.squeeze(
             self.conv1_adaption_3d(torch.unsqueeze(self.conv1.weight.data, 0)),
             0)
         self.s_conv1.weight = torch.nn.Parameter(s_conv1_weight)
         adaption_layers = self.adaption_layers_group[j][l]
 
-        if adaption_layers:  # only adapt on first layer of each block
+        if adaption_layers[0]:
             # match the adaption kernel size for adaption
             t_layer_conv1_data = torch.squeeze(
                 adaption_layers[0](torch.unsqueeze(t_layer_conv1_data,
                                                    axis=0)), 0)
-            # NOTE: Manually apply convolution on student features
-            # TODO: F.relu cannot be inplace, figure out why
             s_layer.conv1.weight = torch.nn.Parameter(t_layer_conv1_data)
+
+        if adaption_layers[1]:
+            # match the adaption kernel size for adaption
+            t_layer_conv2_data = torch.squeeze(
+                adaption_layers[1](torch.unsqueeze(t_layer_conv2_data,
+                                                   axis=0)), 0)
+            s_layer.conv2.weight = torch.nn.Parameter(t_layer_conv2_data)
+
+        if adaption_layers[2]:
+            # match the adaption kernel size for adaption
+            t_layer_conv3_data = torch.squeeze(
+                adaption_layers[2](torch.unsqueeze(t_layer_conv3_data,
+                                                   axis=0)), 0)
+            s_layer.conv3.weight = torch.nn.Parameter(t_layer_conv3_data)
+
+        if s_layer.downsample is not None:
+            if adaption_layers[3]:
+                # match the adaption kernel size for adaption
+                t_layer_downsample_conv_data = torch.squeeze(
+                    adaption_layers[3](torch.unsqueeze(
+                        t_layer_downsample_conv_data, axis=0)), 0)
+                s_layer.downsample[0].weight = torch.nn.Parameter(
+                    t_layer_downsample_conv_data)
 
     def copy_backbone(self):
         factor = 0.5
