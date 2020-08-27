@@ -610,7 +610,7 @@ class ResTSNet(nn.Module):
                                     [[256, -1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1]],
                                     [[512, -1, -1, -1], [-1, -1, -1], [-1, -1, -1]]]
             '''
-
+            '''
             # two block alignment
             self.adaption_channels = [[[64, -1, -1, -1], [256, -1, -1],
                                        [-1, -1, -1]],
@@ -630,6 +630,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1]],
                                     [[512, -1, -1, -1], [512, -1, -1],
                                      [-1, -1, -1]]]
+            '''
             '''
             # three block alignment
             self.adaption_channels = [[[64, -1, -1, -1], [256, -1, -1], [256, -1, -1]],
@@ -652,7 +653,7 @@ class ResTSNet(nn.Module):
                                     [[256, -1, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1]],
                                     [[512, -1, -1, -1], [512, -1, -1], [512, -1, -1]]]
             '''
-            
+
             self.adaption_channels = [[[64, 64, -1, -1], [256, 64, -1],
                                        [256, 64, -1]],
                                       [[256, 128, -1, -1], [512, 128, -1],
@@ -671,7 +672,6 @@ class ResTSNet(nn.Module):
                                      [256, 256, -1], [256, 256, -1]],
                                     [[512, 512, -1, -1], [512, 512, -1],
                                      [512, 512, -1]]]
-            
 
             self.adaption_layers_group = nn.ModuleList()
             self.linear_layers_group = nn.ModuleList()
@@ -819,9 +819,13 @@ class ResTSNet(nn.Module):
             t_layer_conv2_data = torch.squeeze(
                 adaption_layers[1](torch.unsqueeze(t_layer_conv2_data,
                                                    axis=0)), 0)
-            # NOTE: Manually apply convolution on student features
-            s_out = F.conv2d(
-                s_out, t_layer_conv2_data, stride=(1, 1), padding=(1, 1))
+            # NOTE: downsample first block from second bottleneck
+            if j >= 1 and l == 0:
+                s_out = F.conv2d(
+                    s_out, t_layer_conv2_data, stride=(2, 2), padding=(1, 1))
+            else:
+                s_out = F.conv2d(
+                    s_out, t_layer_conv2_data, stride=(1, 1), padding=(1, 1))
         else:
             s_out = s_layer.conv2(s_out)
 
@@ -833,7 +837,6 @@ class ResTSNet(nn.Module):
             t_layer_conv3_data = torch.squeeze(
                 adaption_layers[2](torch.unsqueeze(t_layer_conv3_data,
                                                    axis=0)), 0)
-            # NOTE: Manually apply convolution on student features
             s_out = F.conv2d(s_out, t_layer_conv3_data, stride=(1, 1))
         else:
             s_out = s_layer.conv3(s_out)
@@ -841,17 +844,21 @@ class ResTSNet(nn.Module):
         s_out = s_layer.bn3(s_out)
 
         if t_layer.downsample is not None:
+            t_layer_downsample_conv_data = t_layer.downsample[0].weight.data
             if adaption_layers[3]:
                 # match the adaption kernel size for adaption
                 t_layer_downsample_conv_data = torch.squeeze(
                     adaption_layers[3](torch.unsqueeze(
                         t_layer_downsample_conv_data, axis=0)), 0)
-                # NOTE: Manually apply convolution on student features
-                identity = F.conv2d(
-                    s_x, t_layer_downsample_conv_data, stride=(1, 1))
+                if j >= 1:
+                    identity = F.conv2d(
+                        s_x, t_layer_downsample_conv_data, stride=(2, 2))
+                else:
+                    identity = F.conv2d(
+                        s_x, t_layer_downsample_conv_data, stride=(1, 1))
             else:
                 identity = s_layer.downsample[0](s_x)
-
+            
             identity = s_layer.downsample[1](identity)
 
         s_out += identity
