@@ -601,14 +601,24 @@ class ResTSNet(nn.Module):
             '''
             '''
             # one block alignment
-            self.adaption_channels = [[[64, -1, -1, -1], [-1, -1, -1], [-1, -1, -1]],
-                                      [[256, -1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1]],
-                                      [[512, -1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1],
-                                       [-1, -1, -1]], [[1024, -1, -1, -1], [-1, -1, -1], [-1, -1, -1]]]
-            self.linear_channels = [[[64, -1, -1, -1], [-1, -1, -1], [-1, -1, -1]],
-                                    [[128, -1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1]],
-                                    [[256, -1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1]],
-                                    [[512, -1, -1, -1], [-1, -1, -1], [-1, -1, -1]]]
+            self.adaption_channels = [[[64, -1, -1, -1], [-1, -1, -1],
+                                       [-1, -1, -1]],
+                                      [[256, -1, -1, -1], [-1, -1, -1],
+                                       [-1, -1, -1], [-1, -1, -1]],
+                                      [[512, -1, -1, -1], [-1, -1, -1],
+                                       [-1, -1, -1], [-1, -1, -1],
+                                       [-1, -1, -1], [-1, -1, -1]],
+                                      [[1024, -1, -1, -1], [-1, -1, -1],
+                                       [-1, -1, -1]]]
+            self.linear_channels = [[[64, -1, -1, -1], [-1, -1, -1],
+                                     [-1, -1, -1]],
+                                    [[128, -1, -1, -1], [-1, -1, -1],
+                                     [-1, -1, -1], [-1, -1, -1]],
+                                    [[256, -1, -1, -1], [-1, -1, -1],
+                                     [-1, -1, -1], [-1, -1, -1], [-1, -1, -1],
+                                     [-1, -1, -1]],
+                                    [[512, -1, -1, -1], [-1, -1, -1],
+                                     [-1, -1, -1]]]
             '''
             '''
             # two block alignment
@@ -674,7 +684,7 @@ class ResTSNet(nn.Module):
                                     [[512, 512, -1, -1], [512, 512, -1],
                                      [512, 512, -1]]]
             '''
-            '''
+            
             # deep block2
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, 64, 64]],
@@ -694,6 +704,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1], [-1, 256, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, 512, 2048]]]
+            
             '''
             # deep block3
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -714,6 +725,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1], [256, 256, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [512, 512, 2048]]]
+            '''
             self.adaption_layers_group = nn.ModuleList()
             self.linear_layers_group = nn.ModuleList()
             self.conv1_adaption_3d = nn.Conv3d(
@@ -761,6 +773,7 @@ class ResTSNet(nn.Module):
                             self.linear_channels[i][j],
                             self.adaption_channels[i][j]):
                         if linear_channel != -1 and adaption_channel != -1:
+                            '''
                             adaption_layers.append(
                                 nn.Conv3d(
                                     linear_channel,
@@ -769,6 +782,15 @@ class ResTSNet(nn.Module):
                                         adaption_channel // self.t_s_ratio + 1,
                                         1, 1),
                                     padding=0))
+                            '''
+                            adaption_layers.append(
+                                nn.Conv3d(
+                                    linear_channel,
+                                    linear_channel // self.t_s_ratio,
+                                    kernel_size=(
+                                        adaption_channel // self.t_s_ratio + 1,
+                                        3, 3),
+                                    padding=(0, 1, 1)))
                         else:
                             adaption_layers.append(nn.ModuleList())
                     adaption_blocks.append(adaption_layers)
@@ -899,7 +921,7 @@ class ResTSNet(nn.Module):
                         s_x, t_layer_downsample_conv_data, stride=(1, 1))
             else:
                 identity = s_layer.downsample[0](s_x)
-            
+
             identity = s_layer.downsample[1](identity)
 
         s_out += identity
