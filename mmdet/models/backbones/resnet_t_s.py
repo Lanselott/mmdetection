@@ -684,6 +684,7 @@ class ResTSNet(nn.Module):
                                     [[512, 512, -1, -1], [512, 512, -1],
                                      [512, 512, -1]]]
             '''
+            '''
             # deep block1
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, -1, 64]],
@@ -704,6 +705,7 @@ class ResTSNet(nn.Module):
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 2048]]]
             '''
+            
             # deep block2
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, 64, 64]],
@@ -723,7 +725,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1], [-1, 256, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, 512, 2048]]]
-            '''
+            
             '''
             # deep block3
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -745,6 +747,7 @@ class ResTSNet(nn.Module):
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [512, 512, 2048]]]
             '''
+            self.downsample_layers_group = nn.ModuleList()
             self.adaption_layers_group = nn.ModuleList()
             self.linear_layers_group = nn.ModuleList()
             self.conv1_adaption_3d = nn.Conv3d(
@@ -783,24 +786,29 @@ class ResTSNet(nn.Module):
             '''
             # 3d conv
             for i in range(len(self.adaption_channels)):
+                downsample_blocks = nn.ModuleList()
                 adaption_blocks = nn.ModuleList()
 
                 for j in range(len(self.adaption_channels[i])):
+                    downsample_layers = nn.ModuleList()
                     adaption_layers = nn.ModuleList()
 
                     for linear_channel, adaption_channel in zip(
                             self.linear_channels[i][j],
                             self.adaption_channels[i][j]):
                         if linear_channel != -1 and adaption_channel != -1:
-                            '''
+                            downsample_layers.append(
+                                nn.Conv2d(
+                                    adaption_channel,
+                                    adaption_channel // self.t_s_ratio,
+                                    kernel_size=3,
+                                    padding=1))
                             adaption_layers.append(
                                 nn.Conv3d(
                                     linear_channel,
                                     linear_channel // self.t_s_ratio,
-                                    kernel_size=(
-                                        adaption_channel // self.t_s_ratio + 1,
-                                        1, 1),
-                                    padding=0))
+                                    kernel_size=(adaption_channel + 1, 1, 1),
+                                    padding=(adaption_channel // 2, 0, 0)))
                             '''
                             adaption_layers.append(
                                 nn.Conv3d(
@@ -810,9 +818,15 @@ class ResTSNet(nn.Module):
                                         adaption_channel // self.t_s_ratio + 1,
                                         3, 3),
                                     padding=(0, 1, 1)))
+                            '''
                         else:
+                            downsample_layers.append(nn.ModuleList())
                             adaption_layers.append(nn.ModuleList())
+
+                    downsample_blocks.append(downsample_layers)
                     adaption_blocks.append(adaption_layers)
+
+                self.downsample_layers_group.append(downsample_blocks)
                 self.adaption_layers_group.append(adaption_blocks)
 
     @property
@@ -880,9 +894,11 @@ class ResTSNet(nn.Module):
         t_layer_conv2_data = t_layer.conv2.weight.detach()
         t_layer_conv3_data = t_layer.conv3.weight.detach()
 
+        downsamples_layers = self.downsample_layers_group[j][l]
         adaption_layers = self.adaption_layers_group[j][l]
 
-        if adaption_layers[0]:
+        if adaption_layers[0] and downsamples_layers[0]:
+            t_layer_conv1_data = downsamples_layers[0](t_layer_conv1_data)
             # match the adaption kernel size for adaption
             t_layer_conv1_data = torch.squeeze(
                 adaption_layers[0](torch.unsqueeze(t_layer_conv1_data,
@@ -896,7 +912,8 @@ class ResTSNet(nn.Module):
         s_out = s_layer.bn1(s_out)
         s_out = F.relu(s_out)
 
-        if adaption_layers[1]:
+        if adaption_layers[1] and downsamples_layers[1]:
+            t_layer_conv2_data = downsamples_layers[1](t_layer_conv2_data)
             # match the adaption kernel size for adaption
             t_layer_conv2_data = torch.squeeze(
                 adaption_layers[1](torch.unsqueeze(t_layer_conv2_data,
@@ -914,7 +931,8 @@ class ResTSNet(nn.Module):
         s_out = s_layer.bn2(s_out)
         s_out = F.relu(s_out)
 
-        if adaption_layers[2]:
+        if adaption_layers[2] and downsamples_layers[2]:
+            t_layer_conv3_data = downsamples_layers[2](t_layer_conv3_data)
             # match the adaption kernel size for adaption
             t_layer_conv3_data = torch.squeeze(
                 adaption_layers[2](torch.unsqueeze(t_layer_conv3_data,
@@ -927,7 +945,8 @@ class ResTSNet(nn.Module):
 
         if t_layer.downsample is not None:
             t_layer_downsample_conv_data = t_layer.downsample[0].weight.data
-            if adaption_layers[3]:
+            if adaption_layers[3] and downsamples_layers[3]:
+                t_layer_downsample_conv_data = downsamples_layers[3](t_layer_downsample_conv_data)
                 # match the adaption kernel size for adaption
                 t_layer_downsample_conv_data = torch.squeeze(
                     adaption_layers[3](torch.unsqueeze(
