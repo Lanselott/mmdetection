@@ -980,23 +980,27 @@ class ResTSNet(nn.Module):
             self.conv1_adaption_3d(torch.unsqueeze(self.conv1.weight.data, 0)),
             0)
         self.s_conv1.weight = torch.nn.Parameter(s_conv1_weight)
+        downsamples_layers = self.downsample_layers_group[j][l]
         adaption_layers = self.adaption_layers_group[j][l]
 
-        if adaption_layers[0]:
+        if adaption_layers[0] and downsamples_layers[0]:
+            t_layer_conv1_data = downsamples_layers[0](t_layer_conv1_data)
             # match the adaption kernel size for adaption
             t_layer_conv1_data = torch.squeeze(
                 adaption_layers[0](torch.unsqueeze(t_layer_conv1_data,
                                                    axis=0)), 0)
             s_layer.conv1.weight = torch.nn.Parameter(t_layer_conv1_data)
 
-        if adaption_layers[1]:
+        if adaption_layers[1] and downsamples_layers[1]:
+            t_layer_conv2_data = downsamples_layers[0](t_layer_conv2_data)
             # match the adaption kernel size for adaption
             t_layer_conv2_data = torch.squeeze(
                 adaption_layers[1](torch.unsqueeze(t_layer_conv2_data,
                                                    axis=0)), 0)
             s_layer.conv2.weight = torch.nn.Parameter(t_layer_conv2_data)
 
-        if adaption_layers[2]:
+        if adaption_layers[2] and downsamples_layers[2]:
+            t_layer_conv3_data = downsamples_layers[2](t_layer_conv3_data)
             # match the adaption kernel size for adaption
             t_layer_conv3_data = torch.squeeze(
                 adaption_layers[2](torch.unsqueeze(t_layer_conv3_data,
@@ -1006,7 +1010,8 @@ class ResTSNet(nn.Module):
         if s_layer.downsample is not None:
             t_layer_downsample_conv_data = t_layer.downsample[0].weight.data
 
-            if adaption_layers[3]:
+            if adaption_layers[3] and downsamples_layers[3]:
+                t_layer_downsample_conv_data = downsamples_layers[3](t_layer_downsample_conv_data)
                 # match the adaption kernel size for adaption
                 t_layer_downsample_conv_data = torch.squeeze(
                     adaption_layers[3](torch.unsqueeze(
