@@ -684,7 +684,7 @@ class ResTSNet(nn.Module):
                                     [[256, -1, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1]],
                                     [[512, -1, -1, -1], [512, -1, -1], [512, -1, -1]]]
             '''
-            
+            '''
             # shallow block2
             self.adaption_channels = [[[64, 64, -1, -1], [256, 64, -1],
                                        [256, 64, -1]],
@@ -704,7 +704,7 @@ class ResTSNet(nn.Module):
                                      [256, 256, -1], [256, 256, -1]],
                                     [[512, 512, -1, -1], [512, 512, -1],
                                      [512, 512, -1]]]
-            
+            '''
             '''
             # deep block1
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -726,7 +726,7 @@ class ResTSNet(nn.Module):
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 2048]]]
             '''
-            '''
+            
             # deep block2
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, 64, 64]],
@@ -746,7 +746,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1], [-1, 256, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, 512, 2048]]]
-            '''
+            
             '''
             # deep block3
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -828,8 +828,8 @@ class ResTSNet(nn.Module):
                                 nn.Conv3d(
                                     linear_channel,
                                     linear_channel // self.t_s_ratio,
-                                    kernel_size=(adaption_channel + 1, 1, 1),
-                                    padding=(adaption_channel // 2, 0, 0)))
+                                    kernel_size=(3, 3, 3),
+                                    padding=(1, 1, 1)))
                             '''
                             adaption_layers.append(
                                 nn.Conv3d(
@@ -910,6 +910,7 @@ class ResTSNet(nn.Module):
         '''
         linear_layers = self.linear_layers_group[j][l]
         '''
+
         # conv
         t_layer_conv1_data = t_layer.conv1.weight.detach()
         t_layer_conv2_data = t_layer.conv2.weight.detach()
@@ -917,7 +918,6 @@ class ResTSNet(nn.Module):
 
         downsamples_layers = self.downsample_layers_group[j][l]
         adaption_layers = self.adaption_layers_group[j][l]
-
         if adaption_layers[0] and downsamples_layers[0]:
             t_layer_conv1_data = downsamples_layers[0](t_layer_conv1_data)
             # match the adaption kernel size for adaption
