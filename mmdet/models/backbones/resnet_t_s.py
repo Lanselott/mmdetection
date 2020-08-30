@@ -829,8 +829,8 @@ class ResTSNet(nn.Module):
                                 nn.Conv3d(
                                     linear_channel,
                                     linear_channel // self.t_s_ratio,
-                                    kernel_size=(7, 7, 7),#kernel_size=(3, 3, 3),
-                                    padding=(3, 3, 3))) #padding=(1, 1, 1)))
+                                    kernel_size=(1, 5, 5),#kernel_size=(3, 3, 3),
+                                    padding=(0, 2, 2))) #padding=(1, 1, 1)))
                             '''
                             adaption_layers.append(
                                 nn.Conv3d(
