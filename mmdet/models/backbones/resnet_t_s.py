@@ -599,7 +599,7 @@ class ResTSNet(nn.Module):
                                     [[256, -1, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1]],
                                     [[512, -1, -1, -1], [512, -1, -1], [512, -1, -1]]]
             '''
-            '''
+            
             # one block alignment
             self.adaption_channels = [[[64, -1, -1, -1], [-1, -1, -1],
                                        [-1, -1, -1]],
@@ -619,7 +619,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1]],
                                     [[512, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, -1]]]
-            '''
+            
             '''
             # two block alignment
             self.adaption_channels = [[[64, -1, -1, -1], [256, -1, -1],
@@ -726,7 +726,7 @@ class ResTSNet(nn.Module):
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 2048]]]
             '''
-            
+            '''
             # deep block2
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, 64, 64]],
@@ -746,7 +746,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1], [-1, 256, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, 512, 2048]]]
-            
+            '''
             '''
             # deep block3
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -824,6 +824,28 @@ class ResTSNet(nn.Module):
                                     nn.Conv2d(
                                         adaption_channel,
                                         adaption_channel,
+                                        kernel_size=1,
+                                        padding=0))
+                            else:
+                                downsample_layers.append(
+                                    nn.Conv2d(
+                                        adaption_channel,
+                                        adaption_channel // self.t_s_ratio,
+                                        kernel_size=1,
+                                        padding=0))
+                            adaption_layers.append(
+                                nn.Conv3d(
+                                    linear_channel,
+                                    linear_channel // self.t_s_ratio,
+                                    kernel_size=(1, 1,
+                                                 1),  #kernel_size=(3, 3, 3),
+                                    padding=(0, 0, 0)))  #padding=(1, 1, 1)))
+                            '''
+                            if i == 0 and j == 0: # FIXME: test for merge first layer before blocks
+                                downsample_layers.append(
+                                    nn.Conv2d(
+                                        adaption_channel,
+                                        adaption_channel,
                                         kernel_size=3,
                                         padding=1))
                             else:
@@ -840,6 +862,7 @@ class ResTSNet(nn.Module):
                                     kernel_size=(1, 5,
                                                  5),  #kernel_size=(3, 3, 3),
                                     padding=(0, 2, 2)))  #padding=(1, 1, 1)))
+                            '''
                             '''
                             adaption_layers.append(
                                 nn.Conv3d(
