@@ -504,7 +504,7 @@ class ResTSNet(nn.Module):
         # student net
         # TODO: rewrite student layers;
         # current block1[0] layer input channel not fully pruned in same way
-        self.inplanes = 64 # // self.t_s_ratio
+        self.inplanes = 64  # // self.t_s_ratio
         student_block_output_channel = []
         for j, num_blocks in enumerate(self.s_stage_blocks):
             stride = strides[j]
@@ -599,7 +599,7 @@ class ResTSNet(nn.Module):
                                     [[256, -1, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1]],
                                     [[512, -1, -1, -1], [512, -1, -1], [512, -1, -1]]]
             '''
-            
+            '''
             # one block alignment
             self.adaption_channels = [[[64, -1, -1, -1], [-1, -1, -1],
                                        [-1, -1, -1]],
@@ -619,7 +619,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1]],
                                     [[512, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, -1]]]
-            
+            '''
             '''
             # two block alignment
             self.adaption_channels = [[[64, -1, -1, -1], [256, -1, -1],
@@ -726,7 +726,7 @@ class ResTSNet(nn.Module):
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 2048]]]
             '''
-            '''
+            
             # deep block2
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, 64, 64]],
@@ -746,7 +746,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1], [-1, 256, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, 512, 2048]]]
-            '''
+            
             '''
             # deep block3
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -768,7 +768,7 @@ class ResTSNet(nn.Module):
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [512, 512, 2048]]]
             '''
-        
+
             self.downsample_layers_group = nn.ModuleList()
             self.adaption_layers_group = nn.ModuleList()
             self.linear_layers_group = nn.ModuleList()
@@ -819,18 +819,27 @@ class ResTSNet(nn.Module):
                             self.linear_channels[i][j],
                             self.adaption_channels[i][j]):
                         if linear_channel != -1 and adaption_channel != -1:
-                            downsample_layers.append(
-                                nn.Conv2d(
-                                    adaption_channel,
-                                    adaption_channel // self.t_s_ratio,
-                                    kernel_size=3,
-                                    padding=1))
+                            if i == 0 and j == 0: # FIXME: test for merge first layer before blocks
+                                downsample_layers.append(
+                                    nn.Conv2d(
+                                        adaption_channel,
+                                        adaption_channel,
+                                        kernel_size=3,
+                                        padding=1))
+                            else:
+                                downsample_layers.append(
+                                    nn.Conv2d(
+                                        adaption_channel,
+                                        adaption_channel // self.t_s_ratio,
+                                        kernel_size=3,
+                                        padding=1))
                             adaption_layers.append(
                                 nn.Conv3d(
                                     linear_channel,
                                     linear_channel // self.t_s_ratio,
-                                    kernel_size=(1, 5, 5),#kernel_size=(3, 3, 3),
-                                    padding=(0, 2, 2))) #padding=(1, 1, 1)))
+                                    kernel_size=(1, 5,
+                                                 5),  #kernel_size=(3, 3, 3),
+                                    padding=(0, 2, 2)))  #padding=(1, 1, 1)))
                             '''
                             adaption_layers.append(
                                 nn.Conv3d(
@@ -968,7 +977,8 @@ class ResTSNet(nn.Module):
         if t_layer.downsample is not None:
             t_layer_downsample_conv_data = t_layer.downsample[0].weight.data
             if adaption_layers[3] and downsamples_layers[3]:
-                t_layer_downsample_conv_data = downsamples_layers[3](t_layer_downsample_conv_data)
+                t_layer_downsample_conv_data = downsamples_layers[3](
+                    t_layer_downsample_conv_data)
                 # match the adaption kernel size for adaption
                 t_layer_downsample_conv_data = torch.squeeze(
                     adaption_layers[3](torch.unsqueeze(
@@ -1033,7 +1043,8 @@ class ResTSNet(nn.Module):
             t_layer_downsample_conv_data = t_layer.downsample[0].weight.data
 
             if adaption_layers[3] and downsamples_layers[3]:
-                t_layer_downsample_conv_data = downsamples_layers[3](t_layer_downsample_conv_data)
+                t_layer_downsample_conv_data = downsamples_layers[3](
+                    t_layer_downsample_conv_data)
                 # match the adaption kernel size for adaption
                 t_layer_downsample_conv_data = torch.squeeze(
                     adaption_layers[3](torch.unsqueeze(
@@ -1155,7 +1166,6 @@ class ResTSNet(nn.Module):
         x = self.norm1(x)
         x = self.relu(x)
         x = self.maxpool(x)
-
         '''
         if self.kernel_adaption and self.train_mode:
             # s_conv1_weight = self.conv1_linear(
