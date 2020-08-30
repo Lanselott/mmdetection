@@ -504,7 +504,7 @@ class ResTSNet(nn.Module):
         # student net
         # TODO: rewrite student layers;
         # current block1[0] layer input channel not fully pruned in same way
-        self.inplanes = 64 // self.t_s_ratio
+        self.inplanes = 64 # // self.t_s_ratio
         student_block_output_channel = []
         for j, num_blocks in enumerate(self.s_stage_blocks):
             stride = strides[j]
@@ -599,7 +599,7 @@ class ResTSNet(nn.Module):
                                     [[256, -1, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1], [256, -1, -1]],
                                     [[512, -1, -1, -1], [512, -1, -1], [512, -1, -1]]]
             '''
-            '''
+            
             # one block alignment
             self.adaption_channels = [[[64, -1, -1, -1], [-1, -1, -1],
                                        [-1, -1, -1]],
@@ -619,7 +619,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1]],
                                     [[512, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, -1]]]
-            '''
+            
             '''
             # two block alignment
             self.adaption_channels = [[[64, -1, -1, -1], [256, -1, -1],
@@ -726,7 +726,7 @@ class ResTSNet(nn.Module):
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 2048]]]
             '''
-            
+            '''
             # deep block2
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, 64, 64]],
@@ -746,7 +746,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1], [-1, 256, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, 512, 2048]]]
-            
+            '''
             '''
             # deep block3
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -1156,6 +1156,7 @@ class ResTSNet(nn.Module):
         x = self.relu(x)
         x = self.maxpool(x)
 
+        '''
         if self.kernel_adaption and self.train_mode:
             # s_conv1_weight = self.conv1_linear(
             #     self.conv1.weight.data.permute(1, 2, 3,
@@ -1172,11 +1173,11 @@ class ResTSNet(nn.Module):
         s_x = self.s_relu(s_x)
         s_x = self.s_maxpool(s_x)
         '''
+
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
-        '''
 
         if self.pure_student_term:
             pure_s_x = s_x
