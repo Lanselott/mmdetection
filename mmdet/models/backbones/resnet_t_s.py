@@ -547,8 +547,6 @@ class ResTSNet(nn.Module):
                     nn.Conv2d(input_channel, out_channel, 3, padding=1))
                 # print("self.inplanes:{}".format(self.inplanes))
         if self.feature_adaption and self.conv_downsample:
-            assert self.kernel_adaption == False
-
             self.adaption_channels = [256, 512, 1024, 2048]
             self.adaption_layers = nn.ModuleList()
 
@@ -568,8 +566,7 @@ class ResTSNet(nn.Module):
                         padding=0))
                 '''
         if self.kernel_adaption:
-            assert self.feature_adaption == False
-            
+            '''
             self.adaption_channels = [[[64, 64, 64, 64], [256, 64, 64],
                                        [256, 64, 64]],
                                       [[256, 128, 128, 256], [512, 128, 128],
@@ -588,7 +585,7 @@ class ResTSNet(nn.Module):
                                      [256, 256, 1024], [256, 256, 1024]],
                                     [[512, 512, 2048, 2048], [512, 512, 2048],
                                      [512, 512, 2048]]]
-            
+            '''
             '''
             self.adaption_channels = [[[64, -1, -1, -1], [256, -1, -1], [256, -1, -1]],
                                       [[256, -1, -1, -1], [512, -1, -1], [512, -1, -1], [512, -1, -1]],
@@ -726,7 +723,7 @@ class ResTSNet(nn.Module):
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 2048]]]
             '''
-            '''
+            
             # deep block2
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, 64, 64]],
@@ -746,7 +743,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1], [-1, 256, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, 512, 2048]]]
-            '''
+            
             '''
             # deep block3
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -1240,11 +1237,9 @@ class ResTSNet(nn.Module):
                     s_x = self.adapt_kernel_train(s_x, j, l, t_layer, s_layer)
             else:
                 s_x = s_res_layer(s_x)
-            '''
+            
             if self.feature_adaption and self.train_mode:
                 adaption_factor = 0.5
-
-                s_x = s_res_layer(s_x)
 
                 if self.pure_student_term:
                     pure_s_x = s_res_layer(pure_s_x)
@@ -1267,11 +1262,8 @@ class ResTSNet(nn.Module):
                         1 - adaption_factor) * F.interpolate(
                             x_detached, size=s_x.shape[:2],
                             mode='bilinear').permute(2, 3, 0, 1)
-
-            else:
-                s_x = s_res_layer(s_x)
-                _, _, feature_w, feature_h = s_x.shape
-            '''
+            
+            
             if j in self.out_indices:
                 s_outs.append(s_x)
                 if self.pure_student_term:
