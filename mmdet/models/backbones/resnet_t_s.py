@@ -504,7 +504,7 @@ class ResTSNet(nn.Module):
         # student net
         # TODO: rewrite student layers;
         # current block1[0] layer input channel not fully pruned in same way
-        self.inplanes = 64  # // self.t_s_ratio
+        self.inplanes = 64  // self.t_s_ratio
         student_block_output_channel = []
         for j, num_blocks in enumerate(self.s_stage_blocks):
             stride = strides[j]
@@ -819,20 +819,12 @@ class ResTSNet(nn.Module):
                             self.linear_channels[i][j],
                             self.adaption_channels[i][j]):
                         if linear_channel != -1 and adaption_channel != -1:
-                            if i == 0 and j == 0: # FIXME: test for merge first layer before blocks
-                                downsample_layers.append(
-                                    nn.Conv2d(
-                                        adaption_channel,
-                                        adaption_channel,
-                                        kernel_size=1,
-                                        padding=0))
-                            else:
-                                downsample_layers.append(
-                                    nn.Conv2d(
-                                        adaption_channel,
-                                        adaption_channel // self.t_s_ratio,
-                                        kernel_size=1,
-                                        padding=0))
+                            downsample_layers.append(
+                                nn.Conv2d(
+                                    adaption_channel,
+                                    adaption_channel // self.t_s_ratio,
+                                    kernel_size=1,
+                                    padding=0))
                             adaption_layers.append(
                                 nn.Conv3d(
                                     linear_channel,
@@ -1179,17 +1171,17 @@ class ResTSNet(nn.Module):
                     self.adapt_kernel_inference(j, l, t_layer, s_layer)
 
         self.train_step += 1
-        # '''
+        
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
-        # '''
+        
         x = self.conv1(x)
         x = self.norm1(x)
         x = self.relu(x)
         x = self.maxpool(x)
-        '''
+        
         if self.kernel_adaption and self.train_mode:
             # s_conv1_weight = self.conv1_linear(
             #     self.conv1.weight.data.permute(1, 2, 3,
@@ -1206,12 +1198,11 @@ class ResTSNet(nn.Module):
         s_x = self.s_relu(s_x)
         s_x = self.s_maxpool(s_x)
         '''
-
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
-
+        '''
         if self.pure_student_term:
             pure_s_x = s_x
             s_pure_outs = []
