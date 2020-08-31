@@ -35,9 +35,9 @@ model = dict(
         rouse_student_point=ROUSE_STUDENT_POINT,
         apply_block_wise_alignment=BLOCK_ALIGN,
         pure_student_term=PURE_STUDENT_TERM,
-        feature_adaption=False,
+        feature_adaption=True,
         constant_term=False,
-        conv_downsample=False,
+        conv_downsample=True,
         kernel_adaption=True,
     ),
     neck=dict(
