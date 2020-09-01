@@ -566,7 +566,7 @@ class ResTSNet(nn.Module):
                         padding=0))
                 '''
         if self.kernel_adaption:
-            
+            '''
             self.adaption_channels = [[[64, 64, 64, 64], [256, 64, 64],
                                        [256, 64, 64]],
                                       [[256, 128, 128, 256], [512, 128, 128],
@@ -585,7 +585,7 @@ class ResTSNet(nn.Module):
                                      [256, 256, 1024], [256, 256, 1024]],
                                     [[512, 512, 2048, 2048], [512, 512, 2048],
                                      [512, 512, 2048]]]
-            
+            '''
             '''
             self.adaption_channels = [[[64, -1, -1, -1], [256, -1, -1], [256, -1, -1]],
                                       [[256, -1, -1, -1], [512, -1, -1], [512, -1, -1], [512, -1, -1]],
@@ -723,7 +723,7 @@ class ResTSNet(nn.Module):
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 2048]]]
             '''
-            '''
+            
             # deep block2
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, 64, 64]],
@@ -743,7 +743,7 @@ class ResTSNet(nn.Module):
                                      [-1, 256, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, 512, 2048]]]
-            '''
+            
             '''
             # deep block3
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -1240,7 +1240,7 @@ class ResTSNet(nn.Module):
 
             if self.feature_adaption and self.train_mode:
                 # adaption_factor = 0.5
-                adaption_factor = self.train_step / (7330 * 12)
+                adaption_factor = 1  #self.train_step / (7330 * 12)
 
                 if self.pure_student_term:
                     pure_s_x = s_res_layer(pure_s_x)
@@ -1249,12 +1249,27 @@ class ResTSNet(nn.Module):
                     # x_detached = inputs[j].detach()
                     x_detached = outs[j].detach()
                     x_detached_adapted = self.adaption_layers[j](x_detached)
+                    #'''
+                    _, x_detached_batch, x_detached_w, x_detached_h = x_detached_adapted.shape
+                    rand_list = torch.randperm(
+                        x_detached_w * x_detached_h)[:int(adaption_factor *
+                                                          x_detached_w *
+                                                          x_detached_h)]
+                    adaption_weights = torch.zeros_like(
+                        x_detached_adapted).view(-1, x_detached_batch,
+                                                 x_detached_w * x_detached_h)
+                    adaption_weights[:, :, rand_list] = 1
+                    adaption_weights = adaption_weights.reshape(
+                        -1, x_detached_batch, x_detached_w, x_detached_h)
 
+                    s_x = adaption_weights * s_x + (
+                        1 - adaption_weights) * x_detached_adapted
+                    #'''
                     # align to teacher network and get the loss
-
+                    '''
                     s_x = adaption_factor * s_x + (
                         1 - adaption_factor) * x_detached_adapted
-
+                    '''
                     if self.apply_block_wise_alignment:
                         block_distill_pairs.append([s_x, x_detached_adapted])
                 else:
