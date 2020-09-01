@@ -566,7 +566,7 @@ class ResTSNet(nn.Module):
                         padding=0))
                 '''
         if self.kernel_adaption:
-            
+            '''
             self.adaption_channels = [[[64, 64, 64, 64], [256, 64, 64],
                                        [256, 64, 64]],
                                       [[256, 128, 128, 256], [512, 128, 128],
@@ -585,7 +585,7 @@ class ResTSNet(nn.Module):
                                      [256, 256, 1024], [256, 256, 1024]],
                                     [[512, 512, 2048, 2048], [512, 512, 2048],
                                      [512, 512, 2048]]]
-            
+            '''
             '''
             self.adaption_channels = [[[64, -1, -1, -1], [256, -1, -1], [256, -1, -1]],
                                       [[256, -1, -1, -1], [512, -1, -1], [512, -1, -1], [512, -1, -1]],
@@ -723,7 +723,7 @@ class ResTSNet(nn.Module):
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 2048]]]
             '''
-            '''
+            
             # deep block2
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, 64, 64]],
@@ -743,7 +743,7 @@ class ResTSNet(nn.Module):
                                      [-1, 256, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, 512, 2048]]]
-            '''
+            
             '''
             # deep block3
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -1036,7 +1036,7 @@ class ResTSNet(nn.Module):
             s_layer.conv1.weight = torch.nn.Parameter(t_layer_conv1_data)
 
         if adaption_layers[1] and downsamples_layers[1]:
-            t_layer_conv2_data = downsamples_layers[0](t_layer_conv2_data)
+            t_layer_conv2_data = downsamples_layers[1](t_layer_conv2_data)
             # match the adaption kernel size for adaption
             t_layer_conv2_data = torch.squeeze(
                 adaption_layers[1](torch.unsqueeze(t_layer_conv2_data,
@@ -1240,7 +1240,7 @@ class ResTSNet(nn.Module):
 
             if self.feature_adaption and self.train_mode:
                 # adaption_factor = 0.5
-                adaption_factor = self.train_step // (7330 * 12)
+                adaption_factor = self.train_step / (7330 * 12)
 
                 if self.pure_student_term:
                     pure_s_x = s_res_layer(pure_s_x)
