@@ -75,6 +75,7 @@ model = dict(
         target_means=[.0, .0, .0, .0],
         target_stds=[1.0, 1.0, 1.0, 1.0],
         apply_block_wise_alignment=BLOCK_ALIGN,
+        finetune_student=FREEZE_TEACHER,
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
