@@ -723,7 +723,7 @@ class ResTSNet(nn.Module):
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 2048]]]
             '''
-            
+
             # deep block2
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, 64, 64]],
@@ -743,7 +743,6 @@ class ResTSNet(nn.Module):
                                      [-1, 256, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, 512, 2048]]]
-            
             '''
             # deep block3
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -1261,7 +1260,8 @@ class ResTSNet(nn.Module):
                     adaption_weights[:, :, rand_list] = 1
                     adaption_weights = adaption_weights.reshape(
                         -1, x_detached_batch, x_detached_w, x_detached_h)
-
+                    adaption_weights[adaption_weights != 1] = 0.5
+                    
                     s_x = adaption_weights * s_x + (
                         1 - adaption_weights) * x_detached_adapted
                     #'''
