@@ -934,9 +934,9 @@ class ResTSNet(nn.Module):
         '''
 
         # conv
-        t_layer_conv1_data = t_layer.conv1.weight.detach()
-        t_layer_conv2_data = t_layer.conv2.weight.detach()
-        t_layer_conv3_data = t_layer.conv3.weight.detach()
+        t_layer_conv1_data = t_layer.conv1.weight#.detach()
+        t_layer_conv2_data = t_layer.conv2.weight#.detach()
+        t_layer_conv3_data = t_layer.conv3.weight#.detach()
 
         downsamples_layers = self.downsample_layers_group[j][l]
         adaption_layers = self.adaption_layers_group[j][l]
