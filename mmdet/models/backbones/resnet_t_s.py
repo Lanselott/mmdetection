@@ -711,15 +711,15 @@ class ResTSNet(nn.Module):
                                       [[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, -1, -1], [-1, -1, -1],
                                        [-1, -1, -1], [-1, -1, 256]],
-                                      [[-1, -1, -1, -1],
-                                       [-1, -1, -1], [-1, -1, 512]]]
+                                      [[-1, -1, -1, -1], [-1, -1, -1],
+                                       [-1, -1, 512]]]
             self.linear_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 256]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, -1], [-1, -1, 512]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
-                                     [-1, -1, -1], [-1, -1, -1],
-                                     [-1, -1, -1], [-1, -1, 1024]],
+                                     [-1, -1, -1], [-1, -1, -1], [-1, -1, -1],
+                                     [-1, -1, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 2048]]]
             '''
@@ -819,15 +819,18 @@ class ResTSNet(nn.Module):
                             downsample_layers.append(
                                 nn.Conv2d(
                                     adaption_channel,
-                                    adaption_channel // self.t_s_ratio,
+                                    # adaption_channel // self.t_s_ratio,
+                                    adaption_channel * 3,
                                     kernel_size=1,
                                     padding=0))
                             adaption_layers.append(
                                 nn.Conv3d(
                                     linear_channel,
                                     linear_channel // self.t_s_ratio,
-                                    kernel_size=(1, 1,
-                                                 1),  #kernel_size=(3, 3, 3),
+                                    kernel_size=(6, 1, 1),
+                                    # kernel_size=(1, 1,
+                                    #              1),  #kernel_size=(3, 3, 3),
+                                    stride=(6, 1, 1),
                                     padding=(0, 0, 0)))  #padding=(1, 1, 1)))
                             '''
                             if i == 0 and j == 0: # FIXME: test for merge first layer before blocks
@@ -934,9 +937,9 @@ class ResTSNet(nn.Module):
         '''
 
         # conv
-        t_layer_conv1_data = t_layer.conv1.weight#.detach()
-        t_layer_conv2_data = t_layer.conv2.weight#.detach()
-        t_layer_conv3_data = t_layer.conv3.weight#.detach()
+        t_layer_conv1_data = t_layer.conv1.weight  #.detach()
+        t_layer_conv2_data = t_layer.conv2.weight  #.detach()
+        t_layer_conv3_data = t_layer.conv3.weight  #.detach()
 
         downsamples_layers = self.downsample_layers_group[j][l]
         adaption_layers = self.adaption_layers_group[j][l]
@@ -1262,7 +1265,7 @@ class ResTSNet(nn.Module):
                     adaption_weights = adaption_weights.reshape(
                         -1, x_detached_batch, x_detached_w, x_detached_h)
                     adaption_weights[adaption_weights != 1] = 0.5
-                    
+
                     s_x = adaption_weights * s_x + (
                         1 - adaption_weights) * x_detached_adapted
                     #'''
