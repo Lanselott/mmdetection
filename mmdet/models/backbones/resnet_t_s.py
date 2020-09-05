@@ -702,7 +702,7 @@ class ResTSNet(nn.Module):
                                     [[512, 512, -1, -1], [512, 512, -1],
                                      [512, 512, -1]]]
             '''
-            '''
+            
             # deep block1
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, -1, 64]],
@@ -722,7 +722,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1], [-1, -1, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 2048]]]
-            '''
+            
             '''
             # deep block2
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -765,6 +765,7 @@ class ResTSNet(nn.Module):
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [512, 512, 2048]]]
             '''
+            '''
             # average block2
             self.adaption_channels = [[[-1, -1, 64, 64], [-1, 64, 64],
                                        [-1, 64, 64]],
@@ -784,7 +785,7 @@ class ResTSNet(nn.Module):
                                      [-1, 256, 1024], [-1, 256, 1024]],
                                     [[-1, -1, 2048, 2048], [-1, 512, 2048],
                                      [-1, 512, 2048]]]
-
+            '''
             self.downsample_layers_group = nn.ModuleList()
             self.adaption_layers_group = nn.ModuleList()
             self.linear_layers_group = nn.ModuleList()
