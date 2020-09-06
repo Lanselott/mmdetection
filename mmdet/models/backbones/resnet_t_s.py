@@ -566,7 +566,7 @@ class ResTSNet(nn.Module):
                         padding=0))
                 '''
         if self.kernel_adaption:
-            '''
+            
             self.adaption_channels = [[[64, 64, 64, 64], [256, 64, 64],
                                        [256, 64, 64]],
                                       [[256, 128, 128, 256], [512, 128, 128],
@@ -585,7 +585,7 @@ class ResTSNet(nn.Module):
                                      [256, 256, 1024], [256, 256, 1024]],
                                     [[512, 512, 2048, 2048], [512, 512, 2048],
                                      [512, 512, 2048]]]
-            '''
+            
             '''
             self.adaption_channels = [[[64, -1, -1, -1], [256, -1, -1], [256, -1, -1]],
                                       [[256, -1, -1, -1], [512, -1, -1], [512, -1, -1], [512, -1, -1]],
@@ -702,7 +702,7 @@ class ResTSNet(nn.Module):
                                     [[512, 512, -1, -1], [512, 512, -1],
                                      [512, 512, -1]]]
             '''
-            
+            '''
             # deep block1
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, -1, 64]],
@@ -722,7 +722,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1], [-1, -1, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 2048]]]
-            
+            '''
             '''
             # deep block2
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -765,27 +765,7 @@ class ResTSNet(nn.Module):
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [512, 512, 2048]]]
             '''
-            '''
-            # average block2
-            self.adaption_channels = [[[-1, -1, 64, 64], [-1, 64, 64],
-                                       [-1, 64, 64]],
-                                      [[-1, -1, 128, 256], [-1, 128, 128],
-                                       [-1, 128, 128], [-1, 128, 128]],
-                                      [[-1, -1, 256, 512], [-1, 256, 256],
-                                       [-1, 256, 256], [-1, 256, 256],
-                                       [-1, 256, 256], [-1, 256, 256]],
-                                      [[-1, -1, 512, 1024],
-                                       [-1, 512, 512], [-1, 512, 512]]]
-            self.linear_channels = [[[-1, -1, 256, 256], [-1, 64, 256],
-                                     [-1, 64, 256]],
-                                    [[-1, -1, 512, 512], [-1, 128, 512],
-                                     [-1, 128, 512], [-1, 128, 512]],
-                                    [[-1, -1, 1024, 1024], [-1, 256, 1024],
-                                     [-1, 256, 1024], [-1, 256, 1024],
-                                     [-1, 256, 1024], [-1, 256, 1024]],
-                                    [[-1, -1, 2048, 2048], [-1, 512, 2048],
-                                     [-1, 512, 2048]]]
-            '''
+
             self.downsample_layers_group = nn.ModuleList()
             self.adaption_layers_group = nn.ModuleList()
             self.linear_layers_group = nn.ModuleList()
@@ -840,24 +820,18 @@ class ResTSNet(nn.Module):
                                 nn.Conv2d(
                                     adaption_channel,
                                     adaption_channel // self.t_s_ratio,
+                                    # adaption_channel * 3,
                                     kernel_size=1,
                                     padding=0))
-                            adaption_layers.append(
-                                nn.Conv2d(
-                                    linear_channel,
-                                    linear_channel // self.t_s_ratio,
-                                    kernel_size=1,
-                                    padding=0))
-                            '''
                             adaption_layers.append(
                                 nn.Conv3d(
                                     linear_channel,
                                     linear_channel // self.t_s_ratio,
-                                    kernel_size=(3, 1,
-                                                 1), 
+                                    kernel_size=(3, 1, 1),
                                     # kernel_size=(1, 1,
                                     #              1),  #kernel_size=(3, 3, 3),
                                     padding=(1, 0, 0)))  #padding=(1, 1, 1)))
+                            '''
                             adaption_layers.append(
                                 nn.Conv3d(
                                     linear_channel,
@@ -947,10 +921,11 @@ class ResTSNet(nn.Module):
         adaption_layers = self.adaption_layers_group[j][l]
         if adaption_layers[0] and downsamples_layers[0]:
             t_layer_conv1_data = downsamples_layers[0](t_layer_conv1_data)
-
             # match the adaption kernel size for adaption
-            t_layer_conv1_data = adaption_layers[0](t_layer_conv1_data.permute(
-                1, 0, 2, 3)).permute(1, 0, 2, 3)
+            t_layer_conv1_data = F.interpolate(
+                t_layer_conv1_data.permute(2, 3, 0, 1).detach(),
+                size=s_layer.conv1.weight.shape[:2],
+                mode='bilinear').permute(2, 3, 0, 1)
             '''
             t_layer_conv1_data = torch.squeeze(
                 adaption_layers[0](torch.unsqueeze(t_layer_conv1_data,
@@ -968,8 +943,10 @@ class ResTSNet(nn.Module):
         if adaption_layers[1] and downsamples_layers[1]:
             t_layer_conv2_data = downsamples_layers[1](t_layer_conv2_data)
             # match the adaption kernel size for adaption
-            t_layer_conv2_data = adaption_layers[1](t_layer_conv2_data.permute(
-                1, 0, 2, 3)).permute(1, 0, 2, 3)
+            t_layer_conv2_data = F.interpolate(
+                t_layer_conv2_data.permute(2, 3, 0, 1).detach(),
+                size=s_layer.conv2.weight.shape[:2],
+                mode='bilinear').permute(2, 3, 0, 1)
             '''
             t_layer_conv2_data = torch.squeeze(
                 adaption_layers[1](torch.unsqueeze(t_layer_conv2_data,
@@ -991,8 +968,10 @@ class ResTSNet(nn.Module):
         if adaption_layers[2] and downsamples_layers[2]:
             t_layer_conv3_data = downsamples_layers[2](t_layer_conv3_data)
             # match the adaption kernel size for adaption
-            t_layer_conv3_data = adaption_layers[2](t_layer_conv3_data.permute(
-                1, 0, 2, 3)).permute(1, 0, 2, 3)
+            t_layer_conv3_data = F.interpolate(
+                t_layer_conv3_data.permute(2, 3, 0, 1).detach(),
+                size=s_layer.conv3.weight.shape[:2],
+                mode='bilinear').permute(2, 3, 0, 1)
             '''
             t_layer_conv3_data = torch.squeeze(
                 adaption_layers[2](torch.unsqueeze(t_layer_conv3_data,
@@ -1010,9 +989,10 @@ class ResTSNet(nn.Module):
                 t_layer_downsample_conv_data = downsamples_layers[3](
                     t_layer_downsample_conv_data)
                 # match the adaption kernel size for adaption
-                t_layer_downsample_conv_data = adaption_layers[3](
-                    t_layer_downsample_conv_data.permute(1, 0, 2, 3)).permute(
-                        1, 0, 2, 3)
+                t_layer_downsample_conv_data = F.interpolate(
+                    t_layer_downsample_conv_data.permute(2, 3, 0, 1).detach(),
+                    size=s_layer.downsample[0].weight.shape[:2],
+                    mode='bilinear').permute(2, 3, 0, 1)
                 '''
                 t_layer_downsample_conv_data = torch.squeeze(
                     adaption_layers[3](torch.unsqueeze(
@@ -1053,37 +1033,25 @@ class ResTSNet(nn.Module):
         if adaption_layers[0] and downsamples_layers[0]:
             t_layer_conv1_data = downsamples_layers[0](t_layer_conv1_data)
             # match the adaption kernel size for adaption
-            t_layer_conv1_data = adaption_layers[0](t_layer_conv1_data.permute(
-                1, 0, 2, 3)).permute(1, 0, 2, 3)
-            '''
             t_layer_conv1_data = torch.squeeze(
                 adaption_layers[0](torch.unsqueeze(t_layer_conv1_data,
                                                    axis=0)), 0)
-            '''
             s_layer.conv1.weight = torch.nn.Parameter(t_layer_conv1_data)
 
         if adaption_layers[1] and downsamples_layers[1]:
             t_layer_conv2_data = downsamples_layers[1](t_layer_conv2_data)
             # match the adaption kernel size for adaption
-            t_layer_conv2_data = adaption_layers[1](t_layer_conv2_data.permute(
-                1, 0, 2, 3)).permute(1, 0, 2, 3)
-            '''
             t_layer_conv2_data = torch.squeeze(
                 adaption_layers[1](torch.unsqueeze(t_layer_conv2_data,
                                                    axis=0)), 0)
-            '''
             s_layer.conv2.weight = torch.nn.Parameter(t_layer_conv2_data)
 
         if adaption_layers[2] and downsamples_layers[2]:
             t_layer_conv3_data = downsamples_layers[2](t_layer_conv3_data)
             # match the adaption kernel size for adaption
-            t_layer_conv3_data = adaption_layers[2](t_layer_conv3_data.permute(
-                1, 0, 2, 3)).permute(1, 0, 2, 3)
-            '''
             t_layer_conv3_data = torch.squeeze(
                 adaption_layers[2](torch.unsqueeze(t_layer_conv3_data,
                                                    axis=0)), 0)
-            '''
             s_layer.conv3.weight = torch.nn.Parameter(t_layer_conv3_data)
 
         if s_layer.downsample is not None:
@@ -1093,14 +1061,9 @@ class ResTSNet(nn.Module):
                 t_layer_downsample_conv_data = downsamples_layers[3](
                     t_layer_downsample_conv_data)
                 # match the adaption kernel size for adaption
-                t_layer_downsample_conv_data = adaption_layers[3](
-                    t_layer_downsample_conv_data.permute(1, 0, 2, 3)).permute(
-                        1, 0, 2, 3)
-                '''
                 t_layer_downsample_conv_data = torch.squeeze(
                     adaption_layers[3](torch.unsqueeze(
                         t_layer_downsample_conv_data, axis=0)), 0)
-                '''
                 s_layer.downsample[0].weight = torch.nn.Parameter(
                     t_layer_downsample_conv_data)
 
