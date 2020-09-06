@@ -62,6 +62,7 @@ model = dict(
         dynamic_weight=True,
         norm_pyramid=True,
         pyramid_wise_attention=True,
+        t_low_bbox_mask=True,
         octave_base_scale=4,
         scales_per_octave=3,
         anchor_ratios=[0.5, 1.0, 2.0],

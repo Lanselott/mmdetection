@@ -71,6 +71,7 @@ model = dict(
         scales_per_octave=3,
         pyramid_wise_attention=True,
         pure_student_term=PURE_STUDENT_TERM,
+        t_low_bbox_mask=True,
         anchor_ratios=[0.5, 1.0, 2.0],
         anchor_strides=[8, 16, 32, 64, 128],
         target_means=[.0, .0, .0, .0],

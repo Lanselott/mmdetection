@@ -266,17 +266,30 @@ class AnchorHead(nn.Module):
                 bbox_targets,
                 bbox_weights,
                 avg_factor=num_total_samples)
-            s_loss_bbox = self.loss_bbox(
-                s_bbox_pred,
-                bbox_targets,
-                bbox_weights,
-                avg_factor=num_total_samples)
+
+            t_g_bbox_dists = torch.abs(bbox_targets - t_bbox_pred).mean(1)
+            high_qual_t_bbox_mask = (
+                t_g_bbox_dists >= t_g_bbox_dists.mean()).float().view(-1, 1)
+            if self.t_low_bbox_mask:
+                s_loss_bbox = self.loss_bbox(
+                    s_bbox_pred,
+                    bbox_targets,
+                    bbox_weights * high_qual_t_bbox_mask,
+                    avg_factor=num_total_samples)
+            else:
+                s_loss_bbox = self.loss_bbox(
+                    s_bbox_pred,
+                    bbox_targets,
+                    bbox_weights,
+                    avg_factor=num_total_samples)
+
             if self.pure_student_term:
                 s_pure_loss_bbox = self.loss_bbox(
                     s_pure_bbox_pred,
                     bbox_targets,
                     bbox_weights,
                     avg_factor=num_total_samples)
+
         else:
             bbox_pred = bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
             loss_bbox = self.loss_bbox(
@@ -343,7 +356,6 @@ class AnchorHead(nn.Module):
          num_total_pos, num_total_neg) = cls_reg_targets
         num_total_samples = (
             num_total_pos + num_total_neg if self.sampling else num_total_pos)
-
         loss_dict = {}
         if len(cls_scores[0]) > 2:
             # NOTE: well. distillation mode

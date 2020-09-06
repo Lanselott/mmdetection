@@ -40,6 +40,7 @@ class RetinaTSHead(AnchorHead):
                  eval_student=False,
                  finetune_student=False,
                  pure_student_term=False,
+                 t_low_bbox_mask=False,
                  conv_cfg=None,
                  norm_cfg=None,
                  **kwargs):
@@ -49,6 +50,7 @@ class RetinaTSHead(AnchorHead):
         self.eval_student = eval_student
         self.finetune_student = finetune_student
         self.pure_student_term = pure_student_term
+        self.t_low_bbox_mask = t_low_bbox_mask
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         octave_scales = np.array(
