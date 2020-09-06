@@ -269,7 +269,7 @@ class AnchorHead(nn.Module):
 
             t_g_bbox_dists = torch.abs(bbox_targets - t_bbox_pred).mean(1)
             high_qual_t_bbox_mask = (
-                t_g_bbox_dists >= t_g_bbox_dists.mean()).float().view(-1, 1)
+                t_g_bbox_dists <= t_g_bbox_dists.mean()).float().view(-1, 1)
             if self.t_low_bbox_mask:
                 s_loss_bbox = self.loss_bbox(
                     s_bbox_pred,
