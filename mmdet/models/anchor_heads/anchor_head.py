@@ -169,7 +169,7 @@ class AnchorHead(nn.Module):
         # cls_score tuple: [cls_score, s_cls_score, x, s_x],
         # bbox_pred tuple: [bbox_pred, s_bbox_pred]
         # classification loss
-        self.train_step += 1
+
         labels = labels.reshape(-1)
         label_weights = label_weights.reshape(-1)
 
@@ -327,6 +327,7 @@ class AnchorHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None):
+        self.train_step += 1
         if type(cls_scores[0]) is tuple:
             # TODO: add settings and anchor targets for
             # different feature sizes between teacher and student
