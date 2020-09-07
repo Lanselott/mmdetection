@@ -124,8 +124,14 @@ class RetinaTSHead(AnchorHead):
             padding=1)
         self.s_retina_reg = nn.Conv2d(
             self.s_feat_channels, self.num_anchors * 4, 3, padding=1)
+        '''
         self.s_t_align_convs.append(
             nn.Conv2d(self.s_feat_channels, self.feat_channels, 3, padding=1))
+        '''
+        for _ in range(self.stacked_convs + 1):
+            self.s_t_align_convs.append(
+                nn.Conv2d(
+                    self.s_feat_channels, self.feat_channels, 3, padding=1))
 
     def init_weights(self):
         for m in self.cls_convs:
@@ -154,13 +160,28 @@ class RetinaTSHead(AnchorHead):
         if self.pure_student_term:
             s_pure_cls_feat = pure_s_x
             s_pure_reg_feat = pure_s_x
+        
+        # FIXME:  Test for multi alignments
+        _, _, w, h = s_x.shape
+        level = 0
+        if w == 100 or h == 100:
+            level = 0
+        elif w == 50 or h == 50:
+            level = 1
+        elif w == 25 or h == 25:
+            level = 2
+        elif w == 13 or h == 13:
+            level = 3
+        elif w == 7 or h == 7:
+            level = 4
 
+        s_t_align_conv = self.s_t_align_convs[level]
         # align to teacher
-        for s_t_align_conv in self.s_t_align_convs:
-            if self.pure_student_term:
-                pure_s_x = s_t_align_conv(pure_s_x)
-            else:
-                s_x = s_t_align_conv(s_x)
+        # for s_t_align_conv in self.s_t_align_convs:
+        if self.pure_student_term:
+            pure_s_x = s_t_align_conv(pure_s_x)
+        else:
+            s_x = s_t_align_conv(s_x)
 
         for cls_conv in self.cls_convs:
             cls_feat = cls_conv(cls_feat)
