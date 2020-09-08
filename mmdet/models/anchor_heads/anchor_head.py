@@ -175,9 +175,9 @@ class AnchorHead(nn.Module):
 
         if self.dynamic_weight:
             if self.norm_pyramid:
-                attention_lambda = 1000 + 800 * (self.train_step // 7330)
+                attention_lambda = 1000 + 1200 * (self.train_step // 7330)
                 # attention_lambda = 500 + 20 * (self.train_step // 7330)
-                pyramid_lambda = 500
+                pyramid_lambda = 100
             else:
                 attention_lambda = 8.0 / (
                     1.0 + math.exp(-2 * (self.train_step // 7330 - 1)))
@@ -306,10 +306,10 @@ class AnchorHead(nn.Module):
                     if self.pure_student_term:
                         return t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss, s_pure_loss_bbox
                     else:
-                        if self.train_step >= 7330 * 3:
-                            return t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss
-                        else:
-                            return t_loss_cls, t_loss_bbox,  # s_loss_cls, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss
+                        # if self.train_step >= 7330 * 3:
+                        return t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss
+                        # else:
+                        #     return t_loss_cls, t_loss_bbox,  # s_loss_cls, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss
             else:
                 if self.finetune_student:
                     return s_loss_cls, s_loss_bbox, pyramid_hint_loss
@@ -410,32 +410,32 @@ class AnchorHead(nn.Module):
                         })
                         return loss_dict
                     else:
-                        if self.train_step >= 7330 * 3:
-                            t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss = multi_apply(
-                                self.loss_single,
-                                cls_scores,
-                                bbox_preds,
-                                labels_list,
-                                label_weights_list,
-                                bbox_targets_list,
-                                bbox_weights_list,
-                                num_total_samples=num_total_samples,
-                                cfg=cfg)
-                            loss_dict.update({
-                                't_loss_cls':
-                                t_loss_cls,
-                                't_loss_bbox':
-                                t_loss_bbox,
-                                's_loss_cls':
-                                s_loss_cls,
-                                's_loss_bbox':
-                                s_loss_bbox,
-                                'pyramid_hint_loss':
-                                pyramid_hint_loss,
-                                'pos_attention_pyramid_hint_loss':
-                                pos_attention_pyramid_hint_loss
-                            })
-                        
+                        # if self.train_step >= 7330 * 3:
+                        t_loss_cls, s_loss_cls, t_loss_bbox, s_loss_bbox, pyramid_hint_loss, pos_attention_pyramid_hint_loss = multi_apply(
+                            self.loss_single,
+                            cls_scores,
+                            bbox_preds,
+                            labels_list,
+                            label_weights_list,
+                            bbox_targets_list,
+                            bbox_weights_list,
+                            num_total_samples=num_total_samples,
+                            cfg=cfg)
+                        loss_dict.update({
+                            't_loss_cls':
+                            t_loss_cls,
+                            't_loss_bbox':
+                            t_loss_bbox,
+                            's_loss_cls':
+                            s_loss_cls,
+                            's_loss_bbox':
+                            s_loss_bbox,
+                            'pyramid_hint_loss':
+                            pyramid_hint_loss,
+                            'pos_attention_pyramid_hint_loss':
+                            pos_attention_pyramid_hint_loss
+                        })
+                        '''
                         else:
                             t_loss_cls, t_loss_bbox = multi_apply(
                                 self.loss_single,
@@ -451,7 +451,7 @@ class AnchorHead(nn.Module):
                                 't_loss_cls': t_loss_cls,
                                 't_loss_bbox': t_loss_bbox
                             })
-                        
+                        '''
                         return loss_dict
             else:
                 if self.finetune_student:
