@@ -229,7 +229,6 @@ class AnchorHead(nn.Module):
         if type(cls_score) is tuple:
             t_bbox_pred = bbox_pred[0].permute(0, 2, 3, 1).reshape(-1, 4)
             s_bbox_pred = bbox_pred[1].permute(0, 2, 3, 1).reshape(-1, 4)
-
             if self.pure_student_term:
                 s_pure_bbox_pred = bbox_pred[2].permute(0, 2, 3,
                                                         1).reshape(-1, 4)
@@ -242,18 +241,20 @@ class AnchorHead(nn.Module):
                 s_x_feats, x_feats.detach())
 
             if self.pyramid_wise_attention:
-                pos_bbox_inds = bbox_weights.reshape(
-                    self.num_anchors, -1,
-                    4).sum(0).sum(1).nonzero().reshape(-1)
+                bbox_num_pos = bbox_weights.reshape(self.num_anchors, -1,
+                                                    4).sum(0).sum(1)
+                pos_bbox_inds = bbox_num_pos.nonzero().reshape(-1)
                 t_pos_bbox_pred = t_bbox_pred[pos_bbox_inds]
                 s_pos_bbox_pred = s_bbox_pred[pos_bbox_inds]
-
+                anchors_weights = bbox_num_pos[pos_bbox_inds] / 4
+                
                 if len(t_pos_bbox_pred) > 0:
                     bbox_distance = torch.abs(t_pos_bbox_pred -
                                               s_pos_bbox_pred).sum(1)
                     attention_weight = (
                         1 - bbox_distance / bbox_distance.max()).detach()
-
+                    attention_weight *= anchors_weights
+                    
                     pos_attention_pyramid_hint_loss = attention_lambda * self.pyramid_hint_loss(
                         s_x_feats[pos_bbox_inds],
                         x_feats[pos_bbox_inds].detach(),
