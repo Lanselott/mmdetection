@@ -184,8 +184,8 @@ class AnchorHead(nn.Module):
                 # pyramid_lambda = 8 / (1 + 0.33 * self.train_step // 7330)
                 pyramid_lambda = 8.0
         else:
-            attention_lambda = 8
-            pyramid_lambda = 8
+            attention_lambda = 2000
+            pyramid_lambda = 100
 
         if type(cls_score) is tuple:
             t_cls_score = cls_score[0].permute(0, 2, 3, 1).reshape(
