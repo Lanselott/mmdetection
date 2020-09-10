@@ -40,6 +40,7 @@ class RetinaTSHead(AnchorHead):
                  eval_student=False,
                  finetune_student=False,
                  pure_student_term=False,
+                 adapt_on_channel=False,
                  t_low_bbox_mask=False,
                  conv_cfg=None,
                  norm_cfg=None,
@@ -50,6 +51,7 @@ class RetinaTSHead(AnchorHead):
         self.eval_student = eval_student
         self.finetune_student = finetune_student
         self.pure_student_term = pure_student_term
+        self.adapt_on_channel = adapt_on_channel
         self.t_low_bbox_mask = t_low_bbox_mask
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
@@ -66,6 +68,7 @@ class RetinaTSHead(AnchorHead):
         self.s_cls_convs = nn.ModuleList()
         self.s_reg_convs = nn.ModuleList()
         self.s_t_align_convs = nn.ModuleList()
+        self.t_s_align_convs = nn.ModuleList()
 
         for i in range(self.stacked_convs):
             chn = self.in_channels if i == 0 else self.feat_channels
@@ -129,9 +132,20 @@ class RetinaTSHead(AnchorHead):
             nn.Conv2d(self.s_feat_channels, self.feat_channels, 3, padding=1))
         '''
         for _ in range(self.stacked_convs + 1):
-            self.s_t_align_convs.append(
-                nn.Conv2d(
-                    self.s_feat_channels, self.feat_channels, 3, padding=1))
+            if self.adapt_on_channel:
+                # 256 -> 192 align loss 192 <- 128
+                adapt_channels = (self.feat_channels - self.s_feat_channels) // 2 + self.s_feat_channels
+                
+                self.s_t_align_convs.append(
+                    nn.Conv2d(
+                        self.s_feat_channels, adapt_channels, 3, padding=1))
+                self.t_s_align_convs.append(
+                    nn.Conv2d(
+                        self.feat_channels, adapt_channels, 3, padding=1))
+            else:
+                self.s_t_align_convs.append(
+                    nn.Conv2d(
+                        self.s_feat_channels, self.feat_channels, 3, padding=1))
 
     def init_weights(self):
         for m in self.cls_convs:
@@ -144,6 +158,10 @@ class RetinaTSHead(AnchorHead):
             normal_init(m.conv, std=0.01)
         for m in self.s_t_align_convs:
             normal_init(m, std=0.01)
+        
+        if self.adapt_on_channel:
+            for m in self.t_s_align_convs:
+                normal_init(m, std=0.01)
 
         bias_cls = bias_init_with_prob(0.01)
         normal_init(self.retina_cls, std=0.01, bias=bias_cls)
@@ -157,6 +175,7 @@ class RetinaTSHead(AnchorHead):
         reg_feat = x
         s_cls_feat = s_x
         s_reg_feat = s_x
+
         if self.pure_student_term:
             s_pure_cls_feat = pure_s_x
             s_pure_reg_feat = pure_s_x
@@ -176,12 +195,16 @@ class RetinaTSHead(AnchorHead):
             level = 4
 
         s_t_align_conv = self.s_t_align_convs[level]
+        t_s_align_conv = self.t_s_align_convs[level]
         # align to teacher
         # for s_t_align_conv in self.s_t_align_convs:
         if self.pure_student_term:
             pure_s_x = s_t_align_conv(pure_s_x)
         else:
             s_x = s_t_align_conv(s_x)
+        
+        if self.adapt_on_channel:
+            x = t_s_align_conv(x)
 
         for cls_conv in self.cls_convs:
             cls_feat = cls_conv(cls_feat)

@@ -12,7 +12,6 @@ GOOD_INITIAL = True
 BN_TOPK_SELECTION = False
 ROUSE_STUDENT_POINT = 7330 * 13
 USE_INTERMEDIATE_LEARNER = False
-PURE_STUDENT_TERM = False
 # inference parameters
 SWITCH_TO_INTER_LEARNER = False
 model = dict(
@@ -33,12 +32,10 @@ model = dict(
         bn_topk_selection=BN_TOPK_SELECTION,
         rouse_student_point=ROUSE_STUDENT_POINT,
         apply_block_wise_alignment=BLOCK_ALIGN,
-        constant_term=False,
-        pure_student_term=PURE_STUDENT_TERM,
         feature_adaption=False,
+        constant_term=False,
         conv_downsample=False,
-        kernel_adaption=False,
-        train_mode=True),
+    ),
     neck=dict(
         type='FPNTS',
         in_channels=[256, 512, 1024, 2048],
@@ -51,7 +48,6 @@ model = dict(
         extra_convs_on_inputs=False,  # use P5
         num_outs=5,
         relu_before_extra_convs=True,
-        pure_student_term=PURE_STUDENT_TERM,
         apply_block_wise_alignment=BLOCK_ALIGN,
         copy_teacher_fpn=COPY_TEACHER_FPN,
         freeze_teacher=FREEZE_TEACHER,
@@ -63,16 +59,12 @@ model = dict(
         stacked_convs=4,
         feat_channels=256,
         s_feat_channels=128,
-        eval_student=True,
         dynamic_weight=True,
-        norm_pyramid=False,
-        finetune_student=False,
+        norm_pyramid=True,
+        pyramid_wise_attention=True,
+        adapt_on_channel=True,
         octave_base_scale=4,
         scales_per_octave=3,
-        pyramid_wise_attention=True,
-        pure_student_term=PURE_STUDENT_TERM,
-        adapt_on_channel=True,
-        t_low_bbox_mask=False,
         anchor_ratios=[0.5, 1.0, 2.0],
         anchor_strides=[8, 16, 32, 64, 128],
         target_means=[.0, .0, .0, .0],
@@ -139,17 +131,17 @@ data = dict(
     train=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_train2017.json',
-        img_prefix=data_root + 'train2017/',
+        img_prefix=data_root + 'images/train2017/',
         pipeline=train_pipeline),
     val=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'val2017/',
+        img_prefix=data_root + 'images/val2017/',
         pipeline=test_pipeline),
     test=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'val2017/',
+        img_prefix=data_root + 'images/val2017/',
         pipeline=test_pipeline))
 # optimizer
 optimizer = dict(type='SGD', lr=0.01, momentum=0.9, weight_decay=0.0001)
@@ -171,7 +163,7 @@ log_config = dict(
     ])
 # yapf:enable
 # runtime settings
-total_epochs = 13
+total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = './work_dirs/retinanet_r50_fpn_1x'

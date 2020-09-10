@@ -192,10 +192,17 @@ class AnchorHead(nn.Module):
                 -1, self.cls_out_channels)
             s_cls_score = cls_score[1].permute(0, 2, 3, 1).reshape(
                 -1, self.cls_out_channels)
-            x_feats = cls_score[2].permute(0, 2, 3,
-                                           1).reshape(-1, self.feat_channels)
-            s_x_feats = cls_score[3].permute(0, 2, 3, 1).reshape(
-                -1, self.feat_channels)
+            if self.adapt_on_channel:
+                adapt_channels = (self.feat_channels - self.s_feat_channels) // 2 + self.s_feat_channels
+                x_feats = cls_score[2].permute(0, 2, 3,
+                                            1).reshape(-1, adapt_channels)
+                s_x_feats = cls_score[3].permute(0, 2, 3, 1).reshape(
+                    -1, adapt_channels)
+            else:
+                x_feats = cls_score[2].permute(0, 2, 3,
+                                            1).reshape(-1, self.feat_channels)
+                s_x_feats = cls_score[3].permute(0, 2, 3, 1).reshape(
+                    -1, self.feat_channels)
             if self.pure_student_term:
                 s_pure_cls_score = cls_score[4].permute(0, 2, 3, 1).reshape(
                     -1, self.cls_out_channels)
