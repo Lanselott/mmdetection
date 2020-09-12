@@ -182,7 +182,7 @@ class AnchorHead(nn.Module):
                 attention_lambda = 8.0 / (
                     1.0 + math.exp(-2 * (self.train_step // 7330 - 1)))
                 # pyramid_lambda = 8 / (1 + 0.33 * self.train_step // 7330)
-                pyramid_lambda = 8.0
+                pyramid_lambda = 1.0
         else:
             attention_lambda = 2000
             pyramid_lambda = 100
