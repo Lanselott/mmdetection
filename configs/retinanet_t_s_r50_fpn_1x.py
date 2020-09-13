@@ -70,6 +70,7 @@ model = dict(
         octave_base_scale=4,
         scales_per_octave=3,
         pyramid_wise_attention=True,
+        feature_adaption=True,
         pure_student_term=PURE_STUDENT_TERM,
         adapt_on_channel=False,
         t_low_bbox_mask=False,

@@ -42,6 +42,7 @@ class AnchorHead(nn.Module):
                  s_feat_channels=128,
                  dynamic_weight=False,
                  pyramid_wise_attention=False,
+                 feature_adaption=False,
                  norm_pyramid=False,
                  anchor_scales=[8, 16, 32],
                  anchor_ratios=[0.5, 1.0, 2.0],
@@ -63,6 +64,7 @@ class AnchorHead(nn.Module):
         self.feat_channels = feat_channels
         self.s_feat_channels = s_feat_channels
         self.pyramid_wise_attention = pyramid_wise_attention
+        self.feature_adaption = feature_adaption
         self.norm_pyramid = norm_pyramid
         self.anchor_scales = anchor_scales
         self.anchor_ratios = anchor_ratios
@@ -208,6 +210,13 @@ class AnchorHead(nn.Module):
                                                1).reshape(-1, self.feat_channels)
                 s_x_feats = cls_score[3].permute(0, 2, 3, 1).reshape(
                     -1, self.feat_channels)
+
+                if self.feature_adaption:
+                    # adaption_factor = 0.5
+                    adaption_factor = self.train_step / (7330 * 12)
+                    s_x_feats = adaption_factor * s_x_feats + \
+                        (1 - adaption_factor) * x_feats
+
             if self.pure_student_term:
                 s_pure_cls_score = cls_score[4].permute(0, 2, 3, 1).reshape(
                     -1, self.cls_out_channels)
@@ -248,7 +257,7 @@ class AnchorHead(nn.Module):
             if self.norm_pyramid:
                 s_x_feats = F.normalize(s_x_feats, p=2, dim=1)
                 x_feats = F.normalize(x_feats, p=2, dim=1)
-            
+
             pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
                 s_x_feats, x_feats.detach())
 
