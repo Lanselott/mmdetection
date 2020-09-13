@@ -195,7 +195,6 @@ class RetinaTSHead(AnchorHead):
             level = 4
 
         s_t_align_conv = self.s_t_align_convs[level]
-        t_s_align_conv = self.t_s_align_convs[level]
         # align to teacher
         # for s_t_align_conv in self.s_t_align_convs:
         if self.pure_student_term:
@@ -204,6 +203,7 @@ class RetinaTSHead(AnchorHead):
             s_x = s_t_align_conv(s_x)
         
         if self.adapt_on_channel:
+            t_s_align_conv = self.t_s_align_convs[level]
             x = t_s_align_conv(x)
 
         for cls_conv in self.cls_convs:
