@@ -244,10 +244,8 @@ class AnchorHead(nn.Module):
                 s_x_feats = F.normalize(s_x_feats, p=2, dim=1)
                 x_feats = F.normalize(x_feats, p=2, dim=1)
 
-            # pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-            #     s_x_feats, x_feats.detach())
             pyramid_hint_loss = pyramid_lambda * self.pyramid_hint_loss(
-                s_x_feats, x_feats)
+                s_x_feats, x_feats.detach())
 
             if self.pyramid_wise_attention:
                 bbox_num_pos = bbox_weights.reshape(self.num_anchors, -1,
@@ -264,14 +262,11 @@ class AnchorHead(nn.Module):
                         1 - bbox_distance / bbox_distance.max()).detach()
                     attention_weight *= anchors_weights
                     
-                    # pos_attention_pyramid_hint_loss = attention_lambda * self.pyramid_hint_loss(
-                    #     s_x_feats[pos_bbox_inds],
-                    #     x_feats[pos_bbox_inds].detach(),
-                    #     weight=attention_weight)
                     pos_attention_pyramid_hint_loss = attention_lambda * self.pyramid_hint_loss(
                         s_x_feats[pos_bbox_inds],
-                        x_feats[pos_bbox_inds],
+                        x_feats[pos_bbox_inds].detach(),
                         weight=attention_weight)
+                    
                 else:
                     pos_attention_pyramid_hint_loss = t_pos_bbox_pred.sum()
 
