@@ -204,7 +204,7 @@ class RetinaTSHead(AnchorHead):
             s_x = s_t_align_conv(s_x)
         
         if self.adapt_on_channel:
-            x = t_s_align_conv(x)
+            x = t_s_align_conv(x.detach())
 
         for cls_conv in self.cls_convs:
             cls_feat = cls_conv(cls_feat)

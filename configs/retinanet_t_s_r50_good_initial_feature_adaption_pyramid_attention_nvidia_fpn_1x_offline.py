@@ -67,6 +67,7 @@ model = dict(
         dynamic_weight=False,
         norm_pyramid=False,
         pure_student_term=PURE_STUDENT_TERM,
+        adapt_on_channel=True,
         pyramid_wise_attention=True,
         octave_base_scale=4,
         scales_per_octave=3,
