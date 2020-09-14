@@ -1243,7 +1243,12 @@ class ResTSNet(nn.Module):
 
             if self.feature_adaption and self.train_mode:
                 # adaption_factor = 0.5
-                adaption_factor = self.train_step / (7330 * 12)
+                # adaption_factor = self.train_step / (7330 * 12)
+                self.train_step = 7330 * 10
+                if int(self.train_step / (7330 * 2.5)) > j:
+                    adaption_factor = 1
+                else:
+                    adaption_factor = 0
 
                 if self.pure_student_term:
                     pure_s_x = s_res_layer(pure_s_x)
@@ -1252,7 +1257,7 @@ class ResTSNet(nn.Module):
                     # x_detached = inputs[j].detach()
                     x_detached = outs[j].detach()
                     x_detached_adapted = self.adaption_layers[j](x_detached)
-                    #'''
+                    '''
                     _, x_detached_batch, x_detached_w, x_detached_h = x_detached_adapted.shape
                     rand_list = torch.randperm(
                         x_detached_w * x_detached_h)[:int(adaption_factor *
@@ -1268,12 +1273,12 @@ class ResTSNet(nn.Module):
 
                     s_x = adaption_weights * s_x + (
                         1 - adaption_weights) * x_detached_adapted
-                    #'''
-                    # align to teacher network and get the loss
                     '''
+                    # align to teacher network and get the loss
+                    # '''
                     s_x = adaption_factor * s_x + (
                         1 - adaption_factor) * x_detached_adapted
-                    '''
+                    # '''
                     if self.apply_block_wise_alignment:
                         block_distill_pairs.append([s_x, x_detached_adapted])
                 else:

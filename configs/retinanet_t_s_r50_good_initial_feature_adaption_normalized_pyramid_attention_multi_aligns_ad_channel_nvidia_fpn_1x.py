@@ -32,9 +32,9 @@ model = dict(
         bn_topk_selection=BN_TOPK_SELECTION,
         rouse_student_point=ROUSE_STUDENT_POINT,
         apply_block_wise_alignment=BLOCK_ALIGN,
-        feature_adaption=False,
+        feature_adaption=True,
         constant_term=False,
-        conv_downsample=False,
+        conv_downsample=True,
     ),
     neck=dict(
         type='FPNTS',
