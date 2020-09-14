@@ -1246,7 +1246,7 @@ class ResTSNet(nn.Module):
                 # adaption_factor = self.train_step / (7330 * 12)
                 self.train_step = 7330 * 10
                 if int(self.train_step / (7330 * 2.5)) > j:
-                    adaption_factor = 1
+                    adaption_factor = 1 / 2
                 else:
                     adaption_factor = 0
 
