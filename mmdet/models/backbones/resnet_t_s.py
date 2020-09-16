@@ -1244,12 +1244,12 @@ class ResTSNet(nn.Module):
             if self.feature_adaption and self.train_mode:
                 # adaption_factor = 0.5
                 # adaption_factor = self.train_step / (7330 * 12)
-                self.train_step = 7330 * 8
-                if int(self.train_step / (7330 * 2.5)) > j:
+                # self.train_step = 7330 * 11 
+                if int(self.train_step / (7330 * 2.5)) > 3 - j:
                     adaption_factor = 1 
                 else:
-                    adaption_factor = 1 / 2
-                print(adaption_factor)
+                    adaption_factor =  1 / 2
+
                 if self.pure_student_term:
                     pure_s_x = s_res_layer(pure_s_x)
 
