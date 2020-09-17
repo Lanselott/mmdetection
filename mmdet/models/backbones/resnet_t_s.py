@@ -504,7 +504,7 @@ class ResTSNet(nn.Module):
         # student net
         # TODO: rewrite student layers;
         # current block1[0] layer input channel not fully pruned in same way
-        self.inplanes = 64 // self.t_s_ratio
+        self.inplanes = 64  # // self.t_s_ratio
         student_block_output_channel = []
         for j, num_blocks in enumerate(self.s_stage_blocks):
             stride = strides[j]
@@ -702,7 +702,7 @@ class ResTSNet(nn.Module):
                                     [[512, 512, -1, -1], [512, 512, -1],
                                      [512, 512, -1]]]
             '''
-            
+
             # deep block1
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
                                        [-1, -1, 64]],
@@ -722,7 +722,7 @@ class ResTSNet(nn.Module):
                                      [-1, -1, -1], [-1, -1, 1024]],
                                     [[-1, -1, -1, -1], [-1, -1, -1],
                                      [-1, -1, 2048]]]
-            
+
             '''
             # deep block2
             self.adaption_channels = [[[-1, -1, -1, -1], [-1, -1, -1],
@@ -830,7 +830,7 @@ class ResTSNet(nn.Module):
                                     kernel_size=(3, 1, 1),
                                     # kernel_size=(1, 1,
                                     #              1),  #kernel_size=(3, 3, 3),
-                                    padding=(1, 0, 0)))  #padding=(1, 1, 1)))
+                                    padding=(1, 0, 0)))  # padding=(1, 1, 1)))
                             '''
                             adaption_layers.append(
                                 nn.Conv3d(
@@ -913,9 +913,9 @@ class ResTSNet(nn.Module):
         '''
 
         # conv
-        t_layer_conv1_data = t_layer.conv1.weight  #.detach()
-        t_layer_conv2_data = t_layer.conv2.weight  #.detach()
-        t_layer_conv3_data = t_layer.conv3.weight  #.detach()
+        t_layer_conv1_data = t_layer.conv1.weight  # .detach()
+        t_layer_conv2_data = t_layer.conv2.weight  # .detach()
+        t_layer_conv3_data = t_layer.conv3.weight  # .detach()
 
         downsamples_layers = self.downsample_layers_group[j][l]
         adaption_layers = self.adaption_layers_group[j][l]
@@ -1171,17 +1171,18 @@ class ResTSNet(nn.Module):
                     self.adapt_kernel_inference(j, l, t_layer, s_layer)
 
         self.train_step += 1
-
+        '''
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
-
+        '''
         x = self.conv1(x)
         x = self.norm1(x)
         x = self.relu(x)
         x = self.maxpool(x)
 
+        '''
         if self.kernel_adaption and self.train_mode:
             # s_conv1_weight = self.conv1_linear(
             #     self.conv1.weight.data.permute(1, 2, 3,
@@ -1198,11 +1199,11 @@ class ResTSNet(nn.Module):
         s_x = self.s_relu(s_x)
         s_x = self.s_maxpool(s_x)
         '''
+
         if self.spatial_ratio != 1:
             s_x = F.interpolate(x, scale_factor=1 / self.spatial_ratio)
         else:
             s_x = x
-        '''
         if self.pure_student_term:
             pure_s_x = s_x
             s_pure_outs = []
@@ -1244,11 +1245,15 @@ class ResTSNet(nn.Module):
             if self.feature_adaption and self.train_mode:
                 # adaption_factor = 0.5
                 # adaption_factor = self.train_step / (7330 * 12)
-                # self.train_step = 7330 * 11 
-                if int(self.train_step / (7330 * 2.5)) > 3 - j:
-                    adaption_factor = 1 
+                self.train_step = 7330 * 7 + 8
+                ep = 2
+                if int(self.train_step / (7330 * ep)) > 3 - j:
+                    adaption_factor = 1
+                elif int(self.train_step / (7330 * ep)) == 3 - j:
+                    adaption_factor = (self.train_step %
+                                       (7330 * ep)) / (7330 * ep)
                 else:
-                    adaption_factor =  1 / 2
+                    adaption_factor = 0
 
                 if self.pure_student_term:
                     pure_s_x = s_res_layer(pure_s_x)
@@ -1257,6 +1262,9 @@ class ResTSNet(nn.Module):
                     # x_detached = inputs[j].detach()
                     x_detached = outs[j].detach()
                     x_detached_adapted = self.adaption_layers[j](x_detached)
+                    '''
+                    # TODO: Try autoencoder structure
+                    '''
                     '''
                     _, x_detached_batch, x_detached_w, x_detached_h = x_detached_adapted.shape
                     rand_list = torch.randperm(
