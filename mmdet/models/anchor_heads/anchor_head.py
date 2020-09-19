@@ -448,6 +448,10 @@ class AnchorHead(nn.Module):
                             cfg=cfg)
                         if self.multi_stage_train and self.train_step < 7330 * 6:
                             loss_dict.update({
+                                't_loss_cls':
+                                t_loss_cls,
+                                't_loss_bbox':
+                                t_loss_bbox,
                                 'pyramid_hint_loss':
                                 pyramid_hint_loss,
                                 'pos_attention_pyramid_hint_loss':
