@@ -52,6 +52,7 @@ class AnchorHead(nn.Module):
                  target_stds=(1.0, 1.0, 1.0, 1.0),
                  pyramid_hint_loss=dict(type='MSELoss', loss_weight=1),
                  apply_block_wise_alignment=False,
+                 multi_stage_train=False,
                  loss_cls=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -90,6 +91,7 @@ class AnchorHead(nn.Module):
         self.pyramid_hint_loss = build_loss(pyramid_hint_loss)
         self.loss_bbox = build_loss(loss_bbox)
         self.apply_block_wise_alignment = apply_block_wise_alignment
+        self.multi_stage_train = multi_stage_train
         self.fp16_enabled = False
 
         self.anchor_generators = []
@@ -444,20 +446,28 @@ class AnchorHead(nn.Module):
                             bbox_weights_list,
                             num_total_samples=num_total_samples,
                             cfg=cfg)
-                        loss_dict.update({
-                            't_loss_cls':
-                            t_loss_cls,
-                            't_loss_bbox':
-                            t_loss_bbox,
-                            's_loss_cls':
-                            s_loss_cls,
-                            's_loss_bbox':
-                            s_loss_bbox,
-                            'pyramid_hint_loss':
-                            pyramid_hint_loss,
-                            'pos_attention_pyramid_hint_loss':
-                            pos_attention_pyramid_hint_loss
-                        })
+                        if self.multi_stage_train and self.train_step < 7330 * 6:
+                            loss_dict.update({
+                                'pyramid_hint_loss':
+                                pyramid_hint_loss,
+                                'pos_attention_pyramid_hint_loss':
+                                pos_attention_pyramid_hint_loss
+                            })
+                        else:
+                            loss_dict.update({
+                                't_loss_cls':
+                                t_loss_cls,
+                                't_loss_bbox':
+                                t_loss_bbox,
+                                's_loss_cls':
+                                s_loss_cls,
+                                's_loss_bbox':
+                                s_loss_bbox,
+                                'pyramid_hint_loss':
+                                pyramid_hint_loss,
+                                'pos_attention_pyramid_hint_loss':
+                                pos_attention_pyramid_hint_loss
+                            })
                         '''
                         else:
                             t_loss_cls, t_loss_bbox = multi_apply(
