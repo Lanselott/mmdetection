@@ -400,7 +400,7 @@ class AnchorHead(nn.Module):
                         bbox_weights_list,
                         num_total_samples=num_total_samples,
                         cfg=cfg)
-                    if self.multi_stage_train and self.train_step < 7330 * 6:
+                    if self.multi_stage_train and self.train_step < 7330 * 12: # 7330 * 6:
                         loss_dict.update({
                             'pyramid_hint_loss':
                             pyramid_hint_loss,
