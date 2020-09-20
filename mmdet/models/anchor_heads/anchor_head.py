@@ -400,16 +400,24 @@ class AnchorHead(nn.Module):
                         bbox_weights_list,
                         num_total_samples=num_total_samples,
                         cfg=cfg)
-                    loss_dict.update({
-                        's_loss_cls':
-                        s_loss_cls,
-                        's_loss_bbox':
-                        s_loss_bbox,
-                        'pyramid_hint_loss':
-                        pyramid_hint_loss,
-                        'pos_attention_pyramid_hint_loss':
-                        pos_attention_pyramid_hint_loss
-                    })
+                    if self.multi_stage_train and self.train_step < 7330 * 6:
+                        loss_dict.update({
+                            'pyramid_hint_loss':
+                            pyramid_hint_loss,
+                            'pos_attention_pyramid_hint_loss':
+                            pos_attention_pyramid_hint_loss
+                        })
+                    else:
+                        loss_dict.update({
+                            's_loss_cls':
+                            s_loss_cls,
+                            's_loss_bbox':
+                            s_loss_bbox,
+                            'pyramid_hint_loss':
+                            pyramid_hint_loss,
+                            'pos_attention_pyramid_hint_loss':
+                            pos_attention_pyramid_hint_loss
+                        })
                     return loss_dict
                 else:
                     if self.pure_student_term:
