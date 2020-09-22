@@ -192,8 +192,8 @@ class AnchorHead(nn.Module):
                 attention_lambda = 2000
                 pyramid_lambda = 100
             else:
-                attention_lambda = 15.0
-                pyramid_lambda = 1.0
+                attention_lambda = 5.0
+                pyramid_lambda = 0.0
 
         if type(cls_score) is tuple:
             t_cls_score = cls_score[0].permute(0, 2, 3, 1).reshape(
